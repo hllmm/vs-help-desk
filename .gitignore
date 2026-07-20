@@ -488,3 +488,8 @@ $RECYCLE.BIN/
 .worktrees/
 .rehearsal-secrets.env
 docker-compose.prod.rehearsal.yml
+
+# Kubernetes applied secrets (never commit real values; use secret.example.yaml)
+deploy/k8s/**/secret.yaml
+deploy/k8s/**/secrets.local.yaml
+**/secrets.local.yaml
