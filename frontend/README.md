@@ -14,13 +14,13 @@ React + Vite SPA. **Only REST** to the ASP.NET Core API (no Next.js / Nuxt).
 
 ## API base URL and production same-origin behavior
 
-`.env.development` sets `http://localhost:5154` for local Vite development.
-`VITE_API_BASE_URL` is an optional build-time override.
-When absent, production calls relative `/api/...` URLs and expects a same-origin reverse proxy.
+Leave `VITE_API_BASE_URL` empty so the SPA uses relative `/api/...` URLs.
+In local Vite dev, `vite.config.ts` proxies `/api` and `/health` to `http://127.0.0.1:5154`.
+In production, the reverse proxy (nginx) serves the SPA and API under the same origin.
 
 | Env | Local development | Production build |
 |---|---|---|
-| `VITE_API_BASE_URL` | From `.env.development` → `http://localhost:5154` | Unset → relative `/api/...` behind reverse proxy |
+| `VITE_API_BASE_URL` | Empty (relative + Vite proxy) | Empty → relative `/api/...` behind reverse proxy |
 
 ## Ticket workspace (Week 3 + Week 4 resolution)
 
