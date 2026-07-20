@@ -56,6 +56,28 @@ public sealed class ProcessedEmailMessageTests
     }
 
     [Fact]
+    public void RecordAcknowledgementFailure_StopsSchedulingAfterMaxAttempts()
+    {
+        var row = ProcessedEmailMessage.ForCreatedTicket(
+            "<key@test>",
+            "<key@test>",
+            T0,
+            Guid.NewGuid());
+        var now = T0;
+
+        for (var attempt = 1; attempt <= ProcessedEmailMessage.MaxAcknowledgementAttempts; attempt++)
+        {
+            now = now.AddMinutes(2);
+            row.RecordAcknowledgementFailure(now, "SMTP unavailable");
+        }
+
+        Assert.Equal(ProcessedEmailMessage.MaxAcknowledgementAttempts, row.AcknowledgementAttempts);
+        Assert.Null(row.AcknowledgementNextAttemptAt);
+        Assert.False(row.IsAcknowledgementDue(now.AddDays(1)));
+        Assert.Equal(AcknowledgementStatus.Failed, row.AcknowledgementStatus);
+    }
+
+    [Fact]
     public void RecordAcknowledgementSent_MarksSentAndClearsRetry()
     {
         var row = ProcessedEmailMessage.ForCreatedTicket(

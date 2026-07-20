@@ -101,6 +101,20 @@ export function TicketResolutionPanel({
     const triggerElement = triggerRef.current
     cancelRef.current?.focus()
 
+    // Mark layout chrome inert. Do not inert #main-content — the dialog lives inside it.
+    const inertTargets = [
+      document.querySelector('header'),
+      document.querySelector('footer'),
+      document.querySelector('.ticket-detail__timeline'),
+      document.querySelector('.ticket-reply'),
+      document.querySelector('.ticket-detail__header'),
+    ].filter((el): el is HTMLElement => el != null)
+
+    for (const el of inertTargets) {
+      el.setAttribute('inert', '')
+      el.setAttribute('aria-hidden', 'true')
+    }
+
     function onDocumentKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') {
         return
@@ -118,6 +132,10 @@ export function TicketResolutionPanel({
     document.addEventListener('keydown', onDocumentKeyDown)
     return () => {
       document.removeEventListener('keydown', onDocumentKeyDown)
+      for (const el of inertTargets) {
+        el.removeAttribute('inert')
+        el.removeAttribute('aria-hidden')
+      }
       if (returnFocusRef.current) {
         returnFocusRef.current = false
         // Focus after the dialog unmounts from the tree.

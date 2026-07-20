@@ -193,7 +193,7 @@ test('production same-origin responsive smoke', async ({
 
   const statusBadge = visibleResultsRoot(page)
     .locator('.ticket-status-badge')
-    .filter({ hasText: 'Escalated' })
+    .filter({ hasText: 'Bilinmeyen durum' })
   await expect(statusBadge).toBeVisible()
   await assertFieldInsideViewport(page, ticketFixtures[0].subject)
   await assertFieldInsideViewport(page, ticketFixtures[0].customerEmail)

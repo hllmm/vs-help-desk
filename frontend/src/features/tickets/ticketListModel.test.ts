@@ -76,9 +76,9 @@ describe('getTicketStatusMeta', () => {
     })
   })
 
-  it('keeps unknown statuses readable', () => {
+  it('maps unknown statuses to Turkish fallback label', () => {
     expect(getTicketStatusMeta('Escalated')).toEqual({
-      label: 'Escalated',
+      label: 'Bilinmeyen durum',
       tone: 'unknown',
     })
   })

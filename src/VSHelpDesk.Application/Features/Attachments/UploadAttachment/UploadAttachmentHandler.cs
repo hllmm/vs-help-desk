@@ -53,6 +53,51 @@ public sealed class UploadAttachmentHandler(
             return Result.Failure<UploadAttachmentResult>("File name is required.");
         }
 
+        // Sniff leading bytes before persisting (do not trust client Content-Type alone).
+        var header = new byte[16];
+        int read;
+        try
+        {
+            if (command.Content.CanSeek)
+            {
+                command.Content.Position = 0;
+            }
+
+            read = await command.Content.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);
+            if (command.Content.CanSeek)
+            {
+                command.Content.Position = 0;
+            }
+            else if (read > 0)
+            {
+                // Non-seekable: rebuild a stream that re-plays the header then the remainder.
+                var remainder = new MemoryStream();
+                await command.Content.CopyToAsync(remainder, cancellationToken);
+                remainder.Position = 0;
+                var combined = new MemoryStream();
+                await combined.WriteAsync(header.AsMemory(0, read), cancellationToken);
+                await remainder.CopyToAsync(combined, cancellationToken);
+                combined.Position = 0;
+                command = command with { Content = combined };
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to read attachment header for messageId={MessageId}",
+                command.TicketMessageId);
+            return Result.Failure<UploadAttachmentResult>("Failed to read the uploaded file.");
+        }
+
+        if (!uploadPolicy.IsDeclaredTypeConsistentWithContent(
+                command.ContentType,
+                header.AsSpan(0, Math.Max(read, 0))))
+        {
+            return Result.Failure<UploadAttachmentResult>(
+                "File content does not match the declared content type.");
+        }
+
         StoredFile stored;
         try
         {

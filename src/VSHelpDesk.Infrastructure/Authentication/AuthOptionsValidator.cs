@@ -8,6 +8,7 @@ public sealed class AuthOptionsValidator : IValidateOptions<AuthOptions>
     public static readonly string[] ForbiddenSigningKeyPlaceholders =
     [
         "CHANGE_ME_DEV_ONLY_MIN_32_CHARS_LONG!!",
+        "local-dev-only-signing-key",
         "CHANGE_ME",
         "changeme"
     ];

@@ -138,6 +138,13 @@ public sealed class UploadAttachmentHandlerTests
 
         public bool IsContentTypeAllowed(string? contentType) =>
             !string.IsNullOrWhiteSpace(contentType) && set.Contains(contentType.Split(';')[0].Trim());
+
+        public string? DetectContentTypeFromContent(ReadOnlySpan<byte> header) => null;
+
+        public bool IsDeclaredTypeConsistentWithContent(
+            string? declaredContentType,
+            ReadOnlySpan<byte> header) =>
+            IsContentTypeAllowed(declaredContentType);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

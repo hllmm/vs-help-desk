@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.WebAPI.Contracts.Authentication;
 
@@ -16,6 +17,7 @@ public sealed class AuthController(LoginHandler loginHandler) : ControllerBase
 {
     /// <summary>POST api/auth/login — UC-001</summary>
     [AllowAnonymous]
+    [EnableRateLimiting("auth-login")]
     [HttpPost("login")]
     public async Task<IActionResult> Login(
         [FromBody] LoginRequest request,

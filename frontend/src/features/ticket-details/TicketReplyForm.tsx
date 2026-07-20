@@ -159,7 +159,20 @@ export function TicketReplyForm({
       return
     }
 
-    // network / not-found / server — preserve draft, no auto-retry / no refresh for network
+    // network / not-found / server — preserve draft; refresh so a saved message is visible
+    // even when the HTTP outcome was ambiguous (reduces blind re-send).
+    if (
+      result.kind === 'network-ambiguous' ||
+      result.kind === 'server-error' ||
+      result.kind === 'not-found'
+    ) {
+      try {
+        await onRefresh()
+      } catch {
+        // Notice still applies.
+      }
+    }
+
     focusTargetRef.current = 'notice'
     setOutcome({
       kind: result.kind,

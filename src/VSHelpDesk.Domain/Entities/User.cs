@@ -43,4 +43,15 @@ public sealed class User
     {
         IsActive = false;
     }
+
+    /// <summary>Development seed / admin password rotation only.</summary>
+    public void ReplacePasswordHash(string passwordHash)
+    {
+        if (string.IsNullOrWhiteSpace(passwordHash))
+        {
+            throw new ArgumentException("Password hash is required.", nameof(passwordHash));
+        }
+
+        PasswordHash = passwordHash;
+    }
 }

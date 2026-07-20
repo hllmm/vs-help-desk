@@ -14,7 +14,7 @@ using VSHelpDesk.WebAPI.IntegrationTests.Support;
 
 namespace VSHelpDesk.WebAPI.IntegrationTests.Authentication;
 
-public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFactory>
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -23,7 +23,7 @@ public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<P
 
     private readonly WebApplicationFactory<Program> factory;
 
-    public AuthJwtPipelineTests(WebApplicationFactory<Program> factory)
+    public AuthJwtPipelineTests(CustomWebApplicationFactory factory)
     {
         this.factory = factory.WithWebHostBuilder(builder =>
         {

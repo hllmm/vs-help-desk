@@ -16,13 +16,15 @@ using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
 
+using VSHelpDesk.WebAPI.IntegrationTests.Support;
+
 namespace VSHelpDesk.WebAPI.IntegrationTests.Tickets;
 
-public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly WebApplicationFactory<Program> factory;
 
-    public TicketsApiTests(WebApplicationFactory<Program> factory)
+    public TicketsApiTests(CustomWebApplicationFactory factory)
     {
         this.factory = factory.WithWebHostBuilder(builder =>
         {

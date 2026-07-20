@@ -329,7 +329,7 @@ describe('TicketListPage', () => {
     expect(screen.getByText('1 sonuç')).toBeInTheDocument()
   })
 
-  it('renders an unknown status as neutral raw text', async () => {
+  it('renders an unknown status as Turkish fallback with unknown tone', async () => {
     fetchTickets.mockResolvedValueOnce([
       ticket({
         id: '9',
@@ -341,8 +341,8 @@ describe('TicketListPage', () => {
     renderTicketsPage()
 
     const table = await screen.findByRole('table')
-    expect(within(table).getByText('Escalated')).toBeInTheDocument()
-    const badge = within(table).getByText('Escalated')
+    expect(within(table).getByText('Bilinmeyen durum')).toBeInTheDocument()
+    const badge = within(table).getByText('Bilinmeyen durum')
     expect(badge).toHaveAttribute('data-tone', 'unknown')
   })
 

@@ -46,7 +46,8 @@ export function getTicketStatusMeta(status: string): TicketStatusMeta {
   if (isKnownTicketStatus(status)) {
     return KNOWN_STATUS_META[status]
   }
-  return { label: status, tone: 'unknown' }
+  // Keep raw value for operators via title attributes in UI; visible label is Turkish.
+  return { label: 'Bilinmeyen durum', tone: 'unknown' }
 }
 
 export function getTicketFilterLabel(

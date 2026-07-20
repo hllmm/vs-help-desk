@@ -12,9 +12,11 @@ using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
 
+using VSHelpDesk.WebAPI.IntegrationTests.Support;
+
 namespace VSHelpDesk.WebAPI.IntegrationTests.Jobs;
 
-public sealed class ResolveInactiveTicketsApiTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ResolveInactiveTicketsApiTests : IClassFixture<CustomWebApplicationFactory>
 {
     private static readonly DateTimeOffset FixedNow =
         new(2026, 8, 11, 12, 0, 0, TimeSpan.Zero);
@@ -27,7 +29,7 @@ public sealed class ResolveInactiveTicketsApiTests : IClassFixture<WebApplicatio
 
     private readonly WebApplicationFactory<Program> baseFactory;
 
-    public ResolveInactiveTicketsApiTests(WebApplicationFactory<Program> factory)
+    public ResolveInactiveTicketsApiTests(CustomWebApplicationFactory factory)
     {
         baseFactory = factory.WithWebHostBuilder(builder =>
         {

@@ -9,13 +9,15 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
+using VSHelpDesk.WebAPI.IntegrationTests.Support;
+
 namespace VSHelpDesk.WebAPI.IntegrationTests.Jobs;
 
-public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly WebApplicationFactory<Program> factory;
 
-    public ProcessIncomingEmailsConflictTests(WebApplicationFactory<Program> factory)
+    public ProcessIncomingEmailsConflictTests(CustomWebApplicationFactory factory)
     {
         this.factory = factory.WithWebHostBuilder(builder =>
         {

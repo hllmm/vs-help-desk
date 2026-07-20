@@ -13,14 +13,16 @@ using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
 
+using VSHelpDesk.WebAPI.IntegrationTests.Support;
+
 namespace VSHelpDesk.WebAPI.IntegrationTests.Attachments;
 
-public sealed class AttachmentsApiTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
+public sealed class AttachmentsApiTests : IClassFixture<CustomWebApplicationFactory>, IDisposable
 {
     private readonly string storageRoot;
     private readonly WebApplicationFactory<Program> factory;
 
-    public AttachmentsApiTests(WebApplicationFactory<Program> factory)
+    public AttachmentsApiTests(CustomWebApplicationFactory factory)
     {
         storageRoot = Path.Combine(Path.GetTempPath(), "vshd-it-storage", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(storageRoot);

@@ -4,6 +4,14 @@ Staj eğitim projesi: destek e-postalarından otomatik ticket oluşturma ve dest
 
 Kaynak: **VS Help Desk — SRD & Sistem Tasarımı** (`VSHD-SRD-001` v1.0).
 
+## Production (şirket içi)
+
+İç kullanım deploy: [docs/deploy-production.md](docs/deploy-production.md)  
+(`docker compose -f docker-compose.prod.yml`, secrets env, CI, TLS proxy).
+
+Sonraki fazlar (UC-010 UI, cookie auth, K8s, multi-tenant): design roadmap in  
+`docs/superpowers/specs/2026-07-20-production-hardening-design.md`.
+
 ## Hızlı başlangıç (sırayla)
 
 ```bash

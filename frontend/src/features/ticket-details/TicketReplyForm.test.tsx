@@ -219,7 +219,7 @@ describe('TicketReplyForm', () => {
       await screen.findByText(REPLY_OUTCOME_MESSAGES.networkAmbiguous),
     ).toBeInTheDocument()
     expect(textarea).toHaveValue('Taslak metin')
-    expect(onRefresh).toHaveBeenCalledTimes(1)
+    expect(onRefresh).toHaveBeenCalledTimes(2)
 
     replyToTicket.mockRejectedValueOnce(new ApiError(404, 'missing'))
     await user.click(screen.getByRole('button', { name: 'Yanıtı gönder' }))
@@ -227,6 +227,7 @@ describe('TicketReplyForm', () => {
       await screen.findByText(REPLY_OUTCOME_MESSAGES.notFound),
     ).toBeInTheDocument()
     expect(textarea).toHaveValue('Taslak metin')
+    expect(onRefresh).toHaveBeenCalledTimes(3)
 
     replyToTicket.mockRejectedValueOnce(
       new ApiError(500, 'upstream boom', { title: 'Internal' }),
@@ -237,9 +238,10 @@ describe('TicketReplyForm', () => {
     expect(serverAlert).not.toHaveTextContent('upstream')
     expect(serverAlert).not.toHaveTextContent('Internal')
     expect(textarea).toHaveValue('Taslak metin')
+    expect(onRefresh).toHaveBeenCalledTimes(4)
   })
 
-  it('does not auto-refresh on network ambiguity', async () => {
+  it('refreshes detail on network ambiguity to surface a saved message if any', async () => {
     const { user, onRefresh } = renderForm()
     replyToTicket.mockRejectedValueOnce(new TypeError('Failed to fetch'))
 
@@ -247,7 +249,7 @@ describe('TicketReplyForm', () => {
     await user.click(screen.getByRole('button', { name: 'Yanıtı gönder' }))
 
     await screen.findByText(REPLY_OUTCOME_MESSAGES.networkAmbiguous)
-    expect(onRefresh).not.toHaveBeenCalled()
+    expect(onRefresh).toHaveBeenCalledTimes(1)
     expect(replyToTicket).toHaveBeenCalledTimes(1)
   })
 

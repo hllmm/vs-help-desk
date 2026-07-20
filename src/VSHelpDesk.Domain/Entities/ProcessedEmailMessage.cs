@@ -95,6 +95,9 @@ public sealed class ProcessedEmailMessage
         };
     }
 
+    /// <summary>Stop scheduling further acknowledgement SMTP after this many failures.</summary>
+    public const int MaxAcknowledgementAttempts = 10;
+
     public void RecordAcknowledgementFailure(DateTime attemptedAtUtc, string safeError)
     {
         AcknowledgementAttempts++;
@@ -102,8 +105,10 @@ public sealed class ProcessedEmailMessage
         AcknowledgementLastAttemptAt = attemptedAtUtc;
         AcknowledgementSentAt = null;
         AcknowledgementLastError = TrimTo(safeError, 500);
-        AcknowledgementNextAttemptAt =
-            attemptedAtUtc + GetRetryDelay(AcknowledgementAttempts);
+        // Cap infinite 60-minute retries for production operability.
+        AcknowledgementNextAttemptAt = AcknowledgementAttempts >= MaxAcknowledgementAttempts
+            ? null
+            : attemptedAtUtc + GetRetryDelay(AcknowledgementAttempts);
     }
 
     public void RecordAcknowledgementSent(DateTime attemptedAtUtc)

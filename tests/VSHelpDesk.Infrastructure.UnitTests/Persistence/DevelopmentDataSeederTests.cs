@@ -36,7 +36,7 @@ public sealed class DevelopmentDataSeederTests
     }
 
     [Fact]
-    public async Task SeedAsync_ExistingUsername_DoesNotDuplicateOrReplaceHash()
+    public async Task SeedAsync_ExistingUsername_DoesNotDuplicateAndResyncsPasswordHash()
     {
         var password = Guid.NewGuid().ToString("N");
         await using var context = CreateContext();
@@ -52,12 +52,26 @@ public sealed class DevelopmentDataSeederTests
         var seeder = new DevelopmentDataSeeder(context, passwordHasher, Options.Create(options));
 
         await seeder.SeedAsync();
-        var originalHash = await context.Users.Select(user => user.PasswordHash).SingleAsync();
+        Assert.Equal(1, await context.Users.CountAsync());
 
-        await seeder.SeedAsync();
+        var rotated = Guid.NewGuid().ToString("N");
+        var rotatedOptions = new SeedUserOptions
+        {
+            Enabled = true,
+            FullName = options.FullName,
+            Username = options.Username,
+            Email = options.Email,
+            Password = rotated
+        };
+        var rotatedSeeder = new DevelopmentDataSeeder(
+            context,
+            passwordHasher,
+            Options.Create(rotatedOptions));
+        await rotatedSeeder.SeedAsync();
 
         var user = await context.Users.SingleAsync();
-        Assert.Equal(originalHash, user.PasswordHash);
+        Assert.True(passwordHasher.Verify(rotated, user.PasswordHash));
+        Assert.False(passwordHasher.Verify(password, user.PasswordHash));
     }
 
     [Fact]

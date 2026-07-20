@@ -580,12 +580,13 @@ describe('TicketDetailPage', () => {
     expect(replyToTicket).toHaveBeenCalledTimes(1)
   })
 
-  it('does not auto-refresh on network-ambiguous reply failure', async () => {
+  it('refreshes on network-ambiguous reply failure while preserving the draft', async () => {
     fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
     renderDetail()
     await screen.findByRole('heading', { name: 'Mesaj geçmişi' })
 
     replyToTicket.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
 
     const user = userEvent.setup()
     await user.type(screen.getByLabelText('Yanıtınız'), 'Belirsiz')
@@ -595,7 +596,7 @@ describe('TicketDetailPage', () => {
       await screen.findByText(REPLY_OUTCOME_MESSAGES.networkAmbiguous),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Yanıtınız')).toHaveValue('Belirsiz')
-    expect(fetchTicketDetails).toHaveBeenCalledTimes(1)
+    expect(fetchTicketDetails).toHaveBeenCalledTimes(2)
     expect(replyToTicket).toHaveBeenCalledTimes(1)
   })
 

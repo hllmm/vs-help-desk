@@ -15,13 +15,15 @@ using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Domain.Tickets;
 using VSHelpDesk.Infrastructure.Persistence;
 
+using VSHelpDesk.WebAPI.IntegrationTests.Support;
+
 namespace VSHelpDesk.WebAPI.IntegrationTests.Tickets;
 
 /// <summary>
 /// End-to-end lifecycle proof on the real PostgreSQL host:
 /// manual/automatic resolve → reply guard → customer-email reopen → idempotency.
 /// </summary>
-public sealed class TicketLifecycleApiTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplicationFactory>
 {
     private static readonly DateTimeOffset FixedNow =
         new(2026, 8, 11, 12, 0, 0, TimeSpan.Zero);
@@ -34,7 +36,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<WebApplicationFactor
 
     private readonly WebApplicationFactory<Program> baseFactory;
 
-    public TicketLifecycleApiTests(WebApplicationFactory<Program> factory)
+    public TicketLifecycleApiTests(CustomWebApplicationFactory factory)
     {
         baseFactory = factory.WithWebHostBuilder(builder =>
         {

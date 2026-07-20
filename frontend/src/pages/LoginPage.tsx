@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
+import { resolveSafeReturnPath } from '../auth/safeReturnPath'
 import { MailWorkflowIllustration } from '../components/MailWorkflowIllustration'
 
 function getLoginErrorMessage(error: unknown): string {
@@ -24,11 +25,9 @@ export function LoginPage() {
   const { login, isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from =
-    (location.state as { from?: string } | null)?.from &&
-    (location.state as { from?: string }).from !== '/login'
-      ? (location.state as { from: string }).from
-      : '/tickets'
+  const from = resolveSafeReturnPath(
+    (location.state as { from?: string } | null)?.from,
+  )
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')

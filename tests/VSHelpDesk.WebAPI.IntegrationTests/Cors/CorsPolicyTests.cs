@@ -2,13 +2,15 @@ using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 
+using VSHelpDesk.WebAPI.IntegrationTests.Support;
+
 namespace VSHelpDesk.WebAPI.IntegrationTests.Cors;
 
-public sealed class CorsPolicyTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class CorsPolicyTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly WebApplicationFactory<Program> factory;
 
-    public CorsPolicyTests(WebApplicationFactory<Program> factory)
+    public CorsPolicyTests(CustomWebApplicationFactory factory)
     {
         this.factory = factory.WithWebHostBuilder(builder =>
         {

@@ -1,23 +1,31 @@
+# Development infrastructure only. Requires .env with POSTGRES_PASSWORD (see .env.example).
+# Production stack: docker-compose.prod.yml
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: vshelpdesk_db
     environment:
-      POSTGRES_USER: stajyer
-      # Prefer POSTGRES_PASSWORD from a local .env (see .env.example). Do not commit real secrets.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-staj_sifre_123}
-      POSTGRES_DB: VS_HelpDesk_DB
+      POSTGRES_USER: ${POSTGRES_USER:-stajyer}
+      # No default password — set POSTGRES_PASSWORD in .env
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-VS_HelpDesk_DB}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stajyer} -d ${POSTGRES_DB:-VS_HelpDesk_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   mailpit:
     image: axllent/mailpit
     container_name: vshelpdesk_mail
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
@@ -26,9 +34,9 @@ services:
     image: greenmail/standalone:2.1.11
     profiles: ["imap-test"]
     ports:
-      - "3025:3025"
-      - "3143:3143"
-      - "8080:8080"
+      - "127.0.0.1:3025:3025"
+      - "127.0.0.1:3143:3143"
+      - "127.0.0.1:8080:8080"
     environment:
       GREENMAIL_OPTS: >-
         -Dgreenmail.setup.test.all

@@ -12,9 +12,11 @@ using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
 
+using VSHelpDesk.WebAPI.IntegrationTests.Support;
+
 namespace VSHelpDesk.WebAPI.IntegrationTests.Jobs;
 
-public sealed class ProcessIncomingEmailsApiTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ProcessIncomingEmailsApiTests : IClassFixture<CustomWebApplicationFactory>
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -23,7 +25,7 @@ public sealed class ProcessIncomingEmailsApiTests : IClassFixture<WebApplication
 
     private readonly WebApplicationFactory<Program> baseFactory;
 
-    public ProcessIncomingEmailsApiTests(WebApplicationFactory<Program> factory)
+    public ProcessIncomingEmailsApiTests(CustomWebApplicationFactory factory)
     {
         baseFactory = factory.WithWebHostBuilder(builder =>
         {

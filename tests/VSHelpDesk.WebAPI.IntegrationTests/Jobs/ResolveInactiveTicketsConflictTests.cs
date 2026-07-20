@@ -11,13 +11,15 @@ using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Infrastructure.Persistence;
 
+using VSHelpDesk.WebAPI.IntegrationTests.Support;
+
 namespace VSHelpDesk.WebAPI.IntegrationTests.Jobs;
 
-public sealed class ResolveInactiveTicketsConflictTests : IClassFixture<WebApplicationFactory<Program>>
+public sealed class ResolveInactiveTicketsConflictTests : IClassFixture<CustomWebApplicationFactory>
 {
     private readonly WebApplicationFactory<Program> factory;
 
-    public ResolveInactiveTicketsConflictTests(WebApplicationFactory<Program> factory)
+    public ResolveInactiveTicketsConflictTests(CustomWebApplicationFactory factory)
     {
         this.factory = factory.WithWebHostBuilder(builder =>
         {

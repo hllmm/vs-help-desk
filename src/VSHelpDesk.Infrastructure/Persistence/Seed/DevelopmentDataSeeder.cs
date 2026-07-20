@@ -24,10 +24,13 @@ public sealed class DevelopmentDataSeeder(
         var email = Require(options.Email, "SeedUser:Email");
         var password = Require(options.Password, "SeedUser:Password");
 
-        if (await applicationDbContext.Users.AnyAsync(
-                user => user.Username == username,
-                cancellationToken))
+        var existing = await applicationDbContext.Users
+            .FirstOrDefaultAsync(user => user.Username == username, cancellationToken);
+        if (existing is not null)
         {
+            // Keep local/CI seed password in sync with configuration (user may already exist).
+            existing.ReplacePasswordHash(passwordHasher.Hash(password));
+            await applicationDbContext.SaveChangesAsync(cancellationToken);
             return;
         }
 

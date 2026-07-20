@@ -1,7 +1,11 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Infrastructure;
+using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
 using VSHelpDesk.WebAPI.Extensions;
 using VSHelpDesk.WebAPI.Filters;
@@ -24,6 +28,47 @@ builder.Services.AddOptions<JobsOptions>()
     .Bind(builder.Configuration.GetSection(JobsOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddScoped<JobsApiKeyAuthorizationFilter>();
+
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<ApplicationDbContext>("database");
+
+// Login abuse protection (single-instance memory partitioner).
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new { message = "Too many login attempts. Please try again later." },
+            token);
+    };
+
+    options.AddPolicy(
+        "auth-login",
+        httpContext =>
+        {
+            var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var username = string.Empty;
+            if (httpContext.Request.ContentLength is > 0 and < 4096
+                && httpContext.Request.HasJsonContentType())
+            {
+                // Partition key falls back to IP only; username is read after model bind
+                // via a secondary key in the controller attribute if needed.
+            }
+
+            // IP-based fixed window; username refinement would require middleware body buffer.
+            return RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: $"login:{ip}",
+                factory: _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = 10,
+                    Window = TimeSpan.FromMinutes(1),
+                    QueueLimit = 0,
+                    AutoReplenishment = true
+                });
+        });
+});
 
 // React SPA (Vite) — only configured development origins (see Cors:AllowedOrigins).
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
@@ -48,7 +93,20 @@ builder.Services.AddCors(options =>
         });
 });
 
+// Trust reverse-proxy headers (nginx / company edge).
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    // Company single-proxy: clear known networks so docker bridge works; lock down at edge.
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 var app = builder.Build();
+
+app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())
 {
@@ -64,12 +122,23 @@ if (!app.Environment.IsDevelopment())
 
 app.UseExceptionHandling();
 app.UseCors("Portal");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 
-// Health check for local/docker smoke tests (no auth).
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = _ => false
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions
+{
+    Predicate = check => check.Name == "database"
+}).AllowAnonymous();
+
+// Backward-compatible liveness alias used by older smoke scripts.
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "VSHelpDesk.WebAPI" }))
     .AllowAnonymous();
 
