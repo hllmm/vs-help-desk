@@ -11,15 +11,12 @@ namespace VSHelpDesk.Infrastructure.UnitTests.Persistence;
 public sealed class ApplicationDbContextTests
 {
     [Fact]
-    public void Model_MapsOnlyUserWithRequiredConstraints()
+    public void Model_MapsUserWithRequiredConstraints()
     {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseNpgsql("Host=localhost;Database=metadata_test;Username=test_user")
-            .Options;
-        using var context = new ApplicationDbContext(options);
+        using var context = CreateMetadataContext();
 
-        var entityType = Assert.Single(context.Model.GetEntityTypes());
-        Assert.Equal(typeof(User), entityType.ClrType);
+        var entityType = context.Model.FindEntityType(typeof(User));
+        Assert.NotNull(entityType);
         Assert.Equal("Users", entityType.GetTableName());
         Assert.Equal(
             [nameof(User.Id)],
@@ -49,6 +46,63 @@ public sealed class ApplicationDbContextTests
             entityType.GetIndexes(),
             index => index.IsUnique &&
                 index.Properties.Select(property => property.Name).SequenceEqual([nameof(User.Username)]));
+    }
+
+    [Fact]
+    public void Model_MapsTicketTicketMessageAndProcessedEmailWithRequiredConstraints()
+    {
+        using var context = CreateMetadataContext();
+
+        var ticketType = context.Model.FindEntityType(typeof(Ticket));
+        Assert.NotNull(ticketType);
+        Assert.Equal("Tickets", ticketType.GetTableName());
+        Assert.Equal(32, ticketType.FindProperty(nameof(Ticket.TicketNumber))!.GetMaxLength());
+        Assert.Equal(500, ticketType.FindProperty(nameof(Ticket.Subject))!.GetMaxLength());
+        Assert.Equal(200, ticketType.FindProperty(nameof(Ticket.CustomerName))!.GetMaxLength());
+        Assert.Equal(255, ticketType.FindProperty(nameof(Ticket.CustomerEmail))!.GetMaxLength());
+        Assert.False(ticketType.FindProperty(nameof(Ticket.TicketNumber))!.IsNullable);
+        Assert.False(ticketType.FindProperty(nameof(Ticket.Subject))!.IsNullable);
+        Assert.False(ticketType.FindProperty(nameof(Ticket.Status))!.IsNullable);
+        Assert.Equal(
+            "timestamp with time zone",
+            ticketType.FindProperty(nameof(Ticket.LastActivityAt))!.GetColumnType());
+        Assert.Contains(
+            ticketType.GetIndexes(),
+            index => index.IsUnique &&
+                index.Properties.Select(property => property.Name)
+                    .SequenceEqual([nameof(Ticket.TicketNumber)]));
+
+        var messageType = context.Model.FindEntityType(typeof(TicketMessage));
+        Assert.NotNull(messageType);
+        Assert.Equal("TicketMessages", messageType.GetTableName());
+        Assert.False(messageType.FindProperty(nameof(TicketMessage.Content))!.IsNullable);
+        Assert.False(messageType.FindProperty(nameof(TicketMessage.SenderType))!.IsNullable);
+        Assert.Equal(
+            "timestamp with time zone",
+            messageType.FindProperty(nameof(TicketMessage.CreatedAt))!.GetColumnType());
+        Assert.Contains(
+            messageType.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(Ticket) &&
+                foreignKey.Properties.Select(property => property.Name)
+                    .SequenceEqual([nameof(TicketMessage.TicketId)]));
+        Assert.Contains(
+            messageType.GetIndexes(),
+            index => index.Properties.Select(property => property.Name)
+                .SequenceEqual([nameof(TicketMessage.TicketId), nameof(TicketMessage.CreatedAt)]));
+
+        var processedType = context.Model.FindEntityType(typeof(ProcessedEmailMessage));
+        Assert.NotNull(processedType);
+        Assert.Equal("ProcessedEmailMessages", processedType.GetTableName());
+        Assert.Equal(998, processedType.FindProperty(nameof(ProcessedEmailMessage.MessageId))!.GetMaxLength());
+        Assert.False(processedType.FindProperty(nameof(ProcessedEmailMessage.MessageId))!.IsNullable);
+        Assert.Equal(
+            "timestamp with time zone",
+            processedType.FindProperty(nameof(ProcessedEmailMessage.ProcessedAt))!.GetColumnType());
+        Assert.Contains(
+            processedType.GetIndexes(),
+            index => index.IsUnique &&
+                index.Properties.Select(property => property.Name)
+                    .SequenceEqual([nameof(ProcessedEmailMessage.MessageId)]));
     }
 
     [Fact]
@@ -103,5 +157,13 @@ public sealed class ApplicationDbContextTests
         {
             Environment.SetEnvironmentVariable(environmentKey, originalValue);
         }
+    }
+
+    private static ApplicationDbContext CreateMetadataContext()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql("Host=localhost;Database=metadata_test;Username=test_user")
+            .Options;
+        return new ApplicationDbContext(options);
     }
 }

@@ -113,6 +113,14 @@ public sealed class LoginHandlerTests
 
         public IQueryable<User> Users { get; } = users.AsQueryable();
 
+        public IQueryable<Ticket> Tickets { get; } = Array.Empty<Ticket>().AsQueryable();
+
+        public IQueryable<TicketMessage> TicketMessages { get; } =
+            Array.Empty<TicketMessage>().AsQueryable();
+
+        public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages { get; } =
+            Array.Empty<ProcessedEmailMessage>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
         }
