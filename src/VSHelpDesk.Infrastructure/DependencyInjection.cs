@@ -52,19 +52,21 @@ public static class DependencyInjection
             .ValidateOnStart();
         services.AddSingleton<IEmailBoundarySettings, EmailBoundarySettings>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
+        services.AddSingleton<HtmlToPlainTextConverter>();
+        services.AddScoped<IImapMailboxClient, MailKitImapMailboxClient>();
+        services.AddScoped<ImapEmailReceiver>();
+        services.AddScoped<FakeEmailReceiver>();
         services.AddScoped<IEmailReceiver>(serviceProvider =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<EmailOptions>>().Value;
             var mode = (options.ReceiverMode ?? "Imap").Trim();
             if (mode.Equals("Imap", StringComparison.OrdinalIgnoreCase))
             {
-                return serviceProvider.GetRequiredService<NotConfiguredImapEmailReceiver>();
+                return serviceProvider.GetRequiredService<ImapEmailReceiver>();
             }
 
             return serviceProvider.GetRequiredService<FakeEmailReceiver>();
         });
-        services.AddScoped<FakeEmailReceiver>();
-        services.AddScoped<NotConfiguredImapEmailReceiver>();
 
         services.AddSingleton<IValidateOptions<FileStorageOptions>, FileStorageOptionsValidator>();
         services.AddOptions<FileStorageOptions>()
