@@ -1,8 +1,10 @@
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using VSHelpDesk.Application.Abstractions.Parameters;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Features.Parameters;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -14,7 +16,7 @@ public sealed class ResolveInactiveTicketsHandlerTests
     private static readonly DateTimeOffset FixedNow =
         new(2026, 8, 11, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateTime CutoffUtc =
-        FixedNow.UtcDateTime - ResolveInactiveTicketsPolicy.InactivityThreshold;
+        FixedNow.UtcDateTime - TimeSpan.FromDays(ResolveInactiveTicketsPolicy.DefaultInactivityDays);
 
     [Fact]
     public async Task SelectsOnlyInclusiveDueWaitingCandidatesInDeterministicOrder()
@@ -31,7 +33,7 @@ public sealed class ResolveInactiveTicketsHandlerTests
             CreateWaiting(idE, CutoffUtc.AddHours(-2)), // earliest due
             CreateWaiting(idC, CutoffUtc),              // equal stamp, higher Id
             CreateWaiting(idB, CutoffUtc),              // equal stamp, lower Id
-            CreateWaiting(idD, CutoffUtc.AddTicks(1)),  // one tick below three days → not due
+            CreateWaiting(idD, CutoffUtc.AddTicks(1)),  // one tick below threshold → not due
             CreateNew(idA, CutoffUtc.AddDays(-10)),     // wrong status
         };
 
@@ -153,6 +155,67 @@ public sealed class ResolveInactiveTicketsHandlerTests
     }
 
     [Fact]
+    public async Task InactiveDaysParameter_ChangesCutoff()
+    {
+        var oneDayCutoff = FixedNow.UtcDateTime - TimeSpan.FromDays(1);
+        var due = CreateWaiting(
+            Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            oneDayCutoff);
+        // Older than 1 day but younger than default 3 days — only due when days=1.
+        var recentRelativeToDefault = CreateWaiting(
+            Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            FixedNow.UtcDateTime - TimeSpan.FromDays(2));
+        var notDue = CreateWaiting(
+            Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            oneDayCutoff.AddTicks(1));
+
+        var factory = new RecordingFactory();
+        var reader = new FixedDaysReader(1);
+        var handler = CreateHandler(
+            new FakeDb([due, recentRelativeToDefault, notDue]),
+            factory,
+            parameterReader: reader);
+
+        var result = await handler.HandleAsync(
+            new ResolveInactiveTicketsCommand(),
+            CancellationToken.None);
+
+        Assert.Equal(oneDayCutoff, result.CutoffUtc);
+        Assert.Equal(2, result.Candidates);
+        Assert.Equal(
+            [
+                Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+                Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+            ],
+            factory.CalledTicketIds);
+        Assert.Equal(ApplicationParameterCatalog.AutoResolveInactiveDaysKey, reader.LastKey);
+        Assert.Equal(ResolveInactiveTicketsPolicy.DefaultInactivityDays, reader.LastDefaultValue);
+    }
+
+    [Fact]
+    public async Task InvalidDaysBelowOne_FallsBackToDefaultCutoff()
+    {
+        var tickets = new[]
+        {
+            CreateWaiting(Guid.NewGuid(), CutoffUtc),
+            CreateWaiting(Guid.NewGuid(), CutoffUtc.AddTicks(1)),
+        };
+        var factory = new RecordingFactory();
+        var handler = CreateHandler(
+            new FakeDb(tickets),
+            factory,
+            parameterReader: new FixedDaysReader(0));
+
+        var result = await handler.HandleAsync(
+            new ResolveInactiveTicketsCommand(),
+            CancellationToken.None);
+
+        Assert.Equal(CutoffUtc, result.CutoffUtc);
+        Assert.Equal(1, result.Candidates);
+        Assert.Single(factory.CalledTicketIds);
+    }
+
+    [Fact]
     public async Task BusyGate_ThrowsJobAlreadyRunningWithoutQueryOrFactoryCall()
     {
         var tickets = new[] { CreateWaiting(Guid.NewGuid(), CutoffUtc) };
@@ -162,6 +225,7 @@ public sealed class ResolveInactiveTicketsHandlerTests
             db,
             factory,
             new BusyGate(),
+            new FixedDaysReader(ResolveInactiveTicketsPolicy.DefaultInactivityDays),
             new FixedTimeProvider(FixedNow),
             NullLogger<ResolveInactiveTicketsHandler>.Instance);
 
@@ -198,6 +262,7 @@ public sealed class ResolveInactiveTicketsHandlerTests
             new FakeDb(tickets),
             factory,
             gate,
+            new FixedDaysReader(ResolveInactiveTicketsPolicy.DefaultInactivityDays),
             new FixedTimeProvider(FixedNow),
             NullLogger<ResolveInactiveTicketsHandler>.Instance);
 
@@ -210,11 +275,13 @@ public sealed class ResolveInactiveTicketsHandlerTests
     private static ResolveInactiveTicketsHandler CreateHandler(
         IApplicationDbContext db,
         IInactiveTicketResolverFactory factory,
-        TimeProvider? time = null) =>
+        TimeProvider? time = null,
+        IApplicationParameterReader? parameterReader = null) =>
         new(
             db,
             factory,
             new AlwaysEnterGate(),
+            parameterReader ?? new FixedDaysReader(ResolveInactiveTicketsPolicy.DefaultInactivityDays),
             time ?? new FixedTimeProvider(FixedNow),
             NullLogger<ResolveInactiveTicketsHandler>.Instance);
 
@@ -241,6 +308,25 @@ public sealed class ResolveInactiveTicketsHandlerTests
             createdAt);
         typeof(Ticket).GetProperty(nameof(Ticket.Id))!.SetValue(ticket, id);
         return ticket;
+    }
+
+    private sealed class FixedDaysReader(int days) : IApplicationParameterReader
+    {
+        public string? LastKey { get; private set; }
+        public int? LastDefaultValue { get; private set; }
+
+        public Task EnsureCatalogAsync(CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<int> GetIntAsync(
+            string key,
+            int defaultValue,
+            CancellationToken cancellationToken = default)
+        {
+            LastKey = key;
+            LastDefaultValue = defaultValue;
+            return Task.FromResult(days);
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

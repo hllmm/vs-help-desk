@@ -1,17 +1,21 @@
 using Microsoft.Extensions.Logging;
+using VSHelpDesk.Application.Abstractions.Parameters;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Features.Parameters;
 using VSHelpDesk.Domain.Enums;
 
 namespace VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 
 /// <summary>
 /// UC-008 / BR-008 job orchestrator: lease → select inclusive due candidates → per-ticket scope.
+/// Cutoff days from <c>AutoResolve.InactiveDays</c> (default 3).
 /// </summary>
 public sealed class ResolveInactiveTicketsHandler(
     IApplicationDbContext applicationDbContext,
     IInactiveTicketResolverFactory resolverFactory,
     IResolveInactiveTicketsGate gate,
+    IApplicationParameterReader parameterReader,
     TimeProvider timeProvider,
     ILogger<ResolveInactiveTicketsHandler> logger)
 {
@@ -26,7 +30,18 @@ public sealed class ResolveInactiveTicketsHandler(
             ?? throw new JobAlreadyRunningException("resolve-inactive-tickets");
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
-        var cutoffUtc = nowUtc - ResolveInactiveTicketsPolicy.InactivityThreshold;
+        var days = await parameterReader
+            .GetIntAsync(
+                ApplicationParameterCatalog.AutoResolveInactiveDaysKey,
+                ResolveInactiveTicketsPolicy.DefaultInactivityDays,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (days < 1)
+        {
+            days = ResolveInactiveTicketsPolicy.DefaultInactivityDays;
+        }
+
+        var cutoffUtc = nowUtc - TimeSpan.FromDays(days);
 
         logger.LogInformation(
             "ResolveInactiveTickets started cutoffUtc={CutoffUtc}",

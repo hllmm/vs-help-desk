@@ -11,7 +11,7 @@ public sealed class InactiveTicketResolverTests
 {
     private static readonly DateTime NowUtc = new(2026, 8, 11, 12, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime CutoffUtc =
-        NowUtc - ResolveInactiveTicketsPolicy.InactivityThreshold;
+        NowUtc - TimeSpan.FromDays(ResolveInactiveTicketsPolicy.DefaultInactivityDays);
 
     [Fact]
     public void Policy_OneTickBelowThreeDays_IsNotEligible()
