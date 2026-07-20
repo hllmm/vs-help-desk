@@ -7,8 +7,6 @@ public sealed class EmailBoundarySettings(IOptions<EmailOptions> options) : IEma
 {
     public string ReceiverMode => options.Value.ReceiverMode;
 
-    public bool SendSmtpProbeOnProcessJob => options.Value.SendSmtpProbeOnProcessJob;
-
     public string SupportMailboxAddress => options.Value.SupportMailboxAddress;
 
     public string SupportMailboxDisplayName => options.Value.SupportMailboxDisplayName;

@@ -5,32 +5,37 @@ public sealed class EmailOptions
     public const string SectionName = "Email";
 
     /// <summary>
-    /// Inbound provider: <c>Fake</c> (deterministic Development/test) or <c>Imap</c> (real/test mailbox).
+    /// Inbound provider: <c>Fake</c> (Development/Testing only) or <c>Imap</c>.
     /// </summary>
-    public string ReceiverMode { get; init; } = "Fake";
+    public string ReceiverMode { get; init; } = "Imap";
 
-    public string SmtpHost { get; init; } = "localhost";
+    public string SmtpHost { get; init; } = string.Empty;
 
-    public int SmtpPort { get; init; } = 1025;
+    public int SmtpPort { get; init; } = 587;
 
-    public bool SmtpUseSsl { get; init; }
+    public MailTransportSecurityMode SmtpSecurityMode { get; init; } =
+        MailTransportSecurityMode.StartTls;
+
+    public string SmtpUsername { get; init; } = string.Empty;
+
+    public string SmtpPassword { get; init; } = string.Empty;
 
     public string ImapHost { get; init; } = string.Empty;
 
     public int ImapPort { get; init; } = 993;
 
-    public bool ImapUseSsl { get; init; } = true;
+    public MailTransportSecurityMode ImapSecurityMode { get; init; } =
+        MailTransportSecurityMode.SslOnConnect;
 
-    public string Username { get; init; } = string.Empty;
+    public string ImapUsername { get; init; } = string.Empty;
 
-    public string Password { get; init; } = string.Empty;
+    public string ImapPassword { get; init; } = string.Empty;
+
+    public string ImapAccountId { get; init; } = string.Empty;
+
+    public string ImapFolder { get; init; } = "INBOX";
 
     public string SupportMailboxAddress { get; init; } = "support@vshelpdesk.local";
 
     public string SupportMailboxDisplayName { get; init; } = "VS Help Desk";
-
-    /// <summary>
-    /// When true, process-incoming job sends a one-line SMTP probe to Mailpit for connectivity proof.
-    /// </summary>
-    public bool SendSmtpProbeOnProcessJob { get; init; } = true;
 }

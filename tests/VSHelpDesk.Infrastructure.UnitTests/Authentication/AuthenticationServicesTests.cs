@@ -3,6 +3,8 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using VSHelpDesk.Domain.Entities;
@@ -120,10 +122,19 @@ public sealed class AuthenticationServicesTests
                 ["Auth:Audience"] = "VSHelpDesk.Client",
                 ["Auth:SigningKey"] = "too-short",
                 ["Auth:ExpirationMinutes"] = "480",
-                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=metadata_test;Username=test_user"
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=metadata_test;Username=test_user",
+                ["Email:ReceiverMode"] = "Fake",
+                ["Email:SmtpHost"] = "localhost",
+                ["Email:SmtpPort"] = "1025",
+                ["Email:SmtpSecurityMode"] = "None",
+                ["Email:SupportMailboxAddress"] = "support@vshelpdesk.local"
             })
             .Build();
         var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FixedHostEnvironment
+        {
+            EnvironmentName = Environments.Development
+        });
         services.AddInfrastructure(configuration);
         using var serviceProvider = services.BuildServiceProvider();
 
@@ -137,4 +148,13 @@ public sealed class AuthenticationServicesTests
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
+
+    private sealed class FixedHostEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+        public string ApplicationName { get; set; } = "tests";
+        public string ContentRootPath { get; set; } = Path.GetTempPath();
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
 }
+

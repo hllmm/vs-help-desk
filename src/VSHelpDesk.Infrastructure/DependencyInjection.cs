@@ -55,7 +55,7 @@ public static class DependencyInjection
         services.AddScoped<IEmailReceiver>(serviceProvider =>
         {
             var options = serviceProvider.GetRequiredService<IOptions<EmailOptions>>().Value;
-            var mode = (options.ReceiverMode ?? "Fake").Trim();
+            var mode = (options.ReceiverMode ?? "Imap").Trim();
             if (mode.Equals("Imap", StringComparison.OrdinalIgnoreCase))
             {
                 return serviceProvider.GetRequiredService<NotConfiguredImapEmailReceiver>();

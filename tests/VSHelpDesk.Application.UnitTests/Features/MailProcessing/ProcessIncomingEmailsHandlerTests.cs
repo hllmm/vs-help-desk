@@ -319,7 +319,6 @@ public sealed class ProcessIncomingEmailsHandlerTests
     private sealed class FixedSettings : IEmailBoundarySettings
     {
         public string ReceiverMode => "Fake";
-        public bool SendSmtpProbeOnProcessJob => false;
         public string SupportMailboxAddress => "support@vshelpdesk.local";
         public string SupportMailboxDisplayName => "VS Help Desk";
     }
