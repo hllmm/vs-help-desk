@@ -1,6 +1,7 @@
 import { useMemo, type ReactElement } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { TicketReplyForm } from '../features/ticket-details/TicketReplyForm'
+import { TicketResolutionPanel } from '../features/ticket-details/TicketResolutionPanel'
 import { TicketTimeline } from '../features/ticket-details/TicketTimeline'
 import {
   formatTicketDetailDate,
@@ -43,6 +44,7 @@ export function TicketDetailPage(): ReactElement {
     isRefreshing,
     error,
     refresh,
+    applyResolvedTicket,
   } = useTicketDetails(ticketId)
   const {
     activeAttachmentId,
@@ -182,7 +184,15 @@ export function TicketDetailPage(): ReactElement {
           </div>
 
           <aside className="ticket-detail__reply-slot">
-            <TicketReplyForm ticketId={detail.id} onRefresh={refresh} />
+            <TicketResolutionPanel
+              ticketId={detail.id}
+              status={detail.status}
+              onApplyResolved={applyResolvedTicket}
+              onRefresh={refresh}
+            />
+            {detail.status !== 'Resolved' ? (
+              <TicketReplyForm ticketId={detail.id} onRefresh={refresh} />
+            ) : null}
           </aside>
         </div>
       ) : null}

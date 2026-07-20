@@ -3,22 +3,26 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import type {
+  ResolveTicketResult,
   SupportReplyResult,
   TicketDetails,
   TicketListItem,
 } from '../api/types'
 import { setSession } from '../auth/tokenStorage'
+import { RESOLUTION_COPY } from '../features/ticket-details/useResolveTicket'
 import { REPLY_OUTCOME_MESSAGES } from '../features/ticket-details/useTicketReply'
 
 const fetchTicketDetails = vi.hoisted(() => vi.fn())
 const fetchTickets = vi.hoisted(() => vi.fn())
 const replyToTicket = vi.hoisted(() => vi.fn())
+const resolveTicket = vi.hoisted(() => vi.fn())
 const downloadAttachment = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/ticketsApi', () => ({
   fetchTicketDetails,
   fetchTickets,
   replyToTicket,
+  resolveTicket,
 }))
 
 vi.mock('../api/attachmentsApi', () => ({
@@ -134,11 +138,28 @@ function sampleReply(
   }
 }
 
+function sampleResolve(
+  overrides: Partial<ResolveTicketResult> = {},
+): ResolveTicketResult {
+  return {
+    ticketId: 'ticket-1',
+    ticketNumber: 'VS-000042',
+    status: 'Resolved',
+    resolvedAt: '2026-07-20T12:00:00.000Z',
+    updatedAt: '2026-07-20T12:00:00.000Z',
+    lastActivityAt: '2026-07-20T12:00:00.000Z',
+    closedByUserId: 'user-1',
+    changed: true,
+    ...overrides,
+  }
+}
+
 describe('TicketDetailPage', () => {
   beforeEach(() => {
     fetchTicketDetails.mockReset()
     fetchTickets.mockReset()
     replyToTicket.mockReset()
+    resolveTicket.mockReset()
     downloadAttachment.mockReset()
     sessionStorage.clear()
     window.history.replaceState({}, '', '/')
@@ -604,6 +625,151 @@ describe('TicketDetailPage', () => {
     pending.resolve(sampleReply())
     fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
     await screen.findByText(REPLY_OUTCOME_MESSAGES.delivered)
+  })
+
+  it('shows resolution panel and reply composer for every open status', async () => {
+    for (const status of ['New', 'WaitingCustomerReply', 'CustomerReplied']) {
+      fetchTicketDetails.mockReset()
+      fetchTicketDetails.mockResolvedValueOnce(sampleDetail({ status }))
+      const { unmount } = renderDetail()
+
+      expect(
+        await screen.findByRole('button', { name: RESOLUTION_COPY.trigger }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: 'Müşteriye yanıt ver' }),
+      ).toBeInTheDocument()
+      expect(screen.getByLabelText('Yanıtınız')).toBeInTheDocument()
+      expect(
+        screen.queryByText(RESOLUTION_COPY.closureNote),
+      ).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
+  it('shows closure note and hides reply composer for Resolved', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(
+      sampleDetail({
+        status: 'Resolved',
+        resolvedAt: '2026-07-20T12:00:00.000Z',
+        closedByUserId: 'user-1',
+      }),
+    )
+    renderDetail()
+
+    expect(await screen.findByText(RESOLUTION_COPY.closureNote)).toBeInTheDocument()
+    expect(screen.getByText('Çözüldü')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: RESOLUTION_COPY.trigger }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Müşteriye yanıt ver' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Yanıtınız')).not.toBeInTheDocument()
+  })
+
+  it('applies HTTP 200 closure before a failed refresh settles', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail({ status: 'New' }))
+    renderDetail()
+    await screen.findByRole('button', { name: RESOLUTION_COPY.trigger })
+
+    resolveTicket.mockResolvedValueOnce(sampleResolve({ changed: true }))
+    fetchTicketDetails.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    const user = userEvent.setup()
+    await user.click(
+      screen.getByRole('button', { name: RESOLUTION_COPY.trigger }),
+    )
+    await user.click(
+      screen.getByRole('button', { name: RESOLUTION_COPY.confirm }),
+    )
+
+    expect(await screen.findByText(RESOLUTION_COPY.resolved)).toBeInTheDocument()
+    expect(screen.getByText(RESOLUTION_COPY.closureNote)).toBeInTheDocument()
+    expect(screen.getByText('Çözüldü')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: RESOLUTION_COPY.trigger }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Müşteriye yanıt ver' }),
+    ).not.toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Destek hizmetine ulaşılamadı. Bağlantınızı kontrol edip yeniden deneyin.',
+        ),
+      ).toBeInTheDocument()
+    })
+    expect(screen.getByText(RESOLUTION_COPY.resolved)).toBeInTheDocument()
+    expect(screen.getByText('Merhaba, şifremi unuttum.')).toBeInTheDocument()
+    expect(resolveTicket).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores composer and resolve action when refreshed detail is CustomerReplied', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(
+      sampleDetail({
+        status: 'Resolved',
+        resolvedAt: '2026-07-20T12:00:00.000Z',
+        closedByUserId: 'user-1',
+      }),
+    )
+    renderDetail()
+    await screen.findByText(RESOLUTION_COPY.closureNote)
+
+    const reopened = sampleDetail({
+      status: 'CustomerReplied',
+      resolvedAt: null,
+      closedByUserId: null,
+      messages: [
+        ...sampleDetail().messages,
+        {
+          id: 'msg-3',
+          senderType: 'Customer',
+          userId: null,
+          content: 'Tekrar yazıyorum.',
+          isHtml: false,
+          createdAt: '2026-07-20T13:00:00.000Z',
+        },
+      ],
+    })
+    fetchTicketDetails.mockResolvedValueOnce(reopened)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Yenile' }))
+
+    expect(
+      await screen.findByRole('button', { name: RESOLUTION_COPY.trigger }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Müşteriye yanıt ver' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(RESOLUTION_COPY.closureNote)).not.toBeInTheDocument()
+    expect(screen.getByText('Müşteri Yanıtladı')).toBeInTheDocument()
+    expect(screen.getByText('Tekrar yazıyorum.')).toBeInTheDocument()
+  })
+
+  it('keeps timeline and attachment actions available while resolved', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(
+      sampleDetail({
+        status: 'Resolved',
+        resolvedAt: '2026-07-20T12:00:00.000Z',
+        closedByUserId: 'user-1',
+      }),
+    )
+    renderDetail()
+
+    expect(await screen.findByText(RESOLUTION_COPY.closureNote)).toBeInTheDocument()
+    expect(
+      screen.getByRole('list', { name: 'Mesaj geçmişi' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Merhaba, şifremi unuttum.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /ekran\.png/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Yenile' })).toBeEnabled()
+    expect(
+      screen.getByRole('link', { name: 'Destek taleplerine dön' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Çıkış yap' })).toBeEnabled()
   })
 })
 

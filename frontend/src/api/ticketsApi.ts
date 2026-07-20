@@ -1,5 +1,6 @@
 import { apiRequest } from './client'
 import type {
+  ResolveTicketResult,
   SupportReplyResult,
   TicketDetails,
   TicketListItem,
@@ -43,5 +44,15 @@ export function replyToTicket(
       body: { content: request.content },
       signal: options.signal,
     },
+  )
+}
+
+export function resolveTicket(
+  ticketId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<ResolveTicketResult> {
+  return apiRequest<ResolveTicketResult>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/resolve`,
+    { method: 'POST', signal: options.signal },
   )
 }

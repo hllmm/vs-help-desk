@@ -165,7 +165,115 @@
 }
 
 .ticket-detail__reply-slot {
+  display: grid;
+  gap: 1rem;
   min-block-size: 1px;
+  min-inline-size: 0;
+}
+
+.ticket-resolution {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.1rem 1.15rem;
+  background: var(--color-paper);
+  border: 1px solid var(--color-line);
+  border-radius: calc(var(--radius-control) + 0.1rem);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.ticket-resolution__heading {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.ticket-resolution__trigger {
+  justify-self: start;
+  min-inline-size: min(100%, 14rem);
+}
+
+.ticket-resolution__closure,
+.ticket-resolution__notice {
+  margin: 0;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  outline: none;
+}
+
+.ticket-resolution__notice:focus-visible {
+  outline: 3px solid var(--color-petrol);
+  outline-offset: 2px;
+}
+
+.ticket-resolution__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--color-night) 42%, transparent);
+}
+
+.ticket-resolution__dialog {
+  display: grid;
+  gap: 0.85rem;
+  inline-size: min(32rem, calc(100vw - 2rem));
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  padding: 1.15rem 1.2rem;
+  background: var(--color-paper);
+  border: 1px solid var(--color-line);
+  border-radius: calc(var(--radius-control) + 0.1rem);
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--color-night) 18%, transparent);
+}
+
+.ticket-resolution__dialog-title {
+  margin: 0;
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+}
+
+.ticket-resolution__dialog-body {
+  margin: 0;
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ticket-resolution__dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  min-inline-size: 0;
+}
+
+.ticket-resolution__dialog-cancel,
+.ticket-resolution__dialog-confirm {
+  min-inline-size: min(100%, 9rem);
+  min-block-size: var(--control-min-height);
+}
+
+@media (max-width: 22.5rem) {
+  .ticket-resolution__dialog-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ticket-resolution__dialog-cancel,
+  .ticket-resolution__dialog-confirm {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-resolution__overlay,
+  .ticket-resolution__dialog {
+    transition: none;
+  }
 }
 
 .ticket-reply {

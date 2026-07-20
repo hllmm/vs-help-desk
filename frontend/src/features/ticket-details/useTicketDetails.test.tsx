@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../api/client'
-import type { TicketDetails } from '../../api/types'
+import type { ResolveTicketResult, TicketDetails } from '../../api/types'
 import { useTicketDetails } from './useTicketDetails'
 
 const fetchTicketDetails = vi.hoisted(() => vi.fn())
@@ -333,5 +333,212 @@ describe('useTicketDetails', () => {
       expect(result.current.error).toEqual({ kind: 'not-found' })
     })
     expect(fetchTicketDetails).not.toHaveBeenCalled()
+  })
+
+  function sampleResolveResult(
+    overrides: Partial<ResolveTicketResult> = {},
+  ): ResolveTicketResult {
+    return {
+      ticketId: 'ticket-1',
+      ticketNumber: 'VS-000001',
+      status: 'Resolved',
+      resolvedAt: '2026-07-20T12:00:00.000Z',
+      updatedAt: '2026-07-20T12:05:00.000Z',
+      lastActivityAt: '2026-07-20T12:05:00.000Z',
+      closedByUserId: 'user-closer',
+      changed: true,
+      ...overrides,
+    }
+  }
+
+  it('applyResolvedTicket patches matching detail fields and clears waitingCustomerSince', async () => {
+    fetchTicketDetails.mockResolvedValueOnce({
+      ...sampleDetail,
+      waitingCustomerSince: '2026-07-19T09:00:00.000Z',
+      assignedUserId: 'assignee-1',
+      messages: [
+        {
+          id: 'msg-1',
+          senderType: 'Customer',
+          userId: null,
+          content: 'Merhaba',
+          isHtml: false,
+          createdAt: '2026-07-20T09:05:00.000Z',
+        },
+      ],
+      attachments: [
+        {
+          id: 'att-1',
+          ticketMessageId: 'msg-1',
+          fileName: 'ekran.png',
+          contentType: 'image/png',
+          fileSize: 10,
+          createdAt: '2026-07-20T09:05:01.000Z',
+        },
+      ],
+    })
+
+    const { result } = renderHook(() => useTicketDetails('ticket-1'))
+    await waitFor(() => {
+      expect(result.current.detail).not.toBeNull()
+    })
+
+    const resolveResult = sampleResolveResult()
+    act(() => {
+      result.current.applyResolvedTicket(resolveResult)
+    })
+
+    expect(result.current.detail).toMatchObject({
+      id: 'ticket-1',
+      subject: 'İlk talep',
+      customerName: 'Ayşe',
+      customerEmail: 'ayse@example.com',
+      assignedUserId: 'assignee-1',
+      createdAt: sampleDetail.createdAt,
+      status: 'Resolved',
+      resolvedAt: resolveResult.resolvedAt,
+      updatedAt: resolveResult.updatedAt,
+      lastActivityAt: resolveResult.lastActivityAt,
+      closedByUserId: resolveResult.closedByUserId,
+      waitingCustomerSince: null,
+    })
+    expect(result.current.detail?.messages).toHaveLength(1)
+    expect(result.current.detail?.attachments).toHaveLength(1)
+    expect(result.current.detail?.messages[0]?.content).toBe('Merhaba')
+  })
+
+  it('applyResolvedTicket ignores mismatched ticket ids', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail)
+    const { result } = renderHook(() => useTicketDetails('ticket-1'))
+    await waitFor(() => {
+      expect(result.current.detail).toEqual(sampleDetail)
+    })
+
+    act(() => {
+      result.current.applyResolvedTicket(
+        sampleResolveResult({ ticketId: 'other-ticket' }),
+      )
+    })
+
+    expect(result.current.detail).toEqual(sampleDetail)
+  })
+
+  it('cannot resurrect an old route after the route id changes', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail)
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string | undefined }) => useTicketDetails(id),
+      { initialProps: { id: 'ticket-1' } },
+    )
+
+    await waitFor(() => {
+      expect(result.current.detail).toEqual(sampleDetail)
+    })
+
+    const nextDetail: TicketDetails = {
+      ...sampleDetail,
+      id: 'ticket-2',
+      ticketNumber: 'VS-000002',
+      subject: 'İkinci talep',
+    }
+    fetchTicketDetails.mockResolvedValueOnce(nextDetail)
+    rerender({ id: 'ticket-2' })
+
+    await waitFor(() => {
+      expect(result.current.detail).toEqual(nextDetail)
+    })
+
+    act(() => {
+      result.current.applyResolvedTicket(
+        sampleResolveResult({ ticketId: 'ticket-1' }),
+      )
+    })
+
+    expect(result.current.detail).toEqual(nextDetail)
+    expect(result.current.detail?.status).toBe('New')
+  })
+
+  it('coexists with an active refresh whose later response replaces the patch', async () => {
+    fetchTicketDetails.mockResolvedValueOnce({
+      ...sampleDetail,
+      waitingCustomerSince: '2026-07-19T09:00:00.000Z',
+    })
+    const { result } = renderHook(() => useTicketDetails('ticket-1'))
+    await waitFor(() => {
+      expect(result.current.detail).not.toBeNull()
+    })
+
+    const refreshPending = deferred<TicketDetails>()
+    fetchTicketDetails.mockReturnValueOnce(refreshPending.promise)
+
+    let refreshPromise: Promise<void>
+    act(() => {
+      refreshPromise = result.current.refresh()
+    })
+
+    await waitFor(() => {
+      expect(result.current.isRefreshing).toBe(true)
+    })
+
+    act(() => {
+      result.current.applyResolvedTicket(sampleResolveResult())
+    })
+
+    expect(result.current.detail?.status).toBe('Resolved')
+    expect(result.current.detail?.waitingCustomerSince).toBeNull()
+
+    const authoritative: TicketDetails = {
+      ...sampleDetail,
+      status: 'CustomerReplied',
+      subject: 'Yetkili yenileme',
+      waitingCustomerSince: null,
+      resolvedAt: null,
+      closedByUserId: null,
+    }
+
+    await act(async () => {
+      refreshPending.resolve(authoritative)
+      await refreshPromise!
+    })
+
+    expect(result.current.detail).toEqual(authoritative)
+  })
+
+  it('preserves the server-confirmed patch when a later refresh fails', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail)
+    const { result } = renderHook(() => useTicketDetails('ticket-1'))
+    await waitFor(() => {
+      expect(result.current.detail).toEqual(sampleDetail)
+    })
+
+    const resolveResult = sampleResolveResult()
+    act(() => {
+      result.current.applyResolvedTicket(resolveResult)
+    })
+    expect(result.current.detail?.status).toBe('Resolved')
+
+    fetchTicketDetails.mockRejectedValueOnce(new TypeError('offline'))
+    await act(async () => {
+      await result.current.refresh()
+    })
+
+    await waitFor(() => {
+      expect(result.current.error).toEqual({ kind: 'network' })
+    })
+    expect(result.current.detail?.status).toBe('Resolved')
+    expect(result.current.detail?.resolvedAt).toBe(resolveResult.resolvedAt)
+    expect(result.current.detail?.closedByUserId).toBe(
+      resolveResult.closedByUserId,
+    )
+  })
+
+  it('does not invent a patch when no resolve result is supplied', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail)
+    const { result } = renderHook(() => useTicketDetails('ticket-1'))
+    await waitFor(() => {
+      expect(result.current.detail).toEqual(sampleDetail)
+    })
+
+    // 409 / network outcomes supply no result to applyResolvedTicket.
+    expect(result.current.detail).toEqual(sampleDetail)
   })
 })

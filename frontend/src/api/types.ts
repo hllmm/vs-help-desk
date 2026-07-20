@@ -68,3 +68,14 @@ export type SupportReplyResult = {
   ticketStateUpdated: boolean
   noticeCode: string | null
 }
+
+export type ResolveTicketResult = {
+  ticketId: string
+  ticketNumber: string
+  status: string
+  resolvedAt: string
+  updatedAt: string
+  lastActivityAt: string
+  closedByUserId: string | null
+  changed: boolean
+}
