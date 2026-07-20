@@ -486,3 +486,5 @@ $RECYCLE.BIN/
 
 # Git worktrees (local isolation)
 .worktrees/
+.rehearsal-secrets.env
+docker-compose.prod.rehearsal.yml

@@ -6,8 +6,9 @@ COPY src/VSHelpDesk.Domain/VSHelpDesk.Domain.csproj src/VSHelpDesk.Domain/
 COPY src/VSHelpDesk.Application/VSHelpDesk.Application.csproj src/VSHelpDesk.Application/
 COPY src/VSHelpDesk.Infrastructure/VSHelpDesk.Infrastructure.csproj src/VSHelpDesk.Infrastructure/
 COPY src/VSHelpDesk.WebAPI/VSHelpDesk.WebAPI.csproj src/VSHelpDesk.WebAPI/
-RUN dotnet restore src/VSHelpDesk.WebAPI/VSHelpDesk.WebAPI.csproj
 COPY src/ src/
+# Restore after full source copy so assets match publish (avoids NETSDK1064 in layered builds).
+RUN dotnet restore src/VSHelpDesk.WebAPI/VSHelpDesk.WebAPI.csproj
 RUN dotnet publish src/VSHelpDesk.WebAPI/VSHelpDesk.WebAPI.csproj \
     -c Release \
     -o /app/publish \
