@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace VSHelpDesk.WebAPI.Controllers;
@@ -6,6 +7,7 @@ namespace VSHelpDesk.WebAPI.Controllers;
 /// Application parameters (UC-010, BR-016). Optional / bonus in internship plan.
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/parameters")]
 public sealed class ParametersController : ControllerBase
 {

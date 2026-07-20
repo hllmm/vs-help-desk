@@ -5,6 +5,13 @@ namespace VSHelpDesk.Infrastructure.Authentication;
 
 public sealed class AuthOptionsValidator : IValidateOptions<AuthOptions>
 {
+    public static readonly string[] ForbiddenSigningKeyPlaceholders =
+    [
+        "CHANGE_ME_DEV_ONLY_MIN_32_CHARS_LONG!!",
+        "CHANGE_ME",
+        "changeme"
+    ];
+
     public ValidateOptionsResult Validate(string? name, AuthOptions options)
     {
         var failures = GetFailures(options);
@@ -36,9 +43,20 @@ public sealed class AuthOptionsValidator : IValidateOptions<AuthOptions>
             failures.Add("The Auth:Audience configuration value is required.");
         }
 
-        if (Encoding.UTF8.GetByteCount(options.SigningKey) < 32)
+        if (string.IsNullOrWhiteSpace(options.SigningKey))
+        {
+            failures.Add(
+                "The Auth:SigningKey configuration value is required (set via user-secrets or environment variables).");
+        }
+        else if (Encoding.UTF8.GetByteCount(options.SigningKey) < 32)
         {
             failures.Add("The Auth:SigningKey configuration value must contain at least 32 UTF-8 bytes.");
+        }
+        else if (ForbiddenSigningKeyPlaceholders.Any(placeholder =>
+                     options.SigningKey.Contains(placeholder, StringComparison.OrdinalIgnoreCase)))
+        {
+            failures.Add(
+                "The Auth:SigningKey configuration value must not use a committed placeholder; set a private key via user-secrets or environment.");
         }
 
         if (options.ExpirationMinutes <= 0)

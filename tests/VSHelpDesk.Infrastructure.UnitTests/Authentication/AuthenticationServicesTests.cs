@@ -94,6 +94,23 @@ public sealed class AuthenticationServicesTests
     }
 
     [Fact]
+    public void JwtTokenService_CommittedPlaceholderSigningKey_ThrowsClearConfigurationError()
+    {
+        var options = new AuthOptions
+        {
+            Issuer = "VSHelpDesk",
+            Audience = "VSHelpDesk.Client",
+            SigningKey = "CHANGE_ME_DEV_ONLY_MIN_32_CHARS_LONG!!",
+            ExpirationMinutes = 480
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => new JwtTokenService(Options.Create(options), new FixedTimeProvider(TokenIssuedAt)));
+
+        Assert.Contains("placeholder", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void AddInfrastructure_InvalidAuthConfiguration_FailsStartupValidation()
     {
         var configuration = new ConfigurationBuilder()

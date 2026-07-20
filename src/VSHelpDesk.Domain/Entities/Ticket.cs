@@ -1,4 +1,5 @@
 using VSHelpDesk.Domain.Enums;
+using VSHelpDesk.Domain.Exceptions;
 
 namespace VSHelpDesk.Domain.Entities;
 
@@ -76,6 +77,11 @@ public sealed class Ticket
     /// <summary>BR-006 — support replied; waiting on customer.</summary>
     public void MarkAsWaitingCustomerReply(DateTime now)
     {
+        EnsureCanTransitionTo(
+            TicketStatus.WaitingCustomerReply,
+            TicketStatus.New,
+            TicketStatus.CustomerReplied);
+
         Status = TicketStatus.WaitingCustomerReply;
         WaitingCustomerSince = now;
         UpdatedAt = now;
@@ -85,6 +91,11 @@ public sealed class Ticket
     /// <summary>BR-007 / BR-010 — customer replied (also reopens from Resolved).</summary>
     public void MarkAsCustomerReplied(DateTime now)
     {
+        EnsureCanTransitionTo(
+            TicketStatus.CustomerReplied,
+            TicketStatus.WaitingCustomerReply,
+            TicketStatus.Resolved);
+
         Status = TicketStatus.CustomerReplied;
         WaitingCustomerSince = null;
         ResolvedAt = null;
@@ -96,6 +107,12 @@ public sealed class Ticket
     /// <summary>BR-008 / BR-009 — manual or automatic resolution.</summary>
     public void Resolve(DateTime now, Guid? closedByUserId = null)
     {
+        EnsureCanTransitionTo(
+            TicketStatus.Resolved,
+            TicketStatus.New,
+            TicketStatus.WaitingCustomerReply,
+            TicketStatus.CustomerReplied);
+
         Status = TicketStatus.Resolved;
         ResolvedAt = now;
         ClosedByUserId = closedByUserId;
@@ -107,7 +124,27 @@ public sealed class Ticket
     /// <summary>BR-011 — at most one assignee at a time. Not conversation activity (BR-019).</summary>
     public void Assign(Guid userId, DateTime now)
     {
+        if (userId == Guid.Empty)
+        {
+            throw new DomainException("Assignee user id is required.");
+        }
+
+        if (Status == TicketStatus.Resolved)
+        {
+            throw new DomainException(
+                $"Cannot assign a ticket in status '{Status}'.");
+        }
+
         AssignedUserId = userId;
         UpdatedAt = now;
+    }
+
+    private void EnsureCanTransitionTo(TicketStatus target, params TicketStatus[] allowedFrom)
+    {
+        if (Array.IndexOf(allowedFrom, Status) < 0)
+        {
+            throw new DomainException(
+                $"Cannot transition ticket from '{Status}' to '{target}'.");
+        }
     }
 }
