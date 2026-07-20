@@ -50,12 +50,11 @@ public sealed class AcknowledgementDispatcher(
             return new AcknowledgementAttemptResult(Attempted: false, Sent: false);
         }
 
+        // Catch only around SMTP send. Database/cancellation failures must propagate
+        // and must not be recorded as acknowledgement delivery failures.
         try
         {
             await sender.SendAsync(BuildAcknowledgement(ticket), cancellationToken);
-            processed.RecordAcknowledgementSent(now);
-            await db.SaveChangesAsync(cancellationToken);
-            return new AcknowledgementAttemptResult(Attempted: true, Sent: true);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -68,6 +67,10 @@ public sealed class AcknowledgementDispatcher(
             await db.SaveChangesAsync(cancellationToken);
             return new AcknowledgementAttemptResult(Attempted: true, Sent: false);
         }
+
+        processed.RecordAcknowledgementSent(now);
+        await db.SaveChangesAsync(cancellationToken);
+        return new AcknowledgementAttemptResult(Attempted: true, Sent: true);
     }
 
     public async Task<AcknowledgementDispatchSummary> RetryDueAsync(

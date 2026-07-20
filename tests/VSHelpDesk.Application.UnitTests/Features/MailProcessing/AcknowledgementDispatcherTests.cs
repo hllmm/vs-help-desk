@@ -118,6 +118,33 @@ public sealed class AcknowledgementDispatcherTests
         Assert.Equal("Ada", sender.Sent[0].ToDisplayName);
     }
 
+    [Fact]
+    public async Task Attempt_SaveChangesFailureAfterSend_PropagatesAndDoesNotMarkSmtpFailure()
+    {
+        var ticket = Ticket.Create("VS-000304", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
+        var processed = ProcessedEmailMessage.ForCreatedTicket(
+            "<ack-db-fail@test>",
+            "<ack-db-fail@test>",
+            FixedNow.UtcDateTime,
+            ticket.Id);
+        var db = new FakeDb(ticket, processed)
+        {
+            ThrowOnSave = true,
+            SaveExceptionMessage = "database write failed"
+        };
+        var sender = new RecordingSender();
+        var dispatcher = CreateDispatcher(db, sender);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => dispatcher.AttemptAsync(processed.Id, CancellationToken.None));
+
+        Assert.Equal("database write failed", ex.Message);
+        Assert.Single(sender.Sent);
+        // Domain mutation may have run in-memory; must not have been treated as SMTP failure.
+        Assert.NotEqual(AcknowledgementStatus.Failed, processed.AcknowledgementStatus);
+        Assert.NotEqual("SMTP acknowledgement failed.", processed.AcknowledgementLastError);
+    }
+
     private static AcknowledgementDispatcher CreateDispatcher(FakeDb db, IEmailSender sender) =>
         new(db, sender, new FixedTimeProvider(FixedNow), NullLogger<AcknowledgementDispatcher>.Instance);
 
@@ -156,6 +183,9 @@ public sealed class AcknowledgementDispatcherTests
             processed = [processedRow];
         }
 
+        public bool ThrowOnSave { get; init; }
+        public string SaveExceptionMessage { get; init; } = "database write failed";
+
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => tickets.AsQueryable();
         public IQueryable<TicketMessage> TicketMessages => Array.Empty<TicketMessage>().AsQueryable();
@@ -167,6 +197,11 @@ public sealed class AcknowledgementDispatcherTests
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
+            if (ThrowOnSave)
+            {
+                throw new InvalidOperationException(SaveExceptionMessage);
+            }
+
             pending.Clear();
             return Task.FromResult(1);
         }
