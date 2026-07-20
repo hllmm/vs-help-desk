@@ -26,7 +26,7 @@ public sealed class ProcessIncomingEmailsHandler(
 
         await using var lease =
             await processIncomingEmailsGate.TryAcquireAsync(cancellationToken)
-            ?? throw new JobAlreadyRunningException();
+            ?? throw new JobAlreadyRunningException("process-incoming-emails");
 
         return await HandleCoreAsync(cancellationToken);
     }

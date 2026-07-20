@@ -3,6 +3,11 @@ using VSHelpDesk.Infrastructure.Persistence;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Persistence;
 
+/// <summary>
+/// Serializes with other advisory-lock suites so concurrent pg_try_advisory_lock tests
+/// cannot steal each other's session locks on the shared local database.
+/// </summary>
+[Collection("PostgresAdvisoryLocks")]
 public sealed class PostgresProcessIncomingEmailsGateTests
 {
     [PostgresFact]

@@ -8,6 +8,7 @@ using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
+using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.Infrastructure.Email;
 using VSHelpDesk.Infrastructure.Persistence;
@@ -80,6 +81,7 @@ public static class DependencyInjection
 
         // Singleton factory: each call opens/disposes an async scope; no scoped ctor deps.
         services.AddSingleton<IInboundEmailItemProcessorFactory, ScopedInboundEmailItemProcessorFactory>();
+        services.AddSingleton<IInactiveTicketResolverFactory, ScopedInactiveTicketResolverFactory>();
 
         // Dedicated per-lease Npgsql connections; not the EF pool.
         services.AddSingleton<IProcessIncomingEmailsGate>(serviceProvider =>
@@ -87,6 +89,11 @@ public static class DependencyInjection
                 connectionString,
                 serviceProvider.GetRequiredService<
                     ILogger<PostgresProcessIncomingEmailsGate>>()));
+        services.AddSingleton<IResolveInactiveTicketsGate>(serviceProvider =>
+            new PostgresResolveInactiveTicketsGate(
+                connectionString,
+                serviceProvider.GetRequiredService<
+                    ILogger<PostgresResolveInactiveTicketsGate>>()));
 
         return services;
     }

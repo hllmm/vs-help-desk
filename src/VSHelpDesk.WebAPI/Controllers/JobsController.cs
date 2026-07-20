@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
+using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 using VSHelpDesk.WebAPI.Filters;
 
 namespace VSHelpDesk.WebAPI.Controllers;
@@ -13,7 +14,9 @@ namespace VSHelpDesk.WebAPI.Controllers;
 [Route("api/jobs")]
 [AllowAnonymous]
 [ServiceFilter(typeof(JobsApiKeyAuthorizationFilter))]
-public sealed class JobsController(ProcessIncomingEmailsHandler processIncomingEmailsHandler) : ControllerBase
+public sealed class JobsController(
+    ProcessIncomingEmailsHandler processIncomingEmailsHandler,
+    ResolveInactiveTicketsHandler resolveInactiveTicketsHandler) : ControllerBase
 {
     /// <summary>POST api/jobs/process-incoming-emails — UC-002 boundary (Day 8 fetch/probe; Day 9 ticket create).</summary>
     [HttpPost("process-incoming-emails")]
@@ -36,6 +39,12 @@ public sealed class JobsController(ProcessIncomingEmailsHandler processIncomingE
 
     /// <summary>POST api/jobs/resolve-inactive-tickets — UC-008 / BR-008</summary>
     [HttpPost("resolve-inactive-tickets")]
-    public IActionResult ResolveInactiveTickets()
-        => StatusCode(StatusCodes.Status501NotImplemented, new { message = "Hafta 4: ResolveInactiveTickets (UC-008)." });
+    public async Task<IActionResult> ResolveInactiveTickets(
+        CancellationToken cancellationToken)
+    {
+        var result = await resolveInactiveTicketsHandler.HandleAsync(
+            new ResolveInactiveTicketsCommand(),
+            cancellationToken);
+        return Ok(result);
+    }
 }

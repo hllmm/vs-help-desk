@@ -312,7 +312,9 @@ public sealed class ProcessIncomingEmailsHandlerTests
         var exception = await Assert.ThrowsAsync<JobAlreadyRunningException>(() =>
             handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None));
 
-        Assert.Equal("The incoming-email job is already running.", exception.Message);
+        Assert.Equal(
+            "The 'process-incoming-emails' job is already running.",
+            exception.Message);
     }
 
     [Fact]

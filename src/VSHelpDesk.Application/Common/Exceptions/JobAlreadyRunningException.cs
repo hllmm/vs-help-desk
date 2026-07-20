@@ -1,5 +1,5 @@
 namespace VSHelpDesk.Application.Common.Exceptions;
 
-public sealed class JobAlreadyRunningException()
+public sealed class JobAlreadyRunningException(string jobName)
     : ConflictApplicationException(
-        "The incoming-email job is already running.");
+        $"The '{jobName}' job is already running.");
