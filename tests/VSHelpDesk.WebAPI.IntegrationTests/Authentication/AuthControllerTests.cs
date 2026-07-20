@@ -129,6 +129,9 @@ public sealed class AuthControllerTests
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages { get; } =
             Array.Empty<ProcessedEmailMessage>().AsQueryable();
 
+        public IQueryable<ApplicationParameter> ApplicationParameters { get; } =
+            Array.Empty<ApplicationParameter>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
         }

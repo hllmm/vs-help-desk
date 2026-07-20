@@ -283,6 +283,9 @@ public sealed class CreateTicketHandlerTests
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
             ProcessedEmailMessagesList.AsQueryable();
 
+        public IQueryable<ApplicationParameter> ApplicationParameters =>
+            Array.Empty<ApplicationParameter>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
             pending.Add(entity!);

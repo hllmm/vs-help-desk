@@ -14,6 +14,8 @@ public interface IApplicationDbContext
 
     IQueryable<ProcessedEmailMessage> ProcessedEmailMessages { get; }
 
+    IQueryable<ApplicationParameter> ApplicationParameters { get; }
+
     void Add<TEntity>(TEntity entity) where TEntity : class;
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

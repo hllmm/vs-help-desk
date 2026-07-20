@@ -57,6 +57,9 @@ public sealed class GetTicketListHandlerTests
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
             Array.Empty<ProcessedEmailMessage>().AsQueryable();
 
+        public IQueryable<ApplicationParameter> ApplicationParameters =>
+            Array.Empty<ApplicationParameter>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
         }

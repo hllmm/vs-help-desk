@@ -18,6 +18,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<ProcessedEmailMessage> ProcessedEmailMessages => Set<ProcessedEmailMessage>();
 
+    public DbSet<ApplicationParameter> ApplicationParameters => Set<ApplicationParameter>();
+
     IQueryable<User> IApplicationDbContext.Users => Users;
 
     IQueryable<Ticket> IApplicationDbContext.Tickets => Tickets;
@@ -28,6 +30,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     IQueryable<ProcessedEmailMessage> IApplicationDbContext.ProcessedEmailMessages =>
         ProcessedEmailMessages;
+
+    IQueryable<ApplicationParameter> IApplicationDbContext.ApplicationParameters =>
+        ApplicationParameters;
 
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Add(entity);
 

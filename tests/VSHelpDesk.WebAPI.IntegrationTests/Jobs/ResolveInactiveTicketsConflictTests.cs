@@ -120,6 +120,9 @@ public sealed class ResolveInactiveTicketsConflictTests : IClassFixture<CustomWe
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
             inner.ProcessedEmailMessages;
 
+        public IQueryable<ApplicationParameter> ApplicationParameters =>
+            inner.ApplicationParameters;
+
         public void Add<TEntity>(TEntity entity) where TEntity : class =>
             ((IApplicationDbContext)inner).Add(entity);
 

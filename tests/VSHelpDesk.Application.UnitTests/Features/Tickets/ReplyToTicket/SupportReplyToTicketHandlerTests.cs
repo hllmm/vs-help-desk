@@ -396,6 +396,9 @@ public sealed class SupportReplyToTicketHandlerTests
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
             Array.Empty<ProcessedEmailMessage>().AsQueryable();
 
+        public IQueryable<ApplicationParameter> ApplicationParameters =>
+            Array.Empty<ApplicationParameter>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
