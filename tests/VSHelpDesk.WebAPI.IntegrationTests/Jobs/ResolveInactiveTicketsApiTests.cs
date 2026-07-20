@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using VSHelpDesk.Application.Features.Parameters;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
@@ -95,6 +96,7 @@ public sealed class ResolveInactiveTicketsApiTests : IClassFixture<CustomWebAppl
     public async Task ResolveInactive_ExactBoundary_ResolvesOnlyEligibleWaitingRows()
     {
         await using var factory = CreateFactoryWithFixedTime();
+        await EnsureDefaultInactiveDaysAsync(factory);
         var apiKey = GetJobsApiKey(factory);
         var token = Guid.NewGuid().ToString("N")[..8];
         var ticketIds = new List<Guid>();
@@ -255,6 +257,7 @@ public sealed class ResolveInactiveTicketsApiTests : IClassFixture<CustomWebAppl
     public async Task ResolveInactive_ZeroCandidates_ReturnsExactZeroSummary()
     {
         await using var factory = CreateFactoryWithFixedTime();
+        await EnsureDefaultInactiveDaysAsync(factory);
         var apiKey = GetJobsApiKey(factory);
         var token = Guid.NewGuid().ToString("N")[..8];
         var ticketIds = new List<Guid>();
@@ -315,6 +318,7 @@ public sealed class ResolveInactiveTicketsApiTests : IClassFixture<CustomWebAppl
     public async Task ResolveInactive_SetsNullCloserAndExactRunTimestamp()
     {
         await using var factory = CreateFactoryWithFixedTime();
+        await EnsureDefaultInactiveDaysAsync(factory);
         var apiKey = GetJobsApiKey(factory);
         var token = Guid.NewGuid().ToString("N")[..8];
         var ticketIds = new List<Guid>();
@@ -399,6 +403,30 @@ public sealed class ResolveInactiveTicketsApiTests : IClassFixture<CustomWebAppl
         Assert.Equal(
             DateTime.SpecifyKind(expected, DateTimeKind.Utc),
             DateTime.SpecifyKind(actual, DateTimeKind.Utc));
+    }
+
+    /// <summary>
+    /// Pins <c>AutoResolve.InactiveDays</c> to the catalog default so CutoffUtc (now-3d)
+    /// stays deterministic even if another suite mutated the shared DB row.
+    /// </summary>
+    private static async Task EnsureDefaultInactiveDaysAsync(WebApplicationFactory<Program> factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var definition = ApplicationParameterCatalog.All.Single(
+            d => d.Key == ApplicationParameterCatalog.AutoResolveInactiveDaysKey);
+        var entity = await db.ApplicationParameters
+            .SingleOrDefaultAsync(p => p.Key == definition.Key);
+        if (entity is null)
+        {
+            db.Add(new ApplicationParameter(definition.Key, definition.DefaultValue, definition.Description));
+        }
+        else if (entity.Value != definition.DefaultValue)
+        {
+            entity.UpdateValue(definition.DefaultValue, DateTime.UtcNow);
+        }
+
+        await db.SaveChangesAsync();
     }
 
     /// <summary>

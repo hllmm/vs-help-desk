@@ -10,6 +10,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Features.Parameters;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Domain.Tickets;
@@ -299,6 +300,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
         var receiver = new ControllableEmailReceiver();
         var sender = new RecordingEmailSender();
         await using var factory = CreateFactoryWithFixedTime(receiver, sender);
+        await EnsureDefaultInactiveDaysAsync(factory);
         var jobsApiKey = GetJobsApiKey(factory);
         await ParkDueAcknowledgementsAsync(factory);
 
@@ -809,6 +811,30 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
         {
             db.Entry(row).Property(nameof(row.AcknowledgementNextAttemptAt)).CurrentValue = parkUntil;
             db.Entry(row).Property(nameof(row.AcknowledgementNextAttemptAt)).IsModified = true;
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Pins <c>AutoResolve.InactiveDays</c> to catalog default so CutoffUtc (now-3d)
+    /// stays deterministic if another suite mutated the shared DB row.
+    /// </summary>
+    private static async Task EnsureDefaultInactiveDaysAsync(WebApplicationFactory<Program> factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var definition = ApplicationParameterCatalog.All.Single(
+            d => d.Key == ApplicationParameterCatalog.AutoResolveInactiveDaysKey);
+        var entity = await db.ApplicationParameters
+            .SingleOrDefaultAsync(p => p.Key == definition.Key);
+        if (entity is null)
+        {
+            db.Add(new ApplicationParameter(definition.Key, definition.DefaultValue, definition.Description));
+        }
+        else if (entity.Value != definition.DefaultValue)
+        {
+            entity.UpdateValue(definition.DefaultValue, DateTime.UtcNow);
         }
 
         await db.SaveChangesAsync();

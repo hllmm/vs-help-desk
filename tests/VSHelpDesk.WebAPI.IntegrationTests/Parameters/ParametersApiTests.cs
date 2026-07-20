@@ -76,29 +76,51 @@ public sealed class ParametersApiTests : IClassFixture<CustomWebApplicationFacto
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        // Use a distinct in-range value so the assertion is not a false positive against the default.
-        const string updatedValue = "7";
-        using var putResponse = await client.PutAsJsonAsync(
-            $"/api/parameters/{ApplicationParameterCatalog.AutoResolveInactiveDaysKey}",
-            new { value = updatedValue });
-
-        Assert.Equal(HttpStatusCode.OK, putResponse.StatusCode);
-        Assert.NotEqual(HttpStatusCode.NotImplemented, putResponse.StatusCode);
-
-        using var putDoc = JsonDocument.Parse(await putResponse.Content.ReadAsStringAsync());
-        Assert.Equal(
-            ApplicationParameterCatalog.AutoResolveInactiveDaysKey,
-            putDoc.RootElement.GetProperty("key").GetString());
-        Assert.Equal(updatedValue, putDoc.RootElement.GetProperty("value").GetString());
-
-        using var getResponse = await client.GetAsync("/api/parameters");
-        getResponse.EnsureSuccessStatusCode();
-        using var getDoc = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
-        var inactiveDays = getDoc.RootElement.EnumerateArray()
+        // Shared PostgreSQL: capture and restore so other suites keep default 3-day cutoff.
+        using var beforeResponse = await client.GetAsync("/api/parameters");
+        beforeResponse.EnsureSuccessStatusCode();
+        using var beforeDoc = JsonDocument.Parse(await beforeResponse.Content.ReadAsStringAsync());
+        var previousValue = beforeDoc.RootElement.EnumerateArray()
             .Single(element =>
                 element.GetProperty("key").GetString()
-                == ApplicationParameterCatalog.AutoResolveInactiveDaysKey);
-        Assert.Equal(updatedValue, inactiveDays.GetProperty("value").GetString());
+                == ApplicationParameterCatalog.AutoResolveInactiveDaysKey)
+            .GetProperty("value")
+            .GetString();
+        Assert.False(string.IsNullOrWhiteSpace(previousValue));
+
+        // Use a distinct in-range value so the assertion is not a false positive against the default.
+        const string updatedValue = "7";
+        try
+        {
+            using var putResponse = await client.PutAsJsonAsync(
+                $"/api/parameters/{ApplicationParameterCatalog.AutoResolveInactiveDaysKey}",
+                new { value = updatedValue });
+
+            Assert.Equal(HttpStatusCode.OK, putResponse.StatusCode);
+            Assert.NotEqual(HttpStatusCode.NotImplemented, putResponse.StatusCode);
+
+            using var putDoc = JsonDocument.Parse(await putResponse.Content.ReadAsStringAsync());
+            Assert.Equal(
+                ApplicationParameterCatalog.AutoResolveInactiveDaysKey,
+                putDoc.RootElement.GetProperty("key").GetString());
+            Assert.Equal(updatedValue, putDoc.RootElement.GetProperty("value").GetString());
+
+            using var getResponse = await client.GetAsync("/api/parameters");
+            getResponse.EnsureSuccessStatusCode();
+            using var getDoc = JsonDocument.Parse(await getResponse.Content.ReadAsStringAsync());
+            var inactiveDays = getDoc.RootElement.EnumerateArray()
+                .Single(element =>
+                    element.GetProperty("key").GetString()
+                    == ApplicationParameterCatalog.AutoResolveInactiveDaysKey);
+            Assert.Equal(updatedValue, inactiveDays.GetProperty("value").GetString());
+        }
+        finally
+        {
+            using var restoreResponse = await client.PutAsJsonAsync(
+                $"/api/parameters/{ApplicationParameterCatalog.AutoResolveInactiveDaysKey}",
+                new { value = previousValue });
+            restoreResponse.EnsureSuccessStatusCode();
+        }
     }
 
     [Theory]
