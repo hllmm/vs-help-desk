@@ -3,6 +3,7 @@ import { AuthProvider } from './auth/AuthContext'
 import { Layout } from './components/Layout'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { LoginPage } from './pages/LoginPage'
+import { ParametersPage } from './pages/ParametersPage'
 import { TicketDetailPage } from './pages/TicketDetailPage'
 import { TicketListPage } from './pages/TicketListPage'
 
@@ -26,6 +27,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <TicketDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/parameters"
+              element={
+                <ProtectedRoute>
+                  <ParametersPage />
                 </ProtectedRoute>
               }
             />

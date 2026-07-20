@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -10,11 +10,33 @@ export function Layout({ children }: { children: React.ReactNode }) {
         Ana içeriğe geç
       </a>
       <header className="app-header">
-        <div className="brand">
-          <Link to={isAuthenticated ? '/tickets' : '/login'}>
-            VS Help Desk
-          </Link>
-          <span className="brand-sub">Destek operasyonları</span>
+        <div className="header-brand-nav">
+          <div className="brand">
+            <Link to={isAuthenticated ? '/tickets' : '/login'}>
+              VS Help Desk
+            </Link>
+            <span className="brand-sub">Destek operasyonları</span>
+          </div>
+          {isAuthenticated ? (
+            <nav className="app-nav" aria-label="Ana menü">
+              <NavLink
+                to="/tickets"
+                className={({ isActive }) =>
+                  isActive ? 'app-nav__link app-nav__link--active' : 'app-nav__link'
+                }
+              >
+                Talepler
+              </NavLink>
+              <NavLink
+                to="/parameters"
+                className={({ isActive }) =>
+                  isActive ? 'app-nav__link app-nav__link--active' : 'app-nav__link'
+                }
+              >
+                Parametreler
+              </NavLink>
+            </nav>
+          ) : null}
         </div>
         {isAuthenticated && user ? (
           <div className="header-user">

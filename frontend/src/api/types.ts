@@ -79,3 +79,11 @@ export type ResolveTicketResult = {
   closedByUserId: string | null
   changed: boolean
 }
+
+/** Application parameter (UC-010 / BR-016). Mirrors GET/PUT /api/parameters. */
+export type Parameter = {
+  key: string
+  value: string
+  description: string
+  updatedAt: string
+}

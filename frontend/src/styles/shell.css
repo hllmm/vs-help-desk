@@ -36,6 +36,14 @@
   backdrop-filter: blur(10px);
 }
 
+.header-brand-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+}
+
 .brand {
   display: flex;
   flex-direction: column;
@@ -55,6 +63,35 @@
 .user-handle {
   color: var(--color-muted);
   font-size: 0.85rem;
+}
+
+.app-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.app-nav__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--control-min-height);
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-control);
+  color: var(--color-night);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.app-nav__link:hover {
+  background: color-mix(in srgb, var(--color-petrol) 10%, white);
+  color: var(--color-petrol);
+  text-decoration: none;
+}
+
+.app-nav__link--active {
+  background: var(--color-petrol-soft);
+  color: var(--color-petrol);
 }
 
 .header-user {
