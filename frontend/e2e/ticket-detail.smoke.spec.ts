@@ -50,9 +50,18 @@ type MutableTicketFixture = {
   detail: TicketDetails
   replyMode: ReplyMode
   lastReplyBody: unknown
+  /** Authorization header if any (cookie era: should stay null). */
   lastAttachmentAuth: string | null
   lastAttachmentUrl: string | null
 }
+
+const SEED_USER = {
+  userId: '11111111-1111-1111-1111-111111111111',
+  fullName: 'Ada Destek',
+  username: 'ada.destek',
+}
+
+const ME_API = `${ORIGIN}/api/auth/me`
 
 function cloneDetail(detail: TicketDetails): TicketDetails {
   return structuredClone(detail)
@@ -228,14 +237,15 @@ function attachTelemetry(page: Page) {
       allowUnauthorizedConsole?: boolean
       allowNotFoundConsole?: boolean
     }) {
-      let filteredConsole = consoleErrors
-      if (options?.allowUnauthorizedConsole) {
-        filteredConsole = filteredConsole.filter(
-          (text) =>
-            !/Failed to load resource:.*401/.test(text) &&
-            !/401 \(Unauthorized\)/.test(text),
-        )
-      }
+      // Default: filter expected unauthenticated /me (and other) 401 console noise.
+      let filteredConsole =
+        options?.allowUnauthorizedConsole === false
+          ? consoleErrors
+          : consoleErrors.filter(
+              (text) =>
+                !/Failed to load resource:.*401/.test(text) &&
+                !/401 \(Unauthorized\)/.test(text),
+            )
       if (options?.allowNotFoundConsole) {
         filteredConsole = filteredConsole.filter(
           (text) =>
@@ -296,19 +306,35 @@ async function activeMatches(page: Page, selector: string): Promise<boolean> {
   return page.locator(selector).evaluate((el) => el === document.activeElement)
 }
 
-async function seedAuthenticatedSession(page: Page) {
-  await page.goto('/login')
-  await page.evaluate(() => {
-    sessionStorage.setItem('vshd.accessToken', 'browser-test-token')
-    sessionStorage.setItem(
-      'vshd.user',
-      JSON.stringify({
-        userId: '11111111-1111-1111-1111-111111111111',
-        fullName: 'Ada Destek',
-        username: 'ada.destek',
-      }),
-    )
+async function mockMeUnauthorized(page: Page) {
+  await page.route(ME_API, async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Unauthorized' }),
+    })
   })
+}
+
+async function mockMeSuccess(page: Page) {
+  await page.route(ME_API, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(SEED_USER),
+    })
+  })
+}
+
+async function seedAuthenticatedSession(page: Page) {
+  // Last registered route wins — overrides install*Mocks unauthorized /me.
+  await mockMeSuccess(page)
+  await page.goto('/login')
+  await page.evaluate((user) => {
+    sessionStorage.removeItem('vshd.accessToken') // legacy Bearer key
+    sessionStorage.setItem('vshd.user', JSON.stringify(user))
+    document.cookie = 'vshd.csrf=browser-test-csrf; Path=/'
+  }, SEED_USER)
 }
 
 async function mockLoginSuccess(page: Page) {
@@ -316,12 +342,10 @@ async function mockLoginSuccess(page: Page) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        accessToken: 'browser-test-token',
-        userId: '11111111-1111-1111-1111-111111111111',
-        fullName: 'Ada Destek',
-        username: 'ada.destek',
-      }),
+      headers: {
+        'Set-Cookie': 'vshd.csrf=browser-test-csrf; Path=/',
+      },
+      body: JSON.stringify(SEED_USER),
     })
   })
 }
@@ -331,16 +355,16 @@ async function installTicketWorkspaceMocks(
   fixture: MutableTicketFixture,
   options?: { detailStatus?: number; unknownTicket404?: boolean },
 ) {
+  // Default unauthenticated bootstrap so loginThroughUi can show the form.
+  await mockMeUnauthorized(page)
   await page.route(LOGIN_API, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        accessToken: 'browser-test-token',
-        userId: '11111111-1111-1111-1111-111111111111',
-        fullName: 'Ada Destek',
-        username: 'ada.destek',
-      }),
+      headers: {
+        'Set-Cookie': 'vshd.csrf=browser-test-csrf; Path=/',
+      },
+      body: JSON.stringify(SEED_USER),
     })
   })
 
@@ -435,7 +459,8 @@ async function installTicketWorkspaceMocks(
     const request = route.request()
     fixture.lastAttachmentAuth = request.headers().authorization ?? null
     fixture.lastAttachmentUrl = request.url()
-    expect(fixture.lastAttachmentAuth).toMatch(/^Bearer\s+\S+/)
+    // Cookie-era SPA: no Authorization Bearer; no token query params.
+    expect(fixture.lastAttachmentAuth).toBeNull()
     expect(fixture.lastAttachmentUrl).not.toMatch(/[?&](access_token|token)=/i)
 
     const bytes = Buffer.from('fake-png-bytes-for-browser-download')
@@ -458,6 +483,8 @@ async function loginThroughUi(page: Page) {
   await expect(
     page.getByRole('heading', { name: 'Destek talepleri' }),
   ).toBeVisible()
+  // Full reloads re-run AuthProvider bootstrap — restore session via /me.
+  await mockMeSuccess(page)
 }
 
 async function openTicketFromList(page: Page) {
@@ -532,7 +559,7 @@ test('login list detail refresh timeline and browser back', async ({
   telemetry.assertClean()
 })
 
-test('authenticated attachment download uses bearer and suggested filename', async ({
+test('authenticated attachment download uses cookies and suggested filename', async ({
   page,
 }) => {
   const telemetry = attachTelemetry(page)
@@ -551,7 +578,7 @@ test('authenticated attachment download uses bearer and suggested filename', asy
 
   const download = await downloadPromise
   expect(download.suggestedFilename()).toBe(ATTACHMENT_FILE_NAME)
-  expect(fixture.lastAttachmentAuth).toBe('Bearer browser-test-token')
+  expect(fixture.lastAttachmentAuth).toBeNull()
   expect(fixture.lastAttachmentUrl).toBe(
     `${ORIGIN}/api/attachments/${ATTACHMENT_ID}`,
   )
@@ -645,18 +672,32 @@ test('protected detail 401 redirects to expired-session login notice', async ({
   const fixture = createFixture()
   await installTicketWorkspaceMocks(page, fixture, { detailStatus: 401 })
 
-  await page.goto('/login')
-  await page.evaluate(() => {
-    sessionStorage.setItem('vshd.accessToken', 'stale-token')
-    sessionStorage.setItem(
-      'vshd.user',
-      JSON.stringify({
-        userId: '11111111-1111-1111-1111-111111111111',
-        fullName: 'Ada Destek',
-        username: 'ada.destek',
-      }),
-    )
+  // First /me keeps seeded session while detail 401 fires; later /me is 401
+  // so login page does not re-bootstrap authenticated state.
+  let meCalls = 0
+  await page.route(ME_API, async (route) => {
+    meCalls += 1
+    if (meCalls === 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(SEED_USER),
+      })
+      return
+    }
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Unauthorized' }),
+    })
   })
+
+  await page.goto('/login')
+  await page.evaluate((user) => {
+    sessionStorage.removeItem('vshd.accessToken')
+    sessionStorage.setItem('vshd.user', JSON.stringify(user))
+  }, SEED_USER)
+  meCalls = 0
   await page.goto(`/tickets/${TICKET_ID}`)
 
   await expect(page.getByRole('status')).toHaveText(EXPIRY_NOTICE)

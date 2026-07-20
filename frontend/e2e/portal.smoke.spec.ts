@@ -21,6 +21,7 @@ const ticketFixtures = [
 ]
 
 const LOGIN_API = 'http://127.0.0.1:4173/api/auth/login'
+const ME_API = 'http://127.0.0.1:4173/api/auth/me'
 const TICKETS_API = 'http://127.0.0.1:4173/api/tickets'
 
 const EXPIRY_NOTICE =
@@ -61,13 +62,16 @@ function attachTelemetry(page: Page) {
     failedRequests,
     requestUrls,
     assertClean(options?: { allowUnauthorizedConsole?: boolean }) {
-      const filteredConsole = options?.allowUnauthorizedConsole
-        ? consoleErrors.filter(
-            (text) =>
-              !/Failed to load resource:.*401/.test(text) &&
-              !/401 \(Unauthorized\)/.test(text),
-          )
-        : consoleErrors
+      // Cookie-era bootstrap always probes GET /api/auth/me; 401 is expected when
+      // unauthenticated. keep allowUnauthorizedConsole for call-site clarity.
+      const filteredConsole =
+        options?.allowUnauthorizedConsole === false
+          ? consoleErrors
+          : consoleErrors.filter(
+              (text) =>
+                !/Failed to load resource:.*401/.test(text) &&
+                !/401 \(Unauthorized\)/.test(text),
+            )
       expect(filteredConsole, filteredConsole.join('\n')).toEqual([])
       expect(pageErrors, pageErrors.join('\n')).toEqual([])
       expect(failedRequests, failedRequests.join('\n')).toEqual([])
@@ -75,18 +79,42 @@ function attachTelemetry(page: Page) {
   }
 }
 
+const SEED_USER = {
+  userId: '11111111-1111-1111-1111-111111111111',
+  fullName: 'Ada Destek',
+  username: 'ada.destek',
+}
+
+const LOGOUT_API = 'http://127.0.0.1:4173/api/auth/logout'
+
+/** Unauthenticated bootstrap — avoids Vite preview proxy 502 when API is down. */
+async function mockMeUnauthorized(page: Page) {
+  await page.route(ME_API, async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Unauthorized' }),
+    })
+  })
+}
+
 async function mockLoginSuccess(page: Page) {
   await page.route(LOGIN_API, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        accessToken: 'browser-test-token',
-        userId: '11111111-1111-1111-1111-111111111111',
-        fullName: 'Ada Destek',
-        username: 'ada.destek',
-      }),
+      headers: {
+        // Readable CSRF cookie for SPA mutations (auth JWT is HttpOnly; mocked REST ignores it).
+        'Set-Cookie': 'vshd.csrf=browser-test-csrf; Path=/',
+      },
+      body: JSON.stringify(SEED_USER),
     })
+  })
+}
+
+async function mockLogoutSuccess(page: Page) {
+  await page.route(LOGOUT_API, async (route) => {
+    await route.fulfill({ status: 204, body: '' })
   })
 }
 
@@ -108,6 +136,14 @@ async function loginThroughUi(page: Page) {
   await expect(
     page.getByRole('heading', { name: 'Destek talepleri' }),
   ).toBeVisible()
+  // After login, bootstrap /me should restore profile on full reloads.
+  await page.route(ME_API, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(SEED_USER),
+    })
+  })
 }
 
 /** Prefer the currently displayed list surface (table on desktop, cards below 47.99rem). */
@@ -178,6 +214,7 @@ test('production same-origin responsive smoke', async ({
   page,
 }, testInfo: TestInfo) => {
   const telemetry = attachTelemetry(page)
+  await mockMeUnauthorized(page)
   await mockLoginSuccess(page)
   await mockTicketsSuccess(page)
 
@@ -225,6 +262,7 @@ test('invalid login stays in place and focuses the password', async ({
   page,
 }) => {
   const telemetry = attachTelemetry(page)
+  await mockMeUnauthorized(page)
 
   await page.route(LOGIN_API, async (route) => {
     await route.fulfill({
@@ -254,6 +292,25 @@ test('protected 401 clears session and explains expiry', async ({
 }) => {
   const telemetry = attachTelemetry(page)
 
+  // First /me keeps seeded session while tickets 401 fires; later /me stays 401
+  // so login page does not re-bootstrap an authenticated user.
+  let meCalls = 0
+  await page.route(ME_API, async (route) => {
+    meCalls += 1
+    if (meCalls === 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(SEED_USER),
+      })
+      return
+    }
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Unauthorized' }),
+    })
+  })
   await page.route(TICKETS_API, async (route) => {
     await route.fulfill({
       status: 401,
@@ -263,29 +320,31 @@ test('protected 401 clears session and explains expiry', async ({
   })
 
   await page.goto('/login')
-  await page.evaluate(() => {
-    sessionStorage.setItem('vshd.accessToken', 'stale-token')
-    sessionStorage.setItem(
-      'vshd.user',
-      JSON.stringify({
-        userId: '11111111-1111-1111-1111-111111111111',
-        fullName: 'Ada Destek',
-        username: 'ada.destek',
-      }),
-    )
+  await page.evaluate((user) => {
+    sessionStorage.removeItem('vshd.accessToken') // legacy Bearer key
+    sessionStorage.setItem('vshd.user', JSON.stringify(user))
+  }, SEED_USER)
+  // Reset counter after the login-page bootstrap /me so tickets navigation is first 200.
+  meCalls = 0
+  // tickets 401 → expireSession may abort this navigation mid-load.
+  await page.goto('/tickets', { waitUntil: 'commit' }).catch((error: Error) => {
+    if (!/ERR_ABORTED|interrupted/i.test(String(error))) {
+      throw error
+    }
   })
-  await page.goto('/tickets')
 
   await expect(page.getByRole('status')).toHaveText(EXPIRY_NOTICE)
+  // LoginPage strips ?reason= via replace navigation — wait until settled.
   await expect(page).toHaveURL(/\/login$/)
   expect(new URL(page.url()).search).toBe('')
-
-  const remaining = await page.evaluate(() => ({
-    token: sessionStorage.getItem('vshd.accessToken'),
-    user: sessionStorage.getItem('vshd.user'),
-  }))
-  expect(remaining.token).toBeNull()
-  expect(remaining.user).toBeNull()
+  await expect
+    .poll(async () =>
+      page.evaluate(() => ({
+        token: sessionStorage.getItem('vshd.accessToken'),
+        user: sessionStorage.getItem('vshd.user'),
+      })),
+    )
+    .toEqual({ token: null, user: null })
 
   await assertNoDocumentOverflow(page)
   telemetry.assertClean({ allowUnauthorizedConsole: true })
@@ -295,7 +354,9 @@ test('keyboard focus and controls work without a pointer', async ({
   page,
 }) => {
   const telemetry = attachTelemetry(page)
+  await mockMeUnauthorized(page)
   await mockLoginSuccess(page)
+  await mockLogoutSuccess(page)
   await mockTicketsSuccess(page)
 
   await page.goto('/login')
@@ -387,6 +448,7 @@ test('reduced motion disables the coordinated entry animation', async ({
   page,
 }) => {
   const telemetry = attachTelemetry(page)
+  await mockMeUnauthorized(page)
   await page.emulateMedia({ reducedMotion: 'reduce' })
 
   await page.goto('/login')

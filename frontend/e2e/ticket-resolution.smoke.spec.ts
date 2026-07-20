@@ -61,11 +61,21 @@ type MutableTicketFixture = {
   detail: TicketDetails
   resolveMode: ResolveMode
   resolvePostCount: number
+  /** Authorization header if any (cookie era: should stay null). */
   lastResolveAuth: string | null
+  lastResolveCsrf: string | null
   lastResolveBody: string | null
   /** Fail the next detail GET only after at least one resolve POST (refresh path). */
   failNextDetailGetAfterResolve: boolean
 }
+
+const SEED_USER = {
+  userId: CLOSER_USER_ID,
+  fullName: 'Ada Destek',
+  username: 'ada.destek',
+}
+
+const ME_API = `${ORIGIN}/api/auth/me`
 
 function cloneDetail(detail: TicketDetails): TicketDetails {
   return structuredClone(detail)
@@ -148,6 +158,7 @@ function createFixture(options?: {
     resolveMode: 'success',
     resolvePostCount: 0,
     lastResolveAuth: null,
+    lastResolveCsrf: null,
     lastResolveBody: null,
     failNextDetailGetAfterResolve: false,
   }
@@ -284,7 +295,12 @@ function attachTelemetry(page: Page) {
       allowConflictConsole?: boolean
       allowServerErrorConsole?: boolean
     }) {
-      let filteredConsole = consoleErrors
+      // Cookie-era bootstrap probes /api/auth/me; 401 is expected when unauthenticated.
+      let filteredConsole = consoleErrors.filter(
+        (text) =>
+          !/Failed to load resource:.*401/.test(text) &&
+          !/401 \(Unauthorized\)/.test(text),
+      )
       if (options?.allowConflictConsole) {
         filteredConsole = filteredConsole.filter(
           (text) =>
@@ -348,35 +364,54 @@ async function tabUntil(
   throw new Error(`Did not reach expected focus target within ${maxTabs} tabs`)
 }
 
-async function seedAuthenticatedSession(page: Page) {
-  await page.goto('/login')
-  await page.evaluate(() => {
-    sessionStorage.setItem('vshd.accessToken', 'browser-test-token')
-    sessionStorage.setItem(
-      'vshd.user',
-      JSON.stringify({
-        userId: '11111111-1111-1111-1111-111111111111',
-        fullName: 'Ada Destek',
-        username: 'ada.destek',
-      }),
-    )
+async function mockMeUnauthorized(page: Page) {
+  await page.route(ME_API, async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ message: 'Unauthorized' }),
+    })
   })
+}
+
+async function mockMeSuccess(page: Page) {
+  await page.route(ME_API, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(SEED_USER),
+    })
+  })
+}
+
+async function seedAuthenticatedSession(page: Page) {
+  // Last registered route wins — overrides install*Mocks unauthorized /me.
+  await mockMeSuccess(page)
+  await page.goto('/login')
+  await page.evaluate((user) => {
+    sessionStorage.removeItem('vshd.accessToken') // legacy Bearer key
+    sessionStorage.setItem('vshd.user', JSON.stringify(user))
+    document.cookie = 'vshd.csrf=browser-test-csrf; Path=/'
+  }, SEED_USER)
 }
 
 async function installResolutionMocks(
   page: Page,
   fixture: MutableTicketFixture,
 ) {
+  // Default unauthenticated bootstrap so loginThroughUi can show the form.
+  await mockMeUnauthorized(page)
+  await page.route(`${ORIGIN}/api/auth/logout`, async (route) => {
+    await route.fulfill({ status: 204, body: '' })
+  })
   await page.route(LOGIN_API, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        accessToken: 'browser-test-token',
-        userId: CLOSER_USER_ID,
-        fullName: 'Ada Destek',
-        username: 'ada.destek',
-      }),
+      headers: {
+        'Set-Cookie': 'vshd.csrf=browser-test-csrf; Path=/',
+      },
+      body: JSON.stringify(SEED_USER),
     })
   })
 
@@ -405,8 +440,11 @@ async function installResolutionMocks(
     const request = route.request()
     fixture.resolvePostCount += 1
     fixture.lastResolveAuth = request.headers().authorization ?? null
+    fixture.lastResolveCsrf = request.headers()['x-csrf-token'] ?? null
     fixture.lastResolveBody = request.postData()
-    expect(fixture.lastResolveAuth).toMatch(/^Bearer\s+\S+/)
+    // Cookie-era SPA: credentials + CSRF header; no Authorization Bearer.
+    expect(fixture.lastResolveAuth).toBeNull()
+    expect(fixture.lastResolveCsrf).toBeTruthy()
     expect(fixture.lastResolveBody).toBeNull()
 
     if (fixture.resolveMode === 'conflict') {
@@ -500,6 +538,8 @@ async function loginThroughUi(page: Page) {
   await expect(
     page.getByRole('heading', { name: 'Destek talepleri' }),
   ).toBeVisible()
+  // Full reloads re-run AuthProvider bootstrap — restore session via /me.
+  await mockMeSuccess(page)
 }
 
 async function openTicketFromList(page: Page) {
@@ -557,7 +597,8 @@ test('login list detail confirm resolve shows resolved status and notice', async
   await expect(page.getByRole('button', { name: COPY.trigger })).toHaveCount(0)
   expect(fixture.resolvePostCount).toBe(1)
   expect(fixture.lastResolveBody).toBeNull()
-  expect(fixture.lastResolveAuth).toBe('Bearer browser-test-token')
+  expect(fixture.lastResolveAuth).toBeNull()
+  expect(fixture.lastResolveCsrf).toBe('browser-test-csrf')
 
   // History + attachment remain usable after resolve.
   await expect(
