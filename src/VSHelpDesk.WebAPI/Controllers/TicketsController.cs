@@ -2,19 +2,22 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
+using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Domain.Enums;
+using VSHelpDesk.WebAPI.Contracts.Tickets;
 
 namespace VSHelpDesk.WebAPI.Controllers;
 
 /// <summary>
-/// Ticket portal endpoints. List/Detail — Hafta 3 Day 11; Reply — Day 12; Resolve — Hafta 4.
+/// Ticket portal endpoints. List/Detail/Reply — Hafta 3; Resolve — Hafta 4.
 /// </summary>
 [ApiController]
 [Authorize]
 [Route("api/tickets")]
 public sealed class TicketsController(
     GetTicketListHandler getTicketListHandler,
-    GetTicketDetailsHandler getTicketDetailsHandler) : ControllerBase
+    GetTicketDetailsHandler getTicketDetailsHandler,
+    SupportReplyToTicketHandler supportReplyToTicketHandler) : ControllerBase
 {
     /// <summary>GET api/tickets — UC-003</summary>
     [HttpGet]
@@ -40,8 +43,27 @@ public sealed class TicketsController(
 
     /// <summary>POST api/tickets/{id}/replies — UC-005</summary>
     [HttpPost("{id:guid}/replies")]
-    public IActionResult Reply(Guid id)
-        => StatusCode(StatusCodes.Status501NotImplemented, new { message = $"Hafta 3: ReplyToTicket (UC-005) id={id}." });
+    public async Task<IActionResult> Reply(
+        Guid id,
+        [FromBody] ReplyToTicketRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.Content))
+        {
+            return BadRequest(new { message = "content is required." });
+        }
+
+        var result = await supportReplyToTicketHandler.HandleAsync(
+            new SupportReplyToTicketCommand(id, request.Content, request.IsHtml),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return BadRequest(new { message = result.Error });
+        }
+
+        return Ok(result.Value);
+    }
 
     /// <summary>POST api/tickets/{id}/resolve — UC-007</summary>
     [HttpPost("{id:guid}/resolve")]

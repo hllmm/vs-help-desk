@@ -64,6 +64,11 @@ public sealed class TicketTests
         ticket.MarkAsWaitingCustomerReply(T3);
         Assert.Equal(TicketStatus.WaitingCustomerReply, ticket.Status);
         Assert.Equal(T3, ticket.WaitingCustomerSince);
+
+        // Additional support reply while already waiting (UC-005 follow-up).
+        ticket.MarkAsWaitingCustomerReply(T3.AddMinutes(1));
+        Assert.Equal(TicketStatus.WaitingCustomerReply, ticket.Status);
+        Assert.Equal(T3.AddMinutes(1), ticket.WaitingCustomerSince);
     }
 
     [Fact]

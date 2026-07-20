@@ -80,7 +80,8 @@ public sealed class Ticket
         EnsureCanTransitionTo(
             TicketStatus.WaitingCustomerReply,
             TicketStatus.New,
-            TicketStatus.CustomerReplied);
+            TicketStatus.CustomerReplied,
+            TicketStatus.WaitingCustomerReply);
 
         Status = TicketStatus.WaitingCustomerReply;
         WaitingCustomerSince = now;
