@@ -6,10 +6,12 @@ using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Storage;
+using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.Infrastructure.Email;
 using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
+using VSHelpDesk.Infrastructure.Processing;
 using VSHelpDesk.Infrastructure.Storage;
 
 namespace VSHelpDesk.Infrastructure;
@@ -74,6 +76,9 @@ public static class DependencyInjection
             .ValidateOnStart();
         services.AddSingleton<IAttachmentUploadPolicy, ConfiguredAttachmentUploadPolicy>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
+
+        // Singleton factory: each call opens/disposes an async scope; no scoped ctor deps.
+        services.AddSingleton<IInboundEmailItemProcessorFactory, ScopedInboundEmailItemProcessorFactory>();
 
         return services;
     }

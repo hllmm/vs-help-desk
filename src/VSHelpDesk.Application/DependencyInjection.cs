@@ -19,12 +19,14 @@ public static class DependencyInjection
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         services.AddSingleton(TimeProvider.System);
+        // Temporary in-process gate until Task 8 registers the PostgreSQL lease.
         services.AddSingleton<IProcessIncomingEmailsGate, InProcessProcessIncomingEmailsGate>();
         services.AddScoped<LoginHandler>();
         services.AddScoped<CreateTicketHandler>();
         services.AddScoped<AppendCustomerReplyHandler>();
         services.AddScoped<SupportReplyToTicketHandler>();
         services.AddScoped<AcknowledgementDispatcher>();
+        services.AddScoped<IInboundEmailItemProcessor, InboundEmailItemProcessor>();
         services.AddScoped<ProcessIncomingEmailsHandler>();
         services.AddScoped<GetTicketListHandler>();
         services.AddScoped<GetTicketDetailsHandler>();

@@ -1,9 +1,12 @@
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
-/// <summary>In-process single-flight for overlapping job runs.</summary>
+/// <summary>Single-flight gate for overlapping job runs (lease-based).</summary>
 public interface IProcessIncomingEmailsGate
 {
-    Task<bool> TryEnterAsync(CancellationToken cancellationToken = default);
+    Task<IProcessIncomingEmailsLease?> TryAcquireAsync(
+        CancellationToken cancellationToken = default);
+}
 
-    void Exit();
+public interface IProcessIncomingEmailsLease : IAsyncDisposable
+{
 }

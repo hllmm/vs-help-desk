@@ -1,5 +1,9 @@
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
+public sealed record ProcessIncomingEmailFailure(
+    string Code,
+    string ItemReference);
+
 public sealed record ProcessIncomingEmailsResult(
     string ReceiverMode,
     int FetchedCount,
@@ -7,8 +11,9 @@ public sealed record ProcessIncomingEmailsResult(
     int CustomerReplies,
     int ReopenedTickets,
     int AlreadyProcessed,
-    int AckSent,
-    int AckFailed,
-    int SkippedInvalid,
-    IReadOnlyList<string> MessageIds,
-    IReadOnlyList<string> CreatedTicketNumbers);
+    int AcknowledgementsSent,
+    int AcknowledgementsFailed,
+    int Quarantined,
+    int RetryableFailures,
+    IReadOnlyList<string> CreatedTicketNumbers,
+    IReadOnlyList<ProcessIncomingEmailFailure> Failures);
