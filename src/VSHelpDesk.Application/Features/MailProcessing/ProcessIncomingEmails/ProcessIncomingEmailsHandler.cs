@@ -3,13 +3,13 @@ using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
+using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Domain.Tickets;
 
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
 /// <summary>
-/// UC-002 Day 9: unread → new ticket (no subject match) → commit then ack.
-/// Existing ticket numbers in subject are skipped for Day 10 reply/reopen.
+/// UC-002 / UC-006 / UC-009: unread → new ticket | customer reply | reopen.
 /// </summary>
 public sealed class ProcessIncomingEmailsHandler(
     IEmailReceiver emailReceiver,
@@ -17,6 +17,7 @@ public sealed class ProcessIncomingEmailsHandler(
     IEmailBoundarySettings emailBoundarySettings,
     IApplicationDbContext applicationDbContext,
     CreateTicketHandler createTicketHandler,
+    AppendCustomerReplyHandler appendCustomerReplyHandler,
     ILogger<ProcessIncomingEmailsHandler> logger)
 {
     public async Task<Result<ProcessIncomingEmailsResult>> HandleAsync(
@@ -48,8 +49,9 @@ public sealed class ProcessIncomingEmailsHandler(
         var messageIds = new List<string>();
         var createdTicketNumbers = new List<string>();
         var createdTickets = 0;
+        var customerReplies = 0;
+        var reopenedTickets = 0;
         var alreadyProcessed = 0;
-        var matchedExistingSkipped = 0;
         var ackSent = 0;
         var ackFailed = 0;
 
@@ -67,12 +69,51 @@ public sealed class ProcessIncomingEmailsHandler(
             if (TicketNumberParser.TryFindInText(mail.Subject, out var subjectTicketNumber) &&
                 applicationDbContext.Tickets.Any(ticket => ticket.TicketNumber == subjectTicketNumber))
             {
-                // Day 10: reply/reopen against existing ticket.
-                matchedExistingSkipped++;
-                logger.LogInformation(
-                    "ProcessIncomingEmails matched existing ticket deferred messageId={MessageId} ticketNumber={TicketNumber}",
-                    messageId,
-                    subjectTicketNumber);
+                var replyResult = await appendCustomerReplyHandler.HandleAsync(
+                    new AppendCustomerReplyCommand(
+                        MessageId: messageId,
+                        TicketNumber: subjectTicketNumber,
+                        Content: string.IsNullOrWhiteSpace(mail.Body) ? "(empty body)" : mail.Body,
+                        IsHtml: mail.IsHtml),
+                    cancellationToken);
+
+                if (replyResult.IsFailure)
+                {
+                    logger.LogError(
+                        "ProcessIncomingEmails reply failed messageId={MessageId} ticketNumber={TicketNumber} error={Error}",
+                        messageId,
+                        subjectTicketNumber,
+                        replyResult.Error);
+                    continue;
+                }
+
+                var reply = replyResult.Value!;
+                if (reply.WasAlreadyProcessed)
+                {
+                    alreadyProcessed++;
+                    logger.LogInformation(
+                        "ProcessIncomingEmails reply already processed messageId={MessageId} ticketNumber={TicketNumber}",
+                        messageId,
+                        reply.TicketNumber);
+                }
+                else
+                {
+                    customerReplies++;
+                    if (reply.WasReopened)
+                    {
+                        reopenedTickets++;
+                    }
+
+                    logger.LogInformation(
+                        "ProcessIncomingEmails customer reply messageId={MessageId} ticketNumber={TicketNumber} statusBefore={StatusBefore} statusAfter={StatusAfter} reopened={Reopened}",
+                        messageId,
+                        reply.TicketNumber,
+                        reply.StatusBefore,
+                        reply.StatusAfter,
+                        reply.WasReopened);
+                }
+
+                await SafeMarkProcessedAsync(messageId, cancellationToken);
                 continue;
             }
 
@@ -117,8 +158,8 @@ public sealed class ProcessIncomingEmailsHandler(
                 created.TicketNumber,
                 created.TicketId);
 
-            // Commit is already done inside CreateTicketHandler. Ack is best-effort after commit (BR-002).
-            // SMTP is not exactly-once: operational retry may send another ack.
+            // Commit done in CreateTicketHandler. Ack is best-effort after commit (BR-002).
+            // SMTP is not exactly-once: operational retry may send another ack if create path re-runs without processed record.
             try
             {
                 await emailSender.SendAsync(
@@ -146,12 +187,13 @@ public sealed class ProcessIncomingEmailsHandler(
         }
 
         logger.LogInformation(
-            "ProcessIncomingEmails finished receiverMode={ReceiverMode} fetched={Fetched} created={Created} alreadyProcessed={AlreadyProcessed} matchedSkipped={MatchedSkipped} ackSent={AckSent} ackFailed={AckFailed}",
+            "ProcessIncomingEmails finished receiverMode={ReceiverMode} fetched={Fetched} created={Created} replies={Replies} reopened={Reopened} alreadyProcessed={AlreadyProcessed} ackSent={AckSent} ackFailed={AckFailed}",
             mode,
             unread.Count,
             createdTickets,
+            customerReplies,
+            reopenedTickets,
             alreadyProcessed,
-            matchedExistingSkipped,
             ackSent,
             ackFailed);
 
@@ -159,8 +201,9 @@ public sealed class ProcessIncomingEmailsHandler(
             mode,
             unread.Count,
             createdTickets,
+            customerReplies,
+            reopenedTickets,
             alreadyProcessed,
-            matchedExistingSkipped,
             ackSent,
             ackFailed,
             messageIds,

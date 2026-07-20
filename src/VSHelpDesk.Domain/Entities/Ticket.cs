@@ -88,12 +88,17 @@ public sealed class Ticket
         LastActivityAt = now;
     }
 
-    /// <summary>BR-007 / BR-010 — customer replied (also reopens from Resolved).</summary>
+    /// <summary>
+    /// BR-007 / BR-010 — customer replied (also reopens from Resolved).
+    /// Allowed from New, WaitingCustomerReply, CustomerReplied (extra message), Resolved (reopen).
+    /// </summary>
     public void MarkAsCustomerReplied(DateTime now)
     {
         EnsureCanTransitionTo(
             TicketStatus.CustomerReplied,
+            TicketStatus.New,
             TicketStatus.WaitingCustomerReply,
+            TicketStatus.CustomerReplied,
             TicketStatus.Resolved);
 
         Status = TicketStatus.CustomerReplied;
