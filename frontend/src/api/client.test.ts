@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { login } from './authApi'
 import {
+  apiBlobRequest,
   apiRequest,
   buildApiUrl,
   expireSession,
@@ -183,5 +184,105 @@ describe('apiRequest', () => {
 
     expect(sessionStorage.getItem('vshd.accessToken')).toBe('token')
     expect(sessionStorage.getItem('vshd.user')).not.toBeNull()
+  })
+})
+
+describe('apiBlobRequest', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  it('reuses the bearer header and passes AbortSignal', async () => {
+    sessionStorage.setItem('vshd.accessToken', 'blob-token')
+    const controller = new AbortController()
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Blob(['abc']), {
+        status: 200,
+        headers: { 'Content-Type': 'application/pdf' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiBlobRequest('/api/attachments/1', { signal: controller.signal })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      signal: controller.signal,
+    })
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
+    expect(headers.get('Authorization')).toBe('Bearer blob-token')
+    expect(headers.has('Content-Type')).toBe(false)
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('blob-token')
+  })
+
+  it('on protected 401 removes session via expireSession', async () => {
+    sessionStorage.setItem('vshd.accessToken', 'token')
+    sessionStorage.setItem(
+      'vshd.user',
+      JSON.stringify({
+        userId: '1',
+        fullName: 'Test User',
+        username: 'test',
+      }),
+    )
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+    )
+
+    await expect(apiBlobRequest('/api/attachments/1')).rejects.toMatchObject({
+      status: 401,
+      message: 'Unauthorized',
+    })
+
+    expect(sessionStorage.getItem('vshd.accessToken')).toBeNull()
+    expect(sessionStorage.getItem('vshd.user')).toBeNull()
+  })
+
+  it('throws ApiError for 404/5xx without parsing success as JSON', async () => {
+    const notFoundBody = { status: 404, title: 'missing' }
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(notFoundBody), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ message: 'boom' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(new Uint8Array([1, 2, 3]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/octet-stream' },
+          }),
+        ),
+    )
+
+    await expect(apiBlobRequest('/api/attachments/missing')).rejects.toMatchObject(
+      {
+        status: 404,
+        body: notFoundBody,
+      },
+    )
+
+    await expect(apiBlobRequest('/api/attachments/broken')).rejects.toMatchObject(
+      {
+        status: 500,
+        message: 'boom',
+      },
+    )
+
+    const blob = await apiBlobRequest('/api/attachments/ok')
+    expect(blob).toBeInstanceOf(Blob)
+    expect(await blob.arrayBuffer()).toEqual(new Uint8Array([1, 2, 3]).buffer)
   })
 })

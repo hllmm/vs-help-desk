@@ -48,10 +48,7 @@ export function expireSession(
   }
 }
 
-/**
- * Thin REST client — SPA talks only HTTP JSON to the ASP.NET Core API.
- */
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+function buildHeaders(options: RequestOptions): Headers {
   const headers = new Headers()
   headers.set('Accept', 'application/json')
 
@@ -66,9 +63,16 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     }
   }
 
+  return headers
+}
+
+async function sendRequest(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Response> {
   const response = await fetch(buildApiUrl(path), {
     method: options.method ?? 'GET',
-    headers,
+    headers: buildHeaders(options),
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     signal: options.signal,
   })
@@ -77,6 +81,39 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     expireSession()
     throw new ApiError(401, 'Unauthorized')
   }
+
+  return response
+}
+
+function messageFromErrorBody(parsed: unknown, status: number): string {
+  return typeof parsed === 'object' &&
+    parsed !== null &&
+    'message' in parsed &&
+    typeof (parsed as { message: unknown }).message === 'string'
+    ? (parsed as { message: string }).message
+    : `Request failed (${status})`
+}
+
+async function parseErrorBody(response: Response): Promise<unknown> {
+  const text = await response.text()
+  if (!text) {
+    return null
+  }
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return text
+  }
+}
+
+/**
+ * Thin REST client — SPA talks only HTTP JSON to the ASP.NET Core API.
+ */
+export async function apiRequest<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
+  const response = await sendRequest(path, options)
 
   if (response.status === 204) {
     return undefined as T
@@ -93,17 +130,35 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   if (!response.ok) {
-    const message =
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      'message' in parsed &&
-      typeof (parsed as { message: unknown }).message === 'string'
-        ? (parsed as { message: string }).message
-        : `Request failed (${response.status})`
-    throw new ApiError(response.status, message, parsed)
+    throw new ApiError(
+      response.status,
+      messageFromErrorBody(parsed, response.status),
+      parsed,
+    )
   }
 
   return parsed as T
+}
+
+/**
+ * Authenticated binary download helper. Never puts tokens in URLs.
+ */
+export async function apiBlobRequest(
+  path: string,
+  options: RequestOptions = {},
+): Promise<Blob> {
+  const response = await sendRequest(path, options)
+
+  if (!response.ok) {
+    const parsed = await parseErrorBody(response)
+    throw new ApiError(
+      response.status,
+      messageFromErrorBody(parsed, response.status),
+      parsed,
+    )
+  }
+
+  return response.blob()
 }
 
 export function getApiBaseUrl(): string {

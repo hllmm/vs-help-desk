@@ -22,3 +22,49 @@ export type TicketListItem = {
   lastActivityAt: string
   assignedUserId: string | null
 }
+
+export type TicketMessageItem = {
+  id: string
+  senderType: string
+  userId: string | null
+  content: string
+  isHtml: boolean
+  createdAt: string
+}
+
+export type TicketAttachmentMeta = {
+  id: string
+  ticketMessageId: string
+  fileName: string
+  contentType: string
+  fileSize: number
+  createdAt: string
+}
+
+export type TicketDetails = {
+  id: string
+  ticketNumber: string
+  subject: string
+  customerName: string
+  customerEmail: string
+  status: string
+  assignedUserId: string | null
+  createdAt: string
+  updatedAt: string
+  lastActivityAt: string
+  waitingCustomerSince: string | null
+  resolvedAt: string | null
+  closedByUserId: string | null
+  messages: TicketMessageItem[]
+  attachments: TicketAttachmentMeta[]
+}
+
+export type SupportReplyResult = {
+  ticketId: string
+  ticketNumber: string
+  messageId: string
+  status: string
+  emailDelivered: boolean
+  ticketStateUpdated: boolean
+  noticeCode: string | null
+}

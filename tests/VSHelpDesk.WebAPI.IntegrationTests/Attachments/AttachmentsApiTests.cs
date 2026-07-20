@@ -70,6 +70,27 @@ public sealed class AttachmentsApiTests : IClassFixture<WebApplicationFactory<Pr
     }
 
     [Fact]
+    public async Task Download_UnknownAttachment_Returns404WithoutRawException()
+    {
+        var token = await LoginAsync();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/attachments/{Guid.NewGuid()}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("NotFoundException", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Exception", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("StackTrace", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(" at ", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("VSHelpDesk.", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("System.", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Upload_AndDownload_StoresOutsideWwwrootAndReturnsBytes()
     {
         var token = await LoginAsync();
