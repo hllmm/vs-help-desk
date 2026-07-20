@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Models;
+using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Domain.Entities;
@@ -15,11 +16,11 @@ namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 /// </summary>
 public sealed class ProcessIncomingEmailsHandler(
     IEmailReceiver emailReceiver,
-    IEmailSender emailSender,
     IEmailBoundarySettings emailBoundarySettings,
     IApplicationDbContext applicationDbContext,
     CreateTicketHandler createTicketHandler,
     AppendCustomerReplyHandler appendCustomerReplyHandler,
+    AcknowledgementDispatcher acknowledgementDispatcher,
     TimeProvider timeProvider,
     IProcessIncomingEmailsGate processIncomingEmailsGate,
     ILogger<ProcessIncomingEmailsHandler> logger)
@@ -125,10 +126,10 @@ public sealed class ProcessIncomingEmailsHandler(
                 {
                     var replyResult = await appendCustomerReplyHandler.HandleAsync(
                         new AppendCustomerReplyCommand(
-                            MessageId: idempotencyKey,
+                            IdempotencyKey: identity.IdempotencyKey,
+                            SourceMessageId: identity.SourceMessageId,
                             TicketNumber: subjectTicketNumber,
                             Content: body,
-                            IsHtml: false,
                             FromAddress: mail.FromAddress),
                         cancellationToken);
 
@@ -182,14 +183,14 @@ public sealed class ProcessIncomingEmailsHandler(
 
             var createResult = await createTicketHandler.HandleAsync(
                 new CreateTicketCommand(
-                    MessageId: idempotencyKey,
+                    IdempotencyKey: identity.IdempotencyKey,
+                    SourceMessageId: identity.SourceMessageId,
                     Subject: string.IsNullOrWhiteSpace(mail.Subject) ? "(no subject)" : mail.Subject,
                     CustomerName: string.IsNullOrWhiteSpace(mail.FromDisplayName)
                         ? mail.FromAddress
                         : mail.FromDisplayName,
                     CustomerEmail: mail.FromAddress,
-                    Content: body,
-                    IsHtml: false),
+                    Content: body),
                 cancellationToken);
 
             if (createResult.IsFailure)
@@ -223,37 +224,26 @@ public sealed class ProcessIncomingEmailsHandler(
                 created.TicketNumber,
                 created.TicketId);
 
-            // Commit done in CreateTicketHandler. Ack is best-effort after commit (BR-002).
-            var processed = applicationDbContext.ProcessedEmailMessages
-                .First(row => row.Id == created.ProcessedEmailMessageId);
-            var attemptedAt = timeProvider.GetUtcNow().UtcDateTime;
-
-            try
+            // Single acknowledgement path: durable AttemptAsync after create commit.
+            var ack = await acknowledgementDispatcher.AttemptAsync(
+                created.ProcessedEmailMessageId,
+                cancellationToken);
+            if (ack.Attempted)
             {
-                await emailSender.SendAsync(
-                    BuildAcknowledgement(mail, created.TicketNumber),
-                    cancellationToken);
-                processed.RecordAcknowledgementSent(attemptedAt);
-                ackSent++;
-                logger.LogInformation(
-                    "ProcessIncomingEmails ack sent ticketNumber={TicketNumber} processedEmailMessageId={ProcessedEmailMessageId}",
-                    created.TicketNumber,
-                    processed.Id);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(
-                    ex,
-                    "Acknowledgement delivery failed processedEmailMessageId={ProcessedEmailMessageId} ticketId={TicketId}",
-                    processed.Id,
-                    created.TicketId);
-                processed.RecordAcknowledgementFailure(
-                    attemptedAt,
-                    "SMTP acknowledgement failed.");
-                ackFailed++;
+                if (ack.Sent)
+                {
+                    ackSent++;
+                    logger.LogInformation(
+                        "ProcessIncomingEmails ack sent ticketNumber={TicketNumber} processedEmailMessageId={ProcessedEmailMessageId}",
+                        created.TicketNumber,
+                        created.ProcessedEmailMessageId);
+                }
+                else
+                {
+                    ackFailed++;
+                }
             }
 
-            await applicationDbContext.SaveChangesAsync(cancellationToken);
             await SafeMarkProcessedAsync(mail.ReceiptHandle, cancellationToken);
         }
 
@@ -338,18 +328,4 @@ public sealed class ProcessIncomingEmailsHandler(
                 receiptHandle.Kind);
         }
     }
-
-    private static EmailMessage BuildAcknowledgement(IncomingEmail mail, string ticketNumber) =>
-        new(
-            ToAddress: mail.FromAddress!,
-            ToDisplayName: string.IsNullOrWhiteSpace(mail.FromDisplayName)
-                ? mail.FromAddress!
-                : mail.FromDisplayName,
-            Subject: $"[{ticketNumber}] We received your support request",
-            Body:
-            $"Hello,{Environment.NewLine}{Environment.NewLine}" +
-            $"We received your message and opened ticket {ticketNumber}.{Environment.NewLine}" +
-            $"Please keep {ticketNumber} in the subject when you reply.{Environment.NewLine}{Environment.NewLine}" +
-            "VS Help Desk",
-            IsHtml: false);
 }

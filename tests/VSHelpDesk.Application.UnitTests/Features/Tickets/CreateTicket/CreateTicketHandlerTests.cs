@@ -19,7 +19,8 @@ public sealed class CreateTicketHandlerTests
 
         var result = await handler.HandleAsync(
             new CreateTicketCommand(
-                MessageId: "<msg-new-001@example.test>",
+                IdempotencyKey: "<msg-new-001@example.test>",
+                SourceMessageId: "<msg-new-001@example.test>",
                 Subject: "Cannot print",
                 CustomerName: "Ada",
                 CustomerEmail: "ada@example.test",
@@ -58,7 +59,8 @@ public sealed class CreateTicketHandlerTests
 
         var result = await handler.HandleAsync(
             new CreateTicketCommand(
-                MessageId: "<msg-disp@example.test>",
+                IdempotencyKey: "<msg-disp@example.test>",
+                SourceMessageId: "<msg-disp@example.test>",
                 Subject: "Disposition",
                 CustomerName: "Ada",
                 CustomerEmail: "ada@example.test",
@@ -74,13 +76,37 @@ public sealed class CreateTicketHandlerTests
     }
 
     [Fact]
+    public async Task Create_PreservesDifferentSourceAndIdempotencyValues()
+    {
+        var context = new FakeApplicationDbContext();
+        var handler = CreateHandler(context, new FakeTicketNumberGenerator("VS-000101"));
+
+        var result = await handler.HandleAsync(
+            new CreateTicketCommand(
+                IdempotencyKey: "receipt:fake:abc123",
+                SourceMessageId: "<original-msg@example.test>",
+                Subject: "Subject",
+                CustomerName: "Ada",
+                CustomerEmail: "ada@example.test",
+                Content: "Body"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var processed = Assert.Single(context.ProcessedEmailMessagesList);
+        Assert.Equal("receipt:fake:abc123", processed.IdempotencyKey);
+        Assert.Equal("<original-msg@example.test>", processed.SourceMessageId);
+        Assert.NotEqual(processed.IdempotencyKey, processed.SourceMessageId);
+    }
+
+    [Fact]
     public async Task UC002_SameMessageId_SecondHandle_DoesNotCreateAnotherTicketOrMessage()
     {
         var context = new FakeApplicationDbContext();
         var numbers = new FakeTicketNumberGenerator("VS-000008", "VS-000009");
         var handler = CreateHandler(context, numbers);
         var command = new CreateTicketCommand(
-            MessageId: "<msg-dup-001@example.test>",
+            IdempotencyKey: "<msg-dup-001@example.test>",
+            SourceMessageId: "<msg-dup-001@example.test>",
             Subject: "Duplicate mail",
             CustomerName: "Ada",
             CustomerEmail: "ada@example.test",
@@ -115,11 +141,11 @@ public sealed class CreateTicketHandlerTests
             new FakeTicketNumberGenerator("VS-000012"));
 
         var result = await handler.HandleAsync(
-            new CreateTicketCommand("  ", "S", "Ada", "ada@example.test", "Body"),
+            new CreateTicketCommand("  ", null, "S", "Ada", "ada@example.test", "Body"),
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        Assert.Contains("MessageId", result.Error, StringComparison.Ordinal);
+        Assert.Contains("IdempotencyKey", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -132,7 +158,8 @@ public sealed class CreateTicketHandlerTests
             numbers,
             new FakeDatabaseErrorClassifier { TreatIdempotencyRaceAsConflict = true });
         var command = new CreateTicketCommand(
-            MessageId: "<msg-race@example.test>",
+            IdempotencyKey: "<msg-race@example.test>",
+            SourceMessageId: "<msg-race@example.test>",
             Subject: "Race",
             CustomerName: "Ada",
             CustomerEmail: "ada@example.test",
@@ -162,7 +189,8 @@ public sealed class CreateTicketHandlerTests
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             handler.HandleAsync(
                 new CreateTicketCommand(
-                    MessageId: "<msg-generic@example.test>",
+                    IdempotencyKey: "<msg-generic@example.test>",
+                    SourceMessageId: "<msg-generic@example.test>",
                     Subject: "S",
                     CustomerName: "Ada",
                     CustomerEmail: "ada@example.test",
@@ -183,7 +211,8 @@ public sealed class CreateTicketHandlerTests
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             handler.HandleAsync(
                 new CreateTicketCommand(
-                    MessageId: "<msg-wrong-ux@example.test>",
+                    IdempotencyKey: "<msg-wrong-ux@example.test>",
+                    SourceMessageId: "<msg-wrong-ux@example.test>",
                     Subject: "S",
                     CustomerName: "Ada",
                     CustomerEmail: "ada@example.test",
@@ -292,7 +321,7 @@ public sealed class CreateTicketHandlerTests
                     createdAtUtc: CreateTime.UtcDateTime);
                 var winnerProcessed = ProcessedEmailMessage.ForCreatedTicket(
                     racing.IdempotencyKey,
-                    racing.IdempotencyKey,
+                    racing.SourceMessageId,
                     CreateTime.UtcDateTime,
                     winnerTicket.Id);
                 TicketsList.Add(winnerTicket);

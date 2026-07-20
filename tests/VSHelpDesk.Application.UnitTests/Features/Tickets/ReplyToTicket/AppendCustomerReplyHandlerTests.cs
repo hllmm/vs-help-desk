@@ -1,4 +1,5 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -19,9 +20,10 @@ public sealed class AppendCustomerReplyHandlerTests
 
         var result = await handler.HandleAsync(
             new AppendCustomerReplyCommand(
-                "<reply-1@test>",
-                "VS-000080",
-                "Still broken",
+                IdempotencyKey: "<reply-1@test>",
+                SourceMessageId: "<reply-1@test>",
+                TicketNumber: "VS-000080",
+                Content: "Still broken",
                 FromAddress: "ada@example.test"),
             CancellationToken.None);
 
@@ -43,9 +45,10 @@ public sealed class AppendCustomerReplyHandlerTests
 
         var result = await handler.HandleAsync(
             new AppendCustomerReplyCommand(
-                "<reply-disp@test>",
-                "VS-000085",
-                "Body",
+                IdempotencyKey: "<reply-disp@test>",
+                SourceMessageId: "<reply-disp@test>",
+                TicketNumber: "VS-000085",
+                Content: "Body",
                 FromAddress: "ada@example.test"),
             CancellationToken.None);
 
@@ -58,6 +61,73 @@ public sealed class AppendCustomerReplyHandlerTests
     }
 
     [Fact]
+    public async Task Reply_PreservesDifferentSourceAndIdempotencyValues()
+    {
+        var ticket = Ticket.Create("VS-000086", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
+        var db = new FakeDb(ticket);
+        var handler = CreateHandler(db);
+
+        var result = await handler.HandleAsync(
+            new AppendCustomerReplyCommand(
+                IdempotencyKey: "receipt:fake:reply-hash",
+                SourceMessageId: "<reply-source@test>",
+                TicketNumber: "VS-000086",
+                Content: "Body",
+                FromAddress: "ada@example.test"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var processed = Assert.Single(db.Processed);
+        Assert.Equal("receipt:fake:reply-hash", processed.IdempotencyKey);
+        Assert.Equal("<reply-source@test>", processed.SourceMessageId);
+        Assert.NotEqual(processed.IdempotencyKey, processed.SourceMessageId);
+    }
+
+    [Fact]
+    public async Task Reply_OneOptimisticConflict_ReloadsAndRetriesOnce()
+    {
+        var ticket = Ticket.Create("VS-000087", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
+        ticket.MarkAsWaitingCustomerReply(FixedNow.UtcDateTime.AddMinutes(-5));
+        var db = new FakeDb(ticket) { FailOptimisticConcurrencyTimes = 1 };
+        var handler = CreateHandler(db, new ConcurrencyAwareClassifier());
+
+        var result = await handler.HandleAsync(
+            new AppendCustomerReplyCommand(
+                IdempotencyKey: "<reply-concurrency@test>",
+                SourceMessageId: "<reply-concurrency@test>",
+                TicketNumber: "VS-000087",
+                Content: "After conflict",
+                FromAddress: "ada@example.test"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.Value!.WasAlreadyProcessed);
+        Assert.Equal(2, db.SaveChangesCallCount);
+        Assert.Single(db.Messages);
+        Assert.Equal("After conflict", db.Messages[0].Content);
+        Assert.Equal(TicketStatus.CustomerReplied, ticket.Status);
+        Assert.Single(db.Processed);
+    }
+
+    [Fact]
+    public async Task Reply_TwoOptimisticConflicts_Throws()
+    {
+        var ticket = Ticket.Create("VS-000088", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
+        var db = new FakeDb(ticket) { FailOptimisticConcurrencyTimes = 2 };
+        var handler = CreateHandler(db, new ConcurrencyAwareClassifier());
+
+        await Assert.ThrowsAsync<OptimisticConcurrencyException>(() =>
+            handler.HandleAsync(
+                new AppendCustomerReplyCommand(
+                    IdempotencyKey: "<reply-double-conflict@test>",
+                    SourceMessageId: "<reply-double-conflict@test>",
+                    TicketNumber: "VS-000088",
+                    Content: "Body",
+                    FromAddress: "ada@example.test"),
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task BR010_ResolvedTicket_SetsWasReopened()
     {
         var ticket = Ticket.Create("VS-000081", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
@@ -66,7 +136,12 @@ public sealed class AppendCustomerReplyHandlerTests
         var handler = CreateHandler(db);
 
         var result = await handler.HandleAsync(
-            new AppendCustomerReplyCommand("<reopen@test>", "VS-000081", "Back", FromAddress: "ada@example.test"),
+            new AppendCustomerReplyCommand(
+                IdempotencyKey: "<reopen@test>",
+                SourceMessageId: "<reopen@test>",
+                TicketNumber: "VS-000081",
+                Content: "Back",
+                FromAddress: "ada@example.test"),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
@@ -82,9 +157,10 @@ public sealed class AppendCustomerReplyHandlerTests
         var db = new FakeDb(ticket);
         var handler = CreateHandler(db);
         var command = new AppendCustomerReplyCommand(
-            "<dup@test>",
-            "VS-000082",
-            "First",
+            IdempotencyKey: "<dup@test>",
+            SourceMessageId: "<dup@test>",
+            TicketNumber: "VS-000082",
+            Content: "First",
             FromAddress: "ada@example.test");
 
         var first = await handler.HandleAsync(command, CancellationToken.None);
@@ -103,7 +179,11 @@ public sealed class AppendCustomerReplyHandlerTests
         var handler = CreateHandler(new FakeDb());
 
         var result = await handler.HandleAsync(
-            new AppendCustomerReplyCommand("<x@test>", "VS-000099", "Body"),
+            new AppendCustomerReplyCommand(
+                IdempotencyKey: "<x@test>",
+                SourceMessageId: "<x@test>",
+                TicketNumber: "VS-000099",
+                Content: "Body"),
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
@@ -118,9 +198,10 @@ public sealed class AppendCustomerReplyHandlerTests
 
         var result = await handler.HandleAsync(
             new AppendCustomerReplyCommand(
-                "<spoof@test>",
-                "VS-000083",
-                "Body",
+                IdempotencyKey: "<spoof@test>",
+                SourceMessageId: "<spoof@test>",
+                TicketNumber: "VS-000083",
+                Content: "Body",
                 FromAddress: "other@example.test"),
             CancellationToken.None);
 
@@ -129,14 +210,25 @@ public sealed class AppendCustomerReplyHandlerTests
         Assert.Equal(TicketStatus.New, ticket.Status);
     }
 
-    private static AppendCustomerReplyHandler CreateHandler(FakeDb db) =>
-        new(db, new FixedTimeProvider(FixedNow), new NeverConflictClassifier());
+    private static AppendCustomerReplyHandler CreateHandler(
+        FakeDb db,
+        IDatabaseErrorClassifier? classifier = null) =>
+        new(db, new FixedTimeProvider(FixedNow), classifier ?? new NeverConflictClassifier());
 
     private sealed class NeverConflictClassifier : IDatabaseErrorClassifier
     {
         public bool IsProcessedEmailIdempotencyConflict(Exception exception) => false;
 
         public bool IsOptimisticConcurrencyConflict(Exception exception) => false;
+    }
+
+    private sealed class ConcurrencyAwareClassifier : IDatabaseErrorClassifier
+    {
+        public bool IsProcessedEmailIdempotencyConflict(Exception exception) => false;
+
+        public bool IsOptimisticConcurrencyConflict(Exception exception) =>
+            exception is OptimisticConcurrencyException ||
+            exception.Message.Contains("optimistic concurrency", StringComparison.OrdinalIgnoreCase);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
@@ -148,6 +240,10 @@ public sealed class AppendCustomerReplyHandlerTests
     {
         private readonly List<Ticket> tickets;
         private readonly List<object> pending = [];
+
+        public int FailOptimisticConcurrencyTimes { get; init; }
+
+        public int SaveChangesCallCount { get; private set; }
 
         public List<TicketMessage> Messages { get; } = [];
         public List<ProcessedEmailMessage> Processed { get; } = [];
@@ -165,6 +261,15 @@ public sealed class AppendCustomerReplyHandlerTests
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
+            SaveChangesCallCount++;
+
+            if (SaveChangesCallCount <= FailOptimisticConcurrencyTimes)
+            {
+                pending.Clear();
+                throw new OptimisticConcurrencyException(
+                    "Simulated optimistic concurrency conflict.");
+            }
+
             foreach (var entity in pending)
             {
                 switch (entity)

@@ -22,7 +22,7 @@ public sealed class CreateTicketHandler(
             return Result.Failure<CreateTicketResult>(validationError);
         }
 
-        var idempotencyKey = command.MessageId.Trim();
+        var idempotencyKey = command.IdempotencyKey.Trim();
         var existing = FindProcessed(idempotencyKey);
         if (existing is not null)
         {
@@ -52,7 +52,7 @@ public sealed class CreateTicketHandler(
 
         var processed = ProcessedEmailMessage.ForCreatedTicket(
             idempotencyKey,
-            sourceMessageId: idempotencyKey,
+            sourceMessageId: command.SourceMessageId,
             processedAtUtc: now,
             ticketId: ticket.Id);
 
@@ -117,9 +117,9 @@ public sealed class CreateTicketHandler(
 
     private static string? Validate(CreateTicketCommand command)
     {
-        if (string.IsNullOrWhiteSpace(command.MessageId))
+        if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
-            return "MessageId is required.";
+            return "IdempotencyKey is required.";
         }
 
         if (string.IsNullOrWhiteSpace(command.Subject))

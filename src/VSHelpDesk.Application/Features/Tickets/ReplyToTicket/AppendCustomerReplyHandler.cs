@@ -1,4 +1,5 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Domain.Entities;
@@ -15,9 +16,9 @@ public sealed class AppendCustomerReplyHandler(
         AppendCustomerReplyCommand command,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(command.MessageId))
+        if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
-            return Result.Failure<AppendCustomerReplyResult>("MessageId is required.");
+            return Result.Failure<AppendCustomerReplyResult>("IdempotencyKey is required.");
         }
 
         if (string.IsNullOrWhiteSpace(command.TicketNumber))
@@ -25,23 +26,38 @@ public sealed class AppendCustomerReplyHandler(
             return Result.Failure<AppendCustomerReplyResult>("TicketNumber is required.");
         }
 
-        var idempotencyKey = command.MessageId.Trim();
+        try
+        {
+            return await AttemptOnceAsync(command, cancellationToken);
+        }
+        catch (Exception ex) when (databaseErrorClassifier.IsOptimisticConcurrencyConflict(ex))
+        {
+            // One safe retry with a fully reloaded ticket/message graph.
+            applicationDbContext.ClearTrackedChanges();
+
+            try
+            {
+                return await AttemptOnceAsync(command, cancellationToken);
+            }
+            catch (Exception retryEx) when (databaseErrorClassifier.IsOptimisticConcurrencyConflict(retryEx))
+            {
+                throw new OptimisticConcurrencyException(
+                    "Could not append customer reply due to a concurrent update.",
+                    retryEx);
+            }
+        }
+    }
+
+    private async Task<Result<AppendCustomerReplyResult>> AttemptOnceAsync(
+        AppendCustomerReplyCommand command,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = command.IdempotencyKey.Trim();
         var existing = applicationDbContext.ProcessedEmailMessages
             .FirstOrDefault(processed => processed.IdempotencyKey == idempotencyKey);
         if (existing is not null)
         {
-            var existingTicket = existing.TicketId is null
-                ? null
-                : applicationDbContext.Tickets.FirstOrDefault(ticket => ticket.Id == existing.TicketId);
-
-            return Result.Success(new AppendCustomerReplyResult(
-                existing.TicketId ?? existingTicket?.Id ?? Guid.Empty,
-                existingTicket?.TicketNumber ?? command.TicketNumber.Trim(),
-                Guid.Empty,
-                existingTicket?.Status ?? TicketStatus.CustomerReplied,
-                existingTicket?.Status ?? TicketStatus.CustomerReplied,
-                WasAlreadyProcessed: true,
-                WasReopened: false));
+            return Result.Success(BuildAlreadyProcessedResult(existing, command.TicketNumber.Trim()));
         }
 
         var ticket = applicationDbContext.Tickets
@@ -80,7 +96,7 @@ public sealed class AppendCustomerReplyHandler(
 
         var processed = ProcessedEmailMessage.ForAppendedReply(
             idempotencyKey,
-            sourceMessageId: idempotencyKey,
+            sourceMessageId: command.SourceMessageId,
             processedAtUtc: now,
             ticketId: ticket.Id);
         applicationDbContext.Add(message);
@@ -100,14 +116,7 @@ public sealed class AppendCustomerReplyHandler(
                     .FirstOrDefault(processedRow => processedRow.IdempotencyKey == idempotencyKey);
                 if (afterRace is not null)
                 {
-                    return Result.Success(new AppendCustomerReplyResult(
-                        afterRace.TicketId ?? ticket.Id,
-                        ticket.TicketNumber,
-                        Guid.Empty,
-                        statusBefore,
-                        ticket.Status,
-                        WasAlreadyProcessed: true,
-                        WasReopened: false));
+                    return Result.Success(BuildAlreadyProcessedResult(afterRace, ticket.TicketNumber));
                 }
             }
 
@@ -122,5 +131,23 @@ public sealed class AppendCustomerReplyHandler(
             ticket.Status,
             WasAlreadyProcessed: false,
             WasReopened: wasResolved));
+    }
+
+    private AppendCustomerReplyResult BuildAlreadyProcessedResult(
+        ProcessedEmailMessage existing,
+        string fallbackTicketNumber)
+    {
+        var existingTicket = existing.TicketId is null
+            ? null
+            : applicationDbContext.Tickets.FirstOrDefault(ticket => ticket.Id == existing.TicketId);
+
+        return new AppendCustomerReplyResult(
+            existing.TicketId ?? existingTicket?.Id ?? Guid.Empty,
+            existingTicket?.TicketNumber ?? fallbackTicketNumber,
+            Guid.Empty,
+            existingTicket?.Status ?? TicketStatus.CustomerReplied,
+            existingTicket?.Status ?? TicketStatus.CustomerReplied,
+            WasAlreadyProcessed: true,
+            WasReopened: false);
     }
 }

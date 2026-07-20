@@ -4,9 +4,9 @@ namespace VSHelpDesk.Application.Features.Tickets.CreateTicket;
 /// Creates a new ticket from an inbound customer message (UC-002 entry).
 /// </summary>
 public sealed record CreateTicketCommand(
-    string MessageId,
+    string IdempotencyKey,
+    string? SourceMessageId,
     string Subject,
     string CustomerName,
     string CustomerEmail,
-    string Content,
-    bool IsHtml = false);
+    string Content);

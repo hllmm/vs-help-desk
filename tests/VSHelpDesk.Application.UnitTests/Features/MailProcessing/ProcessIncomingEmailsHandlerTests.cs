@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Features.MailProcessing;
+using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
@@ -80,6 +81,32 @@ public sealed class ProcessIncomingEmailsHandlerTests
         Assert.Equal("SMTP acknowledgement failed.", processed.AcknowledgementLastError);
         Assert.Equal(FixedNow.UtcDateTime.AddMinutes(1), processed.AcknowledgementNextAttemptAt);
         Assert.DoesNotContain("password", processed.AcknowledgementLastError, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CurrentJob_UsesDispatcherAndDoesNotSendDirectly()
+    {
+        // ProcessIncomingEmailsHandler no longer takes IEmailSender; ack goes only through
+        // AcknowledgementDispatcher (sender is wired into the dispatcher alone).
+        var context = new FakeDb();
+        var sender = new RecordingSender();
+        var receiver = new FakeReceiver(
+        [
+            Mail("<msg-dispatcher@test>", "customer@example.test", "Help", "Body")
+        ]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000230");
+
+        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.CreatedTickets);
+        Assert.Equal(1, result.Value.AckSent);
+        Assert.Equal(0, result.Value.AckFailed);
+        Assert.Single(sender.Sent);
+        var processed = Assert.Single(context.ProcessedEmailMessagesList);
+        Assert.Equal(AcknowledgementStatus.Sent, processed.AcknowledgementStatus);
+        Assert.Contains("VS-000230", sender.Sent[0].Subject, StringComparison.Ordinal);
+        Assert.Equal("customer@example.test", sender.Sent[0].ToAddress);
     }
 
     [Fact]
@@ -275,13 +302,18 @@ public sealed class ProcessIncomingEmailsHandlerTests
         var classifier = new NeverConflictClassifier();
         var create = new CreateTicketHandler(context, new SequenceNumbers(numbers), time, classifier);
         var reply = new AppendCustomerReplyHandler(context, time, classifier);
+        var dispatcher = new AcknowledgementDispatcher(
+            context,
+            sender,
+            time,
+            NullLogger<AcknowledgementDispatcher>.Instance);
         return new ProcessIncomingEmailsHandler(
             receiver,
-            sender,
             new FixedSettings(),
             context,
             create,
             reply,
+            dispatcher,
             time,
             new AlwaysEnterGate(),
             NullLogger<ProcessIncomingEmailsHandler>.Instance);

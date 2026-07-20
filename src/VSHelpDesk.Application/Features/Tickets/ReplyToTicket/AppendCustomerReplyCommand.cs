@@ -2,8 +2,8 @@ namespace VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 
 /// <summary>UC-006 / UC-009 — customer email reply or reopen on an existing ticket.</summary>
 public sealed record AppendCustomerReplyCommand(
-    string MessageId,
+    string IdempotencyKey,
+    string? SourceMessageId,
     string TicketNumber,
     string Content,
-    bool IsHtml = false,
     string? FromAddress = null);
