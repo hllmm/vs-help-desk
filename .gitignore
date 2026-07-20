@@ -483,3 +483,6 @@ $RECYCLE.BIN/
 
 # Local agent/session working files
 .superpowers/
+
+# Git worktrees (local isolation)
+.worktrees/
