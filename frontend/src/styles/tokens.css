@@ -1,0 +1,20 @@
+:root {
+  color-scheme: light;
+  --color-night: #102a43;
+  --color-petrol: #087f73;
+  --color-ice: #f3f7f8;
+  --color-paper: #ffffff;
+  --color-amber: #c27803;
+  --color-coral: #c2413b;
+  --color-muted: #526b7a;
+  --color-line: #cbd9dc;
+  --color-petrol-soft: #e6f5f3;
+  --color-coral-soft: #fdeceb;
+  --color-amber-soft: #fff6e8;
+  --font-display: 'Sora Variable', sans-serif;
+  --font-body: 'Manrope Variable', system-ui, sans-serif;
+  --shadow-soft: 0 24px 70px rgb(16 42 67 / 10%);
+  --radius-control: 0.7rem;
+  --control-min-height: 44px;
+  --space-page: clamp(1rem, 2vw, 1.5rem);
+}

@@ -1,0 +1,174 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  min-block-size: 100vh;
+  font-family: var(--font-body);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-night);
+  background: var(--color-ice);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-block-size: 100vh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-night);
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--color-petrol);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea,
+.button {
+  min-block-size: var(--control-min-height);
+}
+
+button,
+.button {
+  cursor: pointer;
+}
+
+:where(button, a, input, select, textarea, .button):focus-visible {
+  outline: 3px solid var(--color-petrol);
+  outline-offset: 2px;
+}
+
+:where(.app-shell, .app-main, .login-layout, .login-intro, .login-card, .form, .field, .header-user)
+  > * {
+  min-inline-size: 0;
+}
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  padding: 0.65rem 1rem;
+  background: transparent;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.button--primary {
+  background: var(--color-petrol);
+  color: var(--color-paper);
+}
+
+.button--primary:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+.button--quiet {
+  border-color: var(--color-line);
+  background: var(--color-paper);
+  color: var(--color-night);
+}
+
+.button--quiet:hover:not(:disabled) {
+  border-color: var(--color-petrol);
+  color: var(--color-petrol);
+}
+
+.notice {
+  margin: 0;
+  border-radius: var(--radius-control);
+  padding: 0.85rem 1rem;
+  overflow-wrap: anywhere;
+}
+
+.notice--error {
+  background: var(--color-coral-soft);
+  color: var(--color-coral);
+  border: 1px solid color-mix(in srgb, var(--color-coral) 28%, white);
+}
+
+.notice--info {
+  background: var(--color-petrol-soft);
+  color: var(--color-night);
+  border: 1px solid color-mix(in srgb, var(--color-petrol) 24%, white);
+}
+
+@keyframes portal-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.portal-enter {
+  animation: portal-enter 360ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
