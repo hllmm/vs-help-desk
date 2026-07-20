@@ -201,6 +201,7 @@ public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<P
         {
             var json = await response.Content.ReadAsStringAsync();
             Assert.Contains("fetchedCount", json, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("createdTickets", json, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("messageIds", json, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("Password", json, StringComparison.OrdinalIgnoreCase);
         }

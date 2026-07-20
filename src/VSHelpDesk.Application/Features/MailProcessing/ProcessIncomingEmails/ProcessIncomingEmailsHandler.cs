@@ -1,13 +1,22 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Models;
+using VSHelpDesk.Application.Features.Tickets.CreateTicket;
+using VSHelpDesk.Domain.Tickets;
 
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
+/// <summary>
+/// UC-002 Day 9: unread → new ticket (no subject match) → commit then ack.
+/// Existing ticket numbers in subject are skipped for Day 10 reply/reopen.
+/// </summary>
 public sealed class ProcessIncomingEmailsHandler(
     IEmailReceiver emailReceiver,
     IEmailSender emailSender,
     IEmailBoundarySettings emailBoundarySettings,
+    IApplicationDbContext applicationDbContext,
+    CreateTicketHandler createTicketHandler,
     ILogger<ProcessIncomingEmailsHandler> logger)
 {
     public async Task<Result<ProcessIncomingEmailsResult>> HandleAsync(
@@ -36,50 +45,154 @@ public sealed class ProcessIncomingEmailsHandler(
                 "Failed to fetch unread emails from the configured receiver.");
         }
 
-        var messageIds = unread
-            .Select(message => message.MessageId)
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .ToArray();
+        var messageIds = new List<string>();
+        var createdTicketNumbers = new List<string>();
+        var createdTickets = 0;
+        var alreadyProcessed = 0;
+        var matchedExistingSkipped = 0;
+        var ackSent = 0;
+        var ackFailed = 0;
 
-        logger.LogInformation(
-            "ProcessIncomingEmails fetched count={Count} messageIds={MessageIds} receiverMode={ReceiverMode}",
-            unread.Count,
-            string.Join(',', messageIds),
-            mode);
-
-        var probeSent = false;
-        if (emailBoundarySettings.SendSmtpProbeOnProcessJob)
+        foreach (var mail in unread)
         {
+            if (string.IsNullOrWhiteSpace(mail.MessageId))
+            {
+                logger.LogWarning("ProcessIncomingEmails skipped message without MessageId");
+                continue;
+            }
+
+            var messageId = mail.MessageId.Trim();
+            messageIds.Add(messageId);
+
+            if (TicketNumberParser.TryFindInText(mail.Subject, out var subjectTicketNumber) &&
+                applicationDbContext.Tickets.Any(ticket => ticket.TicketNumber == subjectTicketNumber))
+            {
+                // Day 10: reply/reopen against existing ticket.
+                matchedExistingSkipped++;
+                logger.LogInformation(
+                    "ProcessIncomingEmails matched existing ticket deferred messageId={MessageId} ticketNumber={TicketNumber}",
+                    messageId,
+                    subjectTicketNumber);
+                continue;
+            }
+
+            var createResult = await createTicketHandler.HandleAsync(
+                new CreateTicketCommand(
+                    MessageId: messageId,
+                    Subject: string.IsNullOrWhiteSpace(mail.Subject) ? "(no subject)" : mail.Subject,
+                    CustomerName: string.IsNullOrWhiteSpace(mail.FromDisplayName)
+                        ? mail.FromAddress
+                        : mail.FromDisplayName,
+                    CustomerEmail: mail.FromAddress,
+                    Content: mail.Body,
+                    IsHtml: mail.IsHtml),
+                cancellationToken);
+
+            if (createResult.IsFailure)
+            {
+                logger.LogError(
+                    "ProcessIncomingEmails create failed messageId={MessageId} error={Error}",
+                    messageId,
+                    createResult.Error);
+                continue;
+            }
+
+            var created = createResult.Value!;
+            if (created.WasAlreadyProcessed)
+            {
+                alreadyProcessed++;
+                logger.LogInformation(
+                    "ProcessIncomingEmails already processed messageId={MessageId} ticketNumber={TicketNumber}",
+                    messageId,
+                    created.TicketNumber);
+                await SafeMarkProcessedAsync(messageId, cancellationToken);
+                continue;
+            }
+
+            createdTickets++;
+            createdTicketNumbers.Add(created.TicketNumber);
+            logger.LogInformation(
+                "ProcessIncomingEmails created ticket messageId={MessageId} ticketNumber={TicketNumber} ticketId={TicketId}",
+                messageId,
+                created.TicketNumber,
+                created.TicketId);
+
+            // Commit is already done inside CreateTicketHandler. Ack is best-effort after commit (BR-002).
+            // SMTP is not exactly-once: operational retry may send another ack.
             try
             {
                 await emailSender.SendAsync(
-                    new EmailMessage(
-                        ToAddress: emailBoundarySettings.SupportMailboxAddress,
-                        ToDisplayName: emailBoundarySettings.SupportMailboxDisplayName,
-                        Subject: "[VSHelpDesk] SMTP probe from process-incoming-emails",
-                        Body: "SMTP connectivity probe (Day 8). No customer content.",
-                        IsHtml: false),
+                    BuildAcknowledgement(mail, created.TicketNumber),
                     cancellationToken);
-                probeSent = true;
+                ackSent++;
                 logger.LogInformation(
-                    "ProcessIncomingEmails SMTP probe sent to={ToAddress}",
-                    emailBoundarySettings.SupportMailboxAddress);
+                    "ProcessIncomingEmails ack sent messageId={MessageId} ticketNumber={TicketNumber} to={ToAddress}",
+                    messageId,
+                    created.TicketNumber,
+                    mail.FromAddress);
             }
             catch (Exception ex)
             {
+                ackFailed++;
                 logger.LogError(
                     ex,
-                    "ProcessIncomingEmails SMTP probe failed to={ToAddress}",
-                    emailBoundarySettings.SupportMailboxAddress);
-                return Result.Failure<ProcessIncomingEmailsResult>(
-                    "SMTP probe failed; check Email:SmtpHost/SmtpPort and Mailpit.");
+                    "ProcessIncomingEmails ack failed after commit messageId={MessageId} ticketNumber={TicketNumber} to={ToAddress}",
+                    messageId,
+                    created.TicketNumber,
+                    mail.FromAddress);
             }
+
+            await SafeMarkProcessedAsync(messageId, cancellationToken);
         }
+
+        logger.LogInformation(
+            "ProcessIncomingEmails finished receiverMode={ReceiverMode} fetched={Fetched} created={Created} alreadyProcessed={AlreadyProcessed} matchedSkipped={MatchedSkipped} ackSent={AckSent} ackFailed={AckFailed}",
+            mode,
+            unread.Count,
+            createdTickets,
+            alreadyProcessed,
+            matchedExistingSkipped,
+            ackSent,
+            ackFailed);
 
         return Result.Success(new ProcessIncomingEmailsResult(
             mode,
             unread.Count,
+            createdTickets,
+            alreadyProcessed,
+            matchedExistingSkipped,
+            ackSent,
+            ackFailed,
             messageIds,
-            probeSent));
+            createdTicketNumbers));
     }
+
+    private async Task SafeMarkProcessedAsync(string messageId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await emailReceiver.MarkAsProcessedAsync(messageId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "ProcessIncomingEmails MarkAsProcessed failed messageId={MessageId}",
+                messageId);
+        }
+    }
+
+    private static EmailMessage BuildAcknowledgement(IncomingEmail mail, string ticketNumber) =>
+        new(
+            ToAddress: mail.FromAddress,
+            ToDisplayName: string.IsNullOrWhiteSpace(mail.FromDisplayName)
+                ? mail.FromAddress
+                : mail.FromDisplayName,
+            Subject: $"[{ticketNumber}] We received your support request",
+            Body:
+            $"Hello,{Environment.NewLine}{Environment.NewLine}" +
+            $"We received your message and opened ticket {ticketNumber}.{Environment.NewLine}" +
+            $"Please keep {ticketNumber} in the subject when you reply.{Environment.NewLine}{Environment.NewLine}" +
+            "VS Help Desk",
+            IsHtml: false);
 }
