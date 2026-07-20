@@ -1,15 +1,17 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { UserRole } from '../api/types'
 import { AuthProvider } from '../auth/AuthContext'
 import { setStoredUser } from '../auth/tokenStorage'
 import { Layout } from './Layout'
 
-function seedAuthenticatedUser() {
+function seedAuthenticatedUser(role: UserRole = 'Support') {
   const user = {
     userId: 'user-1',
     fullName: 'Destek Kullanıcısı',
     username: 'support',
+    role,
   }
   setStoredUser(user)
   vi.stubGlobal(
@@ -80,13 +82,23 @@ describe('Layout', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows Parametreler nav when authenticated', () => {
-    seedAuthenticatedUser()
+  it('hides Parametreler nav for Support role', async () => {
+    seedAuthenticatedUser('Support')
+    renderLayout('/tickets')
+
+    expect(await screen.findByRole('link', { name: 'Talepler' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Parametreler' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows Parametreler nav for Admin role', async () => {
+    seedAuthenticatedUser('Admin')
     renderLayout('/parameters')
 
     const nav = screen.getByRole('navigation', { name: 'Ana menü' })
     expect(
-      screen.getByRole('link', { name: 'Parametreler' }),
+      await screen.findByRole('link', { name: 'Parametreler' }),
     ).toHaveAttribute('href', '/parameters')
     expect(screen.getByRole('link', { name: 'Talepler' })).toHaveAttribute(
       'href',

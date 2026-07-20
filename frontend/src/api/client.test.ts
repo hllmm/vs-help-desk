@@ -42,6 +42,7 @@ describe('expireSession', () => {
         userId: '1',
         fullName: 'Test User',
         username: 'test',
+        role: 'Support',
       }),
     )
 
@@ -65,6 +66,7 @@ describe('expireSession', () => {
         userId: '1',
         fullName: 'Test User',
         username: 'test',
+        role: 'Support',
       }),
     )
     const assign = vi.fn()
@@ -161,6 +163,7 @@ describe('apiRequest', () => {
         userId: '1',
         fullName: 'Test User',
         username: 'test',
+        role: 'Support',
       }),
     )
 
@@ -175,6 +178,7 @@ describe('apiRequest', () => {
         userId: '1',
         fullName: 'Test User',
         username: 'test',
+        role: 'Support',
       }),
     )
 
@@ -198,6 +202,7 @@ describe('apiRequest', () => {
         userId: '1',
         fullName: 'Test User',
         username: 'test',
+        role: 'Support',
       }),
     )
 
@@ -225,6 +230,7 @@ describe('apiRequest', () => {
         userId: '1',
         fullName: 'Test User',
         username: 'test',
+        role: 'Support',
       }),
     )
 
@@ -250,6 +256,7 @@ describe('apiRequest', () => {
       userId: 'user-1',
       fullName: 'Destek Kullanıcısı',
       username: 'support',
+      role: 'Support',
     }
     vi.stubGlobal(
       'fetch',
@@ -304,6 +311,7 @@ describe('apiBlobRequest', () => {
         userId: '1',
         fullName: 'Test User',
         username: 'test',
+        role: 'Support',
       }),
     )
 

@@ -76,6 +76,7 @@ function seedSession() {
     userId: 'user-1',
     fullName: 'Destek Kullanıcısı',
     username: 'support',
+    role: 'Support' as const,
   }
   setStoredUser(user)
   // AuthProvider bootstraps GET /api/auth/me via fetch; keep session authenticated.

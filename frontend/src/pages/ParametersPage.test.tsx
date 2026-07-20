@@ -37,8 +37,9 @@ const sampleParameters: Parameter[] = [
 function seedSession() {
   const user = {
     userId: 'user-1',
-    fullName: 'Destek Kullanıcısı',
-    username: 'support',
+    fullName: 'Admin Kullanıcısı',
+    username: 'admin',
+    role: 'Admin' as const,
   }
   setStoredUser(user)
   // AuthProvider bootstraps GET /api/auth/me via fetch; keep session authenticated.
