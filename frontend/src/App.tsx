@@ -3,6 +3,7 @@ import { AuthProvider } from './auth/AuthContext'
 import { Layout } from './components/Layout'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { LoginPage } from './pages/LoginPage'
+import { TicketDetailPage } from './pages/TicketDetailPage'
 import { TicketListPage } from './pages/TicketListPage'
 
 export default function App() {
@@ -17,6 +18,14 @@ export default function App() {
               element={
                 <ProtectedRoute>
                   <TicketListPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/tickets/:ticketId"
+              element={
+                <ProtectedRoute>
+                  <TicketDetailPage />
                 </ProtectedRoute>
               }
             />

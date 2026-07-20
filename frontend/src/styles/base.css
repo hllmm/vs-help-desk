@@ -72,7 +72,24 @@ button,
   outline-offset: 2px;
 }
 
-:where(.app-shell, .app-main, .login-layout, .login-intro, .login-card, .form, .field, .header-user)
+:where(
+    .app-shell,
+    .app-main,
+    .login-layout,
+    .login-intro,
+    .login-card,
+    .form,
+    .field,
+    .header-user,
+    .ticket-detail,
+    .ticket-detail__layout,
+    .ticket-detail__main,
+    .ticket-detail__header,
+    .ticket-detail__actions,
+    .ticket-timeline,
+    .ticket-timeline__message,
+    .ticket-timeline__download
+  )
   > * {
   min-inline-size: 0;
 }
