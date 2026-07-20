@@ -1,5 +1,6 @@
 import { useMemo, type ReactElement } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { TicketReplyForm } from '../features/ticket-details/TicketReplyForm'
 import { TicketTimeline } from '../features/ticket-details/TicketTimeline'
 import {
   formatTicketDetailDate,
@@ -180,11 +181,9 @@ export function TicketDetailPage(): ReactElement {
             </section>
           </div>
 
-          {/* Reply composer reserved for Task 4 */}
-          <aside
-            className="ticket-detail__reply-slot"
-            aria-hidden="true"
-          />
+          <aside className="ticket-detail__reply-slot">
+            <TicketReplyForm ticketId={detail.id} onRefresh={refresh} />
+          </aside>
         </div>
       ) : null}
     </section>

@@ -2,17 +2,23 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
-import type { TicketDetails, TicketListItem } from '../api/types'
+import type {
+  SupportReplyResult,
+  TicketDetails,
+  TicketListItem,
+} from '../api/types'
 import { setSession } from '../auth/tokenStorage'
+import { REPLY_OUTCOME_MESSAGES } from '../features/ticket-details/useTicketReply'
 
 const fetchTicketDetails = vi.hoisted(() => vi.fn())
 const fetchTickets = vi.hoisted(() => vi.fn())
+const replyToTicket = vi.hoisted(() => vi.fn())
 const downloadAttachment = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/ticketsApi', () => ({
   fetchTicketDetails,
   fetchTickets,
-  replyToTicket: vi.fn(),
+  replyToTicket,
 }))
 
 vi.mock('../api/attachmentsApi', () => ({
@@ -113,10 +119,26 @@ function renderList() {
   return render(<App />)
 }
 
+function sampleReply(
+  overrides: Partial<SupportReplyResult> = {},
+): SupportReplyResult {
+  return {
+    ticketId: 'ticket-1',
+    ticketNumber: 'VS-000042',
+    messageId: 'msg-reply-1',
+    status: 'WaitingCustomerReply',
+    emailDelivered: true,
+    ticketStateUpdated: true,
+    noticeCode: null,
+    ...overrides,
+  }
+}
+
 describe('TicketDetailPage', () => {
   beforeEach(() => {
     fetchTicketDetails.mockReset()
     fetchTickets.mockReset()
+    replyToTicket.mockReset()
     downloadAttachment.mockReset()
     sessionStorage.clear()
     window.history.replaceState({}, '', '/')
@@ -413,4 +435,175 @@ describe('TicketDetailPage', () => {
       /UC-|BR-|JWT|sessionStorage|REST|Sprint|Day [0-9]/i,
     )
   })
+
+  it('renders the reply composer after the timeline on the ready detail page', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
+    renderDetail()
+
+    expect(
+      await screen.findByRole('heading', { name: 'Müşteriye yanıt ver' }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Yanıtınız')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Yanıtı gönder' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Kalan karakter:/)).toBeInTheDocument()
+  })
+
+  it('does not show an optimistic timeline item before refresh resolves a saved reply', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Mesaj geçmişi' })
+
+    const replyPending = deferred<SupportReplyResult>()
+    const refreshPending = deferred<TicketDetails>()
+    replyToTicket.mockReturnValueOnce(replyPending.promise)
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Yanıtınız'), 'Yeni destek yanıtı')
+    await user.click(screen.getByRole('button', { name: 'Yanıtı gönder' }))
+
+    const timeline = screen.getByRole('list', { name: 'Mesaj geçmişi' })
+    expect(
+      within(timeline).queryByText('Yeni destek yanıtı'),
+    ).not.toBeInTheDocument()
+
+    const saved = sampleDetail({
+      status: 'WaitingCustomerReply',
+      messages: [
+        ...sampleDetail().messages,
+        {
+          id: 'msg-reply-1',
+          senderType: 'Support',
+          userId: 'user-1',
+          content: 'Yeni destek yanıtı',
+          isHtml: false,
+          createdAt: '2026-07-20T11:00:00.000Z',
+        },
+      ],
+    })
+
+    fetchTicketDetails.mockReturnValueOnce(refreshPending.promise)
+    replyPending.resolve(sampleReply())
+
+    await waitFor(() => {
+      expect(fetchTicketDetails).toHaveBeenCalledTimes(2)
+    })
+    expect(
+      within(timeline).queryByText('Yeni destek yanıtı'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(REPLY_OUTCOME_MESSAGES.delivered)).not.toBeInTheDocument()
+
+    refreshPending.resolve(saved)
+
+    expect(
+      await screen.findByText(REPLY_OUTCOME_MESSAGES.delivered),
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('list', { name: 'Mesaj geçmişi' })).getByText(
+        'Yeni destek yanıtı',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Müşteri Bekleniyor')).toBeInTheDocument()
+    expect(replyToTicket).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the delivery notice and shows a separate refresh warning when post-save refresh fails', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Mesaj geçmişi' })
+
+    replyToTicket.mockResolvedValueOnce(sampleReply())
+    fetchTicketDetails.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Yanıtınız'), 'Kaydedildi')
+    await user.click(screen.getByRole('button', { name: 'Yanıtı gönder' }))
+
+    expect(
+      await screen.findByText(REPLY_OUTCOME_MESSAGES.delivered),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Yanıtınız')).toHaveValue('')
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Destek hizmetine ulaşılamadı. Bağlantınızı kontrol edip yeniden deneyin.',
+        ),
+      ).toBeInTheDocument()
+    })
+    expect(screen.getByText('Merhaba, şifremi unuttum.')).toBeInTheDocument()
+    expect(replyToTicket).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes on 409 conflict, preserves the draft, and states that no reply was sent', async () => {
+    const { ApiError } = await import('../api/client')
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Mesaj geçmişi' })
+
+    replyToTicket.mockRejectedValueOnce(new ApiError(409, 'Conflict'))
+    fetchTicketDetails.mockResolvedValueOnce(
+      sampleDetail({ status: 'CustomerReplied' }),
+    )
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Yanıtınız'), 'Çakışan taslak')
+    await user.click(screen.getByRole('button', { name: 'Yanıtı gönder' }))
+
+    expect(
+      await screen.findByText(REPLY_OUTCOME_MESSAGES.preSendConflict),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Yanıtınız')).toHaveValue('Çakışan taslak')
+    expect(fetchTicketDetails).toHaveBeenCalledTimes(2)
+    expect(replyToTicket).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not auto-refresh on network-ambiguous reply failure', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Mesaj geçmişi' })
+
+    replyToTicket.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Yanıtınız'), 'Belirsiz')
+    await user.click(screen.getByRole('button', { name: 'Yanıtı gönder' }))
+
+    expect(
+      await screen.findByText(REPLY_OUTCOME_MESSAGES.networkAmbiguous),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Yanıtınız')).toHaveValue('Belirsiz')
+    expect(fetchTicketDetails).toHaveBeenCalledTimes(1)
+    expect(replyToTicket).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps download, back, refresh, and logout available while the reply is submitting', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
+    renderDetail()
+    await screen.findByRole('heading', { name: 'Mesaj geçmişi' })
+
+    const pending = deferred<SupportReplyResult>()
+    replyToTicket.mockReturnValueOnce(pending.promise)
+
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('Yanıtınız'), 'Gönderiliyor')
+    await user.click(screen.getByRole('button', { name: 'Yanıtı gönder' }))
+
+    expect(
+      screen.getByRole('button', { name: 'Yanıt gönderiliyor…' }),
+    ).toBeDisabled()
+    expect(screen.getByLabelText('Yanıtınız')).toBeDisabled()
+    expect(
+      screen.getByRole('link', { name: 'Destek taleplerine dön' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Çıkış yap' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Yenile' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /ekran\.png/ })).toBeEnabled()
+
+    pending.resolve(sampleReply())
+    fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
+    await screen.findByText(REPLY_OUTCOME_MESSAGES.delivered)
+  })
 })
+
