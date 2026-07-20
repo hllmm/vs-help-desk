@@ -3,8 +3,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Authentication;
+using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Infrastructure.Authentication;
+using VSHelpDesk.Infrastructure.Email;
 using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
 
@@ -41,8 +43,26 @@ public static class DependencyInjection
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddScoped<ITicketNumberGenerator, TicketNumberGenerator>();
 
-        // Hafta 1: DbContext (EF + Npgsql), seed
-        // Hafta 2: IEmailSender, IEmailReceiver (SMTP/IMAP)
+        services.AddSingleton<IValidateOptions<EmailOptions>, EmailOptionsValidator>();
+        services.AddOptions<EmailOptions>()
+            .Bind(configuration.GetSection(EmailOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IEmailBoundarySettings, EmailBoundarySettings>();
+        services.AddScoped<IEmailSender, SmtpEmailSender>();
+        services.AddScoped<IEmailReceiver>(serviceProvider =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<EmailOptions>>().Value;
+            var mode = (options.ReceiverMode ?? "Fake").Trim();
+            if (mode.Equals("Imap", StringComparison.OrdinalIgnoreCase))
+            {
+                return serviceProvider.GetRequiredService<NotConfiguredImapEmailReceiver>();
+            }
+
+            return serviceProvider.GetRequiredService<FakeEmailReceiver>();
+        });
+        services.AddScoped<FakeEmailReceiver>();
+        services.AddScoped<NotConfiguredImapEmailReceiver>();
+
         // Hafta 3: IFileStorage
 
         return services;

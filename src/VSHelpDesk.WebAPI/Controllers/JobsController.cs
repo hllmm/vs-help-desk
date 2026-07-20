@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 using VSHelpDesk.WebAPI.Filters;
 
 namespace VSHelpDesk.WebAPI.Controllers;
@@ -12,12 +13,25 @@ namespace VSHelpDesk.WebAPI.Controllers;
 [Route("api/jobs")]
 [AllowAnonymous]
 [ServiceFilter(typeof(JobsApiKeyAuthorizationFilter))]
-public sealed class JobsController : ControllerBase
+public sealed class JobsController(ProcessIncomingEmailsHandler processIncomingEmailsHandler) : ControllerBase
 {
-    /// <summary>POST api/jobs/process-incoming-emails — UC-002 / UC-006 / UC-009</summary>
+    /// <summary>POST api/jobs/process-incoming-emails — UC-002 boundary (Day 8 fetch/probe; Day 9 ticket create).</summary>
     [HttpPost("process-incoming-emails")]
-    public IActionResult ProcessIncomingEmails()
-        => StatusCode(StatusCodes.Status501NotImplemented, new { message = "Hafta 2: ProcessIncomingEmails." });
+    public async Task<IActionResult> ProcessIncomingEmails(CancellationToken cancellationToken)
+    {
+        var result = await processIncomingEmailsHandler.HandleAsync(
+            new ProcessIncomingEmailsCommand(),
+            cancellationToken);
+
+        if (result.IsFailure)
+        {
+            return StatusCode(
+                StatusCodes.Status502BadGateway,
+                new { message = result.Error });
+        }
+
+        return Ok(result.Value);
+    }
 
     /// <summary>POST api/jobs/resolve-inactive-tickets — UC-008 / BR-008</summary>
     [HttpPost("resolve-inactive-tickets")]
