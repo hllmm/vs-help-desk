@@ -120,131 +120,158 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
     public async Task GetById_ReturnsMessagesAndAttachmentsInDeterministicOrder()
     {
         var token = await LoginAsync();
-        Guid ticketId;
+        Guid ticketId = Guid.Empty;
         List<TicketMessage> expectedMessages;
         List<TicketAttachment> expectedAttachments;
+        var uniqueNumber = $"VS-DO{Guid.NewGuid():N}"[..16];
 
-        await using (var scope = factory.Services.CreateAsyncScope())
+        try
         {
-            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var stamp = new DateTime(2026, 8, 5, 12, 0, 0, DateTimeKind.Utc);
-            var ticket = Ticket.Create(
-                $"VS-DO{stamp:HHmmssfff}",
-                "Deterministic order subject",
-                "Ada",
-                "ada-order@example.test",
-                stamp);
-            ticketId = ticket.Id;
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var stamp = new DateTime(2026, 8, 5, 12, 0, 0, DateTimeKind.Utc);
+                var ticket = Ticket.Create(
+                    uniqueNumber,
+                    "Deterministic order subject",
+                    "Ada",
+                    "ada-order@example.test",
+                    stamp);
+                ticketId = ticket.Id;
 
-            var sameTime = stamp.AddMinutes(5);
-            var messageEarly = new TicketMessage(
-                ticket.Id,
-                MessageSenderType.Customer,
-                "Early message",
-                createdAtUtc: stamp.AddMinutes(1));
-            var messageTieA = new TicketMessage(
-                ticket.Id,
-                MessageSenderType.Support,
-                "Tie message A",
-                createdAtUtc: sameTime);
-            var messageTieB = new TicketMessage(
-                ticket.Id,
-                MessageSenderType.Customer,
-                "Tie message B",
-                createdAtUtc: sameTime);
+                var sameTime = stamp.AddMinutes(5);
+                var messageEarly = new TicketMessage(
+                    ticket.Id,
+                    MessageSenderType.Customer,
+                    "Early message",
+                    createdAtUtc: stamp.AddMinutes(1));
+                var messageTieA = new TicketMessage(
+                    ticket.Id,
+                    MessageSenderType.Support,
+                    "Tie message A",
+                    createdAtUtc: sameTime);
+                var messageTieB = new TicketMessage(
+                    ticket.Id,
+                    MessageSenderType.Customer,
+                    "Tie message B",
+                    createdAtUtc: sameTime);
 
-            db.Add(ticket);
-            db.Add(messageEarly);
-            db.Add(messageTieA);
-            db.Add(messageTieB);
-            await db.SaveChangesAsync();
+                db.Add(ticket);
+                db.Add(messageEarly);
+                db.Add(messageTieA);
+                db.Add(messageTieB);
+                await db.SaveChangesAsync();
 
-            var attachmentSame = stamp.AddMinutes(6);
-            var attachmentEarly = new TicketAttachment(
-                messageEarly.Id,
-                "early.txt",
-                "stored-early.txt",
-                "/tmp/vshd-seed/early.txt",
-                "text/plain",
-                11,
-                stamp.AddMinutes(2));
-            var attachmentTieA = new TicketAttachment(
-                messageTieA.Id,
-                "tie-a.pdf",
-                "stored-tie-a.pdf",
-                "/tmp/vshd-seed/tie-a.pdf",
-                "application/pdf",
-                22,
-                attachmentSame);
-            var attachmentTieB = new TicketAttachment(
-                messageTieB.Id,
-                "tie-b.txt",
-                "stored-tie-b.txt",
-                "/tmp/vshd-seed/tie-b.txt",
-                "text/plain",
-                33,
-                attachmentSame);
+                var attachmentSame = stamp.AddMinutes(6);
+                var attachmentEarly = new TicketAttachment(
+                    messageEarly.Id,
+                    "early.txt",
+                    "stored-early.txt",
+                    "/tmp/vshd-seed/early.txt",
+                    "text/plain",
+                    11,
+                    stamp.AddMinutes(2));
+                var attachmentTieA = new TicketAttachment(
+                    messageTieA.Id,
+                    "tie-a.pdf",
+                    "stored-tie-a.pdf",
+                    "/tmp/vshd-seed/tie-a.pdf",
+                    "application/pdf",
+                    22,
+                    attachmentSame);
+                var attachmentTieB = new TicketAttachment(
+                    messageTieB.Id,
+                    "tie-b.txt",
+                    "stored-tie-b.txt",
+                    "/tmp/vshd-seed/tie-b.txt",
+                    "text/plain",
+                    33,
+                    attachmentSame);
 
-            db.Add(attachmentEarly);
-            db.Add(attachmentTieA);
-            db.Add(attachmentTieB);
-            await db.SaveChangesAsync();
+                db.Add(attachmentEarly);
+                db.Add(attachmentTieA);
+                db.Add(attachmentTieB);
+                await db.SaveChangesAsync();
 
-            expectedMessages = await db.TicketMessages
-                .Where(m => m.TicketId == ticketId)
-                .OrderBy(m => m.CreatedAt)
-                .ThenBy(m => m.Id)
-                .ToListAsync();
-            expectedAttachments = await db.TicketAttachments
-                .Where(a => expectedMessages.Select(m => m.Id).Contains(a.TicketMessageId))
-                .OrderBy(a => a.CreatedAt)
-                .ThenBy(a => a.Id)
-                .ToListAsync();
+                expectedMessages = await db.TicketMessages
+                    .Where(m => m.TicketId == ticketId)
+                    .OrderBy(m => m.CreatedAt)
+                    .ThenBy(m => m.Id)
+                    .ToListAsync();
+                expectedAttachments = await db.TicketAttachments
+                    .Where(a => expectedMessages.Select(m => m.Id).Contains(a.TicketMessageId))
+                    .OrderBy(a => a.CreatedAt)
+                    .ThenBy(a => a.Id)
+                    .ToListAsync();
+            }
+
+            Assert.Equal(3, expectedMessages.Count);
+            Assert.Equal(3, expectedAttachments.Count);
+            Assert.Equal(expectedMessages[1].CreatedAt, expectedMessages[2].CreatedAt);
+            Assert.True(expectedMessages[1].Id.CompareTo(expectedMessages[2].Id) < 0);
+            Assert.Equal(expectedAttachments[1].CreatedAt, expectedAttachments[2].CreatedAt);
+            Assert.True(expectedAttachments[1].Id.CompareTo(expectedAttachments[2].Id) < 0);
+
+            using var client = factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/tickets/{ticketId}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            Assert.Equal(ticketId, root.GetProperty("id").GetGuid());
+            Assert.Equal("Deterministic order subject", root.GetProperty("subject").GetString());
+
+            var messages = root.GetProperty("messages");
+            Assert.Equal(3, messages.GetArrayLength());
+            for (var i = 0; i < expectedMessages.Count; i++)
+            {
+                var expected = expectedMessages[i];
+                var actual = messages[i];
+                Assert.Equal(expected.Id, actual.GetProperty("id").GetGuid());
+                Assert.Equal(expected.SenderType.ToString(), actual.GetProperty("senderType").GetString());
+                Assert.Equal(expected.Content, actual.GetProperty("content").GetString());
+                Assert.Equal(expected.IsHtml, actual.GetProperty("isHtml").GetBoolean());
+                Assert.Equal(expected.CreatedAt, actual.GetProperty("createdAt").GetDateTime());
+            }
+
+            var attachments = root.GetProperty("attachments");
+            Assert.Equal(3, attachments.GetArrayLength());
+            for (var i = 0; i < expectedAttachments.Count; i++)
+            {
+                var expected = expectedAttachments[i];
+                var actual = attachments[i];
+                Assert.Equal(expected.Id, actual.GetProperty("id").GetGuid());
+                Assert.Equal(expected.TicketMessageId, actual.GetProperty("ticketMessageId").GetGuid());
+                Assert.Equal(expected.FileName, actual.GetProperty("fileName").GetString());
+                Assert.Equal(expected.ContentType, actual.GetProperty("contentType").GetString());
+                Assert.Equal(expected.FileSize, actual.GetProperty("fileSize").GetInt64());
+                Assert.Equal(expected.CreatedAt, actual.GetProperty("createdAt").GetDateTime());
+            }
         }
-
-        Assert.Equal(3, expectedMessages.Count);
-        Assert.Equal(3, expectedAttachments.Count);
-        Assert.Equal(expectedMessages[1].CreatedAt, expectedMessages[2].CreatedAt);
-        Assert.True(expectedMessages[1].Id.CompareTo(expectedMessages[2].Id) < 0);
-        Assert.Equal(expectedAttachments[1].CreatedAt, expectedAttachments[2].CreatedAt);
-        Assert.True(expectedAttachments[1].Id.CompareTo(expectedAttachments[2].Id) < 0);
-
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/tickets/{ticketId}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var root = doc.RootElement;
-        Assert.Equal(ticketId, root.GetProperty("id").GetGuid());
-        Assert.Equal("Deterministic order subject", root.GetProperty("subject").GetString());
-
-        var messages = root.GetProperty("messages");
-        Assert.Equal(3, messages.GetArrayLength());
-        for (var i = 0; i < expectedMessages.Count; i++)
+        finally
         {
-            var expected = expectedMessages[i];
-            var actual = messages[i];
-            Assert.Equal(expected.Id, actual.GetProperty("id").GetGuid());
-            Assert.Equal(expected.SenderType.ToString(), actual.GetProperty("senderType").GetString());
-            Assert.Equal(expected.Content, actual.GetProperty("content").GetString());
-            Assert.Equal(expected.IsHtml, actual.GetProperty("isHtml").GetBoolean());
-            Assert.Equal(expected.CreatedAt, actual.GetProperty("createdAt").GetDateTime());
-        }
-
-        var attachments = root.GetProperty("attachments");
-        Assert.Equal(3, attachments.GetArrayLength());
-        for (var i = 0; i < expectedAttachments.Count; i++)
-        {
-            var expected = expectedAttachments[i];
-            var actual = attachments[i];
-            Assert.Equal(expected.Id, actual.GetProperty("id").GetGuid());
-            Assert.Equal(expected.TicketMessageId, actual.GetProperty("ticketMessageId").GetGuid());
-            Assert.Equal(expected.FileName, actual.GetProperty("fileName").GetString());
-            Assert.Equal(expected.ContentType, actual.GetProperty("contentType").GetString());
-            Assert.Equal(expected.FileSize, actual.GetProperty("fileSize").GetInt64());
-            Assert.Equal(expected.CreatedAt, actual.GetProperty("createdAt").GetDateTime());
+            if (ticketId != Guid.Empty)
+            {
+                await using var cleanup = factory.Services.CreateAsyncScope();
+                var db = cleanup.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var ticket = await db.Tickets.FirstOrDefaultAsync(t => t.Id == ticketId);
+                if (ticket is not null)
+                {
+                    var messageIds = await db.TicketMessages
+                        .Where(m => m.TicketId == ticketId)
+                        .Select(m => m.Id)
+                        .ToListAsync();
+                    var attachments = db.TicketAttachments
+                        .Where(a => messageIds.Contains(a.TicketMessageId));
+                    db.TicketAttachments.RemoveRange(attachments);
+                    db.TicketMessages.RemoveRange(
+                        db.TicketMessages.Where(m => m.TicketId == ticketId));
+                    db.Tickets.Remove(ticket);
+                    await db.SaveChangesAsync();
+                }
+            }
         }
     }
 
