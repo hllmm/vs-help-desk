@@ -1,7 +1,10 @@
+using Microsoft.Extensions.Options;
 using VSHelpDesk.Application;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
 using VSHelpDesk.WebAPI.Extensions;
+using VSHelpDesk.WebAPI.Filters;
+using VSHelpDesk.WebAPI.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +15,12 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddJwtBearerAuthentication(builder.Configuration);
 
+builder.Services.AddSingleton<IValidateOptions<JobsOptions>, JobsOptionsValidator>();
+builder.Services.AddOptions<JobsOptions>()
+    .Bind(builder.Configuration.GetSection(JobsOptions.SectionName))
+    .ValidateOnStart();
+builder.Services.AddScoped<JobsApiKeyAuthorizationFilter>();
+
 // Hafta 3: CORS for React SPA (see Cors:AllowedOrigins in appsettings)
 
 var app = builder.Build();
@@ -19,7 +28,7 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     await app.Services.SeedDevelopmentDataAsync();
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
 }
 
 app.UseHttpsRedirection();
@@ -29,8 +38,9 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// Health check for local/docker smoke tests
-app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "VSHelpDesk.WebAPI" }));
+// Health check for local/docker smoke tests (no auth).
+app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "VSHelpDesk.WebAPI" }))
+    .AllowAnonymous();
 
 app.Run();
 

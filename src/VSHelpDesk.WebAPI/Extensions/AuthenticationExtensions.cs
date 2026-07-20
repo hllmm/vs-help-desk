@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using VSHelpDesk.Infrastructure.Authentication;
 
@@ -38,7 +39,14 @@ public static class AuthenticationExtensions
                 };
             });
 
-        services.AddAuthorization();
+        services.AddAuthorization(options =>
+        {
+            // Portal endpoints require a bearer token unless explicitly [AllowAnonymous].
+            options.FallbackPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .Build();
+        });
+
         return services;
     }
 }

@@ -4,7 +4,8 @@ services:
     container_name: vshelpdesk_db
     environment:
       POSTGRES_USER: stajyer
-      POSTGRES_PASSWORD: staj_sifre_123
+      # Prefer POSTGRES_PASSWORD from a local .env (see .env.example). Do not commit real secrets.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-staj_sifre_123}
       POSTGRES_DB: VS_HelpDesk_DB
     ports:
       - "5432:5432"

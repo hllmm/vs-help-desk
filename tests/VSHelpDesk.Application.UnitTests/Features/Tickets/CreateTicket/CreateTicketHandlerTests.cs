@@ -49,7 +49,7 @@ public sealed class CreateTicketHandlerTests
     }
 
     [Fact]
-    public async Task BR003_SameMessageId_SecondHandle_DoesNotCreateAnotherTicketOrMessage()
+    public async Task UC002_SameMessageId_SecondHandle_DoesNotCreateAnotherTicketOrMessage()
     {
         var context = new FakeApplicationDbContext();
         var numbers = new FakeTicketNumberGenerator("VS-000008", "VS-000009");
@@ -70,6 +70,8 @@ public sealed class CreateTicketHandlerTests
         Assert.True(second.Value!.WasAlreadyProcessed);
         Assert.Equal(first.Value.TicketId, second.Value.TicketId);
         Assert.Equal(first.Value.TicketNumber, second.Value.TicketNumber);
+        Assert.Equal(first.Value.FirstTicketMessageId, second.Value.FirstTicketMessageId);
+        Assert.NotEqual(Guid.Empty, second.Value.FirstTicketMessageId);
 
         Assert.Single(context.TicketsList);
         Assert.Single(context.TicketMessagesList);
@@ -77,6 +79,49 @@ public sealed class CreateTicketHandlerTests
         Assert.Equal(1, numbers.NextCallCount);
         Assert.Equal(1, context.SaveChangesCallCount);
         Assert.Equal("First body", Assert.Single(context.TicketMessagesList).Content);
+    }
+
+    [Fact]
+    public async Task UC002_EmptyMessageId_ReturnsValidationFailure()
+    {
+        var handler = new CreateTicketHandler(
+            new FakeApplicationDbContext(),
+            new FakeTicketNumberGenerator("VS-000012"),
+            new FixedTimeProvider(CreateTime));
+
+        var result = await handler.HandleAsync(
+            new CreateTicketCommand("  ", "S", "Ada", "ada@example.test", "Body"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("MessageId", result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UC002_SaveChangesUniqueRace_ReturnsAlreadyProcessed()
+    {
+        var context = new FakeApplicationDbContext { SimulateConcurrentMessageIdWinner = true };
+        var numbers = new FakeTicketNumberGenerator("VS-000013", "VS-000014");
+        var handler = new CreateTicketHandler(context, numbers, new FixedTimeProvider(CreateTime));
+        var command = new CreateTicketCommand(
+            MessageId: "<msg-race@example.test>",
+            Subject: "Race",
+            CustomerName: "Ada",
+            CustomerEmail: "ada@example.test",
+            Content: "Body");
+
+        var result = await handler.HandleAsync(command, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value!.WasAlreadyProcessed);
+        Assert.NotEqual(Guid.Empty, result.Value.TicketId);
+        Assert.Equal("VS-WINNER", result.Value.TicketNumber);
+        Assert.NotEqual(Guid.Empty, result.Value.FirstTicketMessageId);
+        Assert.Equal(1, numbers.NextCallCount);
+        // Loser pending inserts discarded; only concurrent winner remains.
+        Assert.Single(context.TicketsList);
+        Assert.Single(context.TicketMessagesList);
+        Assert.Single(context.ProcessedEmailMessagesList);
     }
 
     [Fact]
@@ -96,10 +141,14 @@ public sealed class CreateTicketHandlerTests
     {
         public int SaveChangesCallCount { get; private set; }
 
+        public bool SimulateConcurrentMessageIdWinner { get; init; }
+
         public List<User> UsersList { get; } = [];
         public List<Ticket> TicketsList { get; } = [];
         public List<TicketMessage> TicketMessagesList { get; } = [];
         public List<ProcessedEmailMessage> ProcessedEmailMessagesList { get; } = [];
+
+        private readonly List<object> pending = [];
 
         public IQueryable<User> Users => UsersList.AsQueryable();
         public IQueryable<Ticket> Tickets => TicketsList.AsQueryable();
@@ -109,28 +158,56 @@ public sealed class CreateTicketHandlerTests
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
-            switch (entity)
-            {
-                case Ticket ticket:
-                    TicketsList.Add(ticket);
-                    break;
-                case TicketMessage message:
-                    TicketMessagesList.Add(message);
-                    break;
-                case ProcessedEmailMessage processed:
-                    ProcessedEmailMessagesList.Add(processed);
-                    break;
-                case User user:
-                    UsersList.Add(user);
-                    break;
-                default:
-                    throw new InvalidOperationException($"Unexpected entity type {typeof(TEntity).Name}.");
-            }
+            pending.Add(entity!);
         }
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
             SaveChangesCallCount++;
+
+            if (SimulateConcurrentMessageIdWinner &&
+                pending.OfType<ProcessedEmailMessage>().FirstOrDefault() is { } racing)
+            {
+                var winnerTicket = Ticket.Create(
+                    "VS-WINNER",
+                    "Race",
+                    "Ada",
+                    "ada@example.test",
+                    CreateTime.UtcDateTime);
+                var winnerMessage = new TicketMessage(
+                    winnerTicket.Id,
+                    MessageSenderType.Customer,
+                    "Body");
+                TicketsList.Add(winnerTicket);
+                TicketMessagesList.Add(winnerMessage);
+                ProcessedEmailMessagesList.Add(
+                    new ProcessedEmailMessage(racing.MessageId, CreateTime.UtcDateTime, winnerTicket.Id));
+                pending.Clear();
+                throw new InvalidOperationException("Simulated unique MessageId violation.");
+            }
+
+            foreach (var entity in pending)
+            {
+                switch (entity)
+                {
+                    case Ticket ticket:
+                        TicketsList.Add(ticket);
+                        break;
+                    case TicketMessage message:
+                        TicketMessagesList.Add(message);
+                        break;
+                    case ProcessedEmailMessage processed:
+                        ProcessedEmailMessagesList.Add(processed);
+                        break;
+                    case User user:
+                        UsersList.Add(user);
+                        break;
+                    default:
+                        throw new InvalidOperationException($"Unexpected entity type {entity.GetType().Name}.");
+                }
+            }
+
+            pending.Clear();
             return Task.FromResult(1);
         }
     }

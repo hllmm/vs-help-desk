@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace VSHelpDesk.WebAPI.Controllers;
@@ -6,6 +7,7 @@ namespace VSHelpDesk.WebAPI.Controllers;
 /// Ticket portal endpoints. List/Detail/Reply — Hafta 3; Resolve — Hafta 4.
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/tickets")]
 public sealed class TicketsController : ControllerBase
 {

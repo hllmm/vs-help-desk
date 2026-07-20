@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace VSHelpDesk.WebAPI.Controllers;
@@ -6,6 +7,7 @@ namespace VSHelpDesk.WebAPI.Controllers;
 /// Attachment download (BR-012). Implementation — Hafta 3.
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/attachments")]
 public sealed class AttachmentsController : ControllerBase
 {

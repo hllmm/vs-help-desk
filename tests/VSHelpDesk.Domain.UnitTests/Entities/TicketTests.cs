@@ -122,4 +122,22 @@ public sealed class TicketTests
         Assert.False(TicketNumberFormat.IsCanonical("VS-1"));
         Assert.Throws<ArgumentOutOfRangeException>(() => TicketNumberFormat.Format(0));
     }
+
+    [Fact]
+    public void IllegalTransitions_ThrowDomainException()
+    {
+        var ticket = Ticket.Create("VS-000020", "Guards", "Ada", "ada@example.test", T0);
+        ticket.Resolve(T1);
+
+        Assert.Throws<VSHelpDesk.Domain.Exceptions.DomainException>(
+            () => ticket.Resolve(T2));
+        Assert.Throws<VSHelpDesk.Domain.Exceptions.DomainException>(
+            () => ticket.MarkAsWaitingCustomerReply(T2));
+        Assert.Throws<VSHelpDesk.Domain.Exceptions.DomainException>(
+            () => ticket.Assign(Guid.NewGuid(), T2));
+
+        ticket.MarkAsCustomerReplied(T2);
+        Assert.Throws<VSHelpDesk.Domain.Exceptions.DomainException>(
+            () => ticket.MarkAsCustomerReplied(T3));
+    }
 }

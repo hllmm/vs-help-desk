@@ -10,7 +10,7 @@ Content-Type: application/json
 
 {
   "username": "support",
-  "password": "ChangeMe123!"
+  "password": "<from-user-secrets SeedUser:Password>"
 }
 
 ### Current user (Hafta 1)
@@ -23,8 +23,8 @@ Authorization: Bearer {{token}}
 
 ### Process incoming emails job (Hafta 2)
 POST {{VSHelpDesk.WebAPI_HostAddress}}/api/jobs/process-incoming-emails
-X-Jobs-Api-Key: dev-jobs-api-key-change-me
+X-Jobs-Api-Key: <from-user-secrets-or-appsettings.Development Jobs:ApiKey>
 
 ### Resolve inactive tickets job (Hafta 4)
 POST {{VSHelpDesk.WebAPI_HostAddress}}/api/jobs/resolve-inactive-tickets
-X-Jobs-Api-Key: dev-jobs-api-key-change-me
+X-Jobs-Api-Key: <from-user-secrets-or-appsettings.Development Jobs:ApiKey>
