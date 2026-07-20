@@ -58,7 +58,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var stamp = DateTime.UtcNow;
             db.Add(Ticket.Create(
-                $"VS-T{stamp:HHmmss}",
+                UniqueSeedTicketNumber("VS-T"),
                 "List seed",
                 "Seed Customer",
                 "seed@example.test",
@@ -281,7 +281,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var stamp = DateTime.UtcNow;
             var ticket = Ticket.Create(
-                $"VS-D{stamp:HHmmss}",
+                UniqueSeedTicketNumber("VS-D"),
                 "Detail subject",
                 "Ada",
                 "ada@example.test",
@@ -859,6 +859,17 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             Assert.DoesNotContain("AssignTicket", body, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("BR-011", body, StringComparison.OrdinalIgnoreCase);
         }
+    }
+
+    /// <summary>
+    /// Non-canonical test seed numbers. Millisecond stamp alone collides under parallel
+    /// runs and dirty shared Postgres (IX_Tickets_TicketNumber); Guid suffix makes them unique.
+    /// Truncated to Ticket.TicketNumber max length (32).
+    /// </summary>
+    private static string UniqueSeedTicketNumber(string prefix)
+    {
+        var candidate = $"{prefix}{DateTime.UtcNow:HHmmssfff}-{Guid.NewGuid():N}";
+        return candidate.Length <= 32 ? candidate : candidate[..32];
     }
 
     private static async Task<Guid> GetSeedUserIdAsync(ApplicationDbContext db)
