@@ -1,25 +1,42 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
+using VSHelpDesk.Application.Features.Tickets.GetTicketList;
+using VSHelpDesk.Domain.Enums;
 
 namespace VSHelpDesk.WebAPI.Controllers;
 
 /// <summary>
-/// Ticket portal endpoints. List/Detail/Reply — Hafta 3; Resolve — Hafta 4.
+/// Ticket portal endpoints. List/Detail — Hafta 3 Day 11; Reply — Day 12; Resolve — Hafta 4.
 /// </summary>
 [ApiController]
 [Authorize]
 [Route("api/tickets")]
-public sealed class TicketsController : ControllerBase
+public sealed class TicketsController(
+    GetTicketListHandler getTicketListHandler,
+    GetTicketDetailsHandler getTicketDetailsHandler) : ControllerBase
 {
     /// <summary>GET api/tickets — UC-003</summary>
     [HttpGet]
-    public IActionResult GetList()
-        => StatusCode(StatusCodes.Status501NotImplemented, new { message = "Hafta 3: GetTicketList (UC-003)." });
+    public async Task<IActionResult> GetList(
+        [FromQuery] TicketStatus? status,
+        CancellationToken cancellationToken)
+    {
+        var items = await getTicketListHandler.HandleAsync(
+            new GetTicketListQuery(status),
+            cancellationToken);
+        return Ok(items);
+    }
 
     /// <summary>GET api/tickets/{id} — UC-004</summary>
     [HttpGet("{id:guid}")]
-    public IActionResult GetById(Guid id)
-        => StatusCode(StatusCodes.Status501NotImplemented, new { message = $"Hafta 3: GetTicketDetails (UC-004) id={id}." });
+    public async Task<IActionResult> GetById(Guid id, CancellationToken cancellationToken)
+    {
+        var details = await getTicketDetailsHandler.HandleAsync(
+            new GetTicketDetailsQuery(id),
+            cancellationToken);
+        return Ok(details);
+    }
 
     /// <summary>POST api/tickets/{id}/replies — UC-005</summary>
     [HttpPost("{id:guid}/replies")]
