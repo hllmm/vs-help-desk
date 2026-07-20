@@ -4,4 +4,5 @@ namespace VSHelpDesk.WebAPI.Contracts.Authentication;
 public sealed record LoginResponse(
     Guid UserId,
     string FullName,
-    string Username);
+    string Username,
+    string Role);

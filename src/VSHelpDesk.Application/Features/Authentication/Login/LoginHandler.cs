@@ -26,6 +26,12 @@ public sealed class LoginHandler(
         await applicationDbContext.SaveChangesAsync(cancellationToken);
 
         var accessToken = tokenService.CreateToken(user);
-        return Result.Success(new LoginResult(accessToken, user.Id, user.FullName, user.Username));
+        return Result.Success(new LoginResult(
+            accessToken,
+            user.Id,
+            user.FullName,
+            user.Username,
+            user.Role.ToString()));
     }
 }
+

@@ -28,6 +28,7 @@ public sealed class LoginHandlerTests
         Assert.Equal(user.Id, login.UserId);
         Assert.Equal(user.FullName, login.FullName);
         Assert.Equal(user.Username, login.Username);
+        Assert.Equal(UserRole.Support.ToString(), login.Role);
         Assert.Equal(LoginTime.UtcDateTime, user.LastLoginAt);
         Assert.Equal(1, context.SaveChangesCallCount);
         Assert.Equal(1, tokenService.CreateTokenCallCount);
