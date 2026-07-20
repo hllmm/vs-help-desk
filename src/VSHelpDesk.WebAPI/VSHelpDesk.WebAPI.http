@@ -1,6 +1,30 @@
 @VSHelpDesk.WebAPI_HostAddress = http://localhost:5154
 
-GET {{VSHelpDesk.WebAPI_HostAddress}}/weatherforecast/
+### Health
+GET {{VSHelpDesk.WebAPI_HostAddress}}/health
 Accept: application/json
 
-###
+### UC-001 Login (Hafta 1)
+POST {{VSHelpDesk.WebAPI_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "support",
+  "password": "ChangeMe123!"
+}
+
+### Current user (Hafta 1)
+GET {{VSHelpDesk.WebAPI_HostAddress}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### Tickets list (Hafta 3)
+GET {{VSHelpDesk.WebAPI_HostAddress}}/api/tickets
+Authorization: Bearer {{token}}
+
+### Process incoming emails job (Hafta 2)
+POST {{VSHelpDesk.WebAPI_HostAddress}}/api/jobs/process-incoming-emails
+X-Jobs-Api-Key: dev-jobs-api-key-change-me
+
+### Resolve inactive tickets job (Hafta 4)
+POST {{VSHelpDesk.WebAPI_HostAddress}}/api/jobs/resolve-inactive-tickets
+X-Jobs-Api-Key: dev-jobs-api-key-change-me
