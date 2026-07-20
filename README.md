@@ -39,8 +39,11 @@ cd frontend && npm run lint && npm test && npm run build
 - Local Vite development uses `.env.development` → `VITE_API_BASE_URL=http://localhost:5154`.
 - `VITE_API_BASE_URL` is an optional build-time override.
 - When absent, the production bundle calls relative `/api/...` URLs and expects a same-origin reverse proxy.
-- Routes: `/login`, `/tickets` (list). Ticket detail/reply is outside the current portal UI task.
+- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply).
+- Detail messages render as literal text; attachments download via authenticated Blob + Bearer header (no token in URL).
+- Support reply: `POST /api/tickets/{id}/replies` with `{ content }` only; max **65,536** characters; saved-vs-delivered outcomes include SMTP failure warning without status change.
 - Frontend scripts: `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` (see [frontend/README.md](frontend/README.md)).
+- Week 3 browser evidence: `frontend/e2e/ticket-detail.smoke.spec.ts` (four viewports) plus Week 2 `portal.smoke.spec.ts`.
 
 ## Mail / job yapılandırması (Hafta 2 hardening)
 
