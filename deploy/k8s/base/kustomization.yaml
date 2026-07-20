@@ -6,6 +6,9 @@ resources:
   - configmap.yaml
   - postgres-service.yaml
   - postgres-statefulset.yaml
+  - api-pvc-attachments.yaml
+  - api-deployment.yaml
+  - api-service.yaml
 commonLabels:
   app.kubernetes.io/part-of: vs-help-desk
 
