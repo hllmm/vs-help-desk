@@ -29,21 +29,33 @@ public sealed class PostgresProcessIncomingEmailsGate : IProcessIncomingEmailsGa
     public async Task<IProcessIncomingEmailsLease?> TryAcquireAsync(
         CancellationToken cancellationToken = default)
     {
-        var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT pg_try_advisory_lock(@key);";
-        command.Parameters.Add(new NpgsqlParameter<long>("key", AdvisoryLockKey));
-
-        var acquired = (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
-        if (!acquired)
+        // Dispose on any failure before successful lock; transfer ownership only after acquire.
+        NpgsqlConnection? connection = new(connectionString);
+        try
         {
-            await connection.DisposeAsync().ConfigureAwait(false);
-            return null;
-        }
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        return new PostgresLease(connection, logger);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT pg_try_advisory_lock(@key);";
+            command.Parameters.Add(new NpgsqlParameter<long>("key", AdvisoryLockKey));
+
+            var acquired = (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
+            if (!acquired)
+            {
+                return null;
+            }
+
+            var lease = new PostgresLease(connection, logger);
+            connection = null;
+            return lease;
+        }
+        finally
+        {
+            if (connection is not null)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     private sealed class PostgresLease(
