@@ -169,7 +169,8 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
     {
         var sender = new RecordingEmailSender();
         var replyFactory = CreateFactoryWithEmailSender(sender);
-        var token = await LoginAsync(replyFactory);
+        // Login against the fixture host (stable user-secrets); JWT validates on reply host too.
+        var token = await LoginAsync();
 
         Guid ticketId;
         string ticketNumber;
@@ -231,7 +232,7 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
     {
         var sender = new RecordingEmailSender { ThrowOnSend = true };
         var replyFactory = CreateFactoryWithEmailSender(sender);
-        var token = await LoginAsync(replyFactory);
+        var token = await LoginAsync();
 
         Guid ticketId;
         await using (var scope = replyFactory.Services.CreateAsyncScope())

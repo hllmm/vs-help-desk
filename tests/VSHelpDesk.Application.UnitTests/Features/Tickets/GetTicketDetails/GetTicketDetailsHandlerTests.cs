@@ -49,16 +49,27 @@ public sealed class GetTicketDetailsHandlerTests
     {
         private readonly List<Ticket> tickets;
         private readonly List<TicketMessage> messages;
+        private readonly List<TicketAttachment> attachments;
 
-        public FakeDb(Ticket? ticket = null, params TicketMessage[] ticketMessages)
+        public FakeDb(
+            Ticket? ticket = null,
+            TicketMessage[]? ticketMessages = null,
+            TicketAttachment[]? ticketAttachments = null)
         {
             tickets = ticket is null ? [] : [ticket];
-            messages = ticketMessages.ToList();
+            messages = ticketMessages?.ToList() ?? [];
+            attachments = ticketAttachments?.ToList() ?? [];
+        }
+
+        public FakeDb(Ticket ticket, params TicketMessage[] ticketMessages)
+            : this(ticket, ticketMessages, null)
+        {
         }
 
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => tickets.AsQueryable();
         public IQueryable<TicketMessage> TicketMessages => messages.AsQueryable();
+        public IQueryable<TicketAttachment> TicketAttachments => attachments.AsQueryable();
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
             Array.Empty<ProcessedEmailMessage>().AsQueryable();
 

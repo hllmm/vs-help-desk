@@ -1,5 +1,6 @@
 namespace VSHelpDesk.Domain.Entities;
 
+/// <summary>File metadata for a ticket message (BR-012). Bytes live outside the DB (BR-017).</summary>
 public sealed class TicketAttachment
 {
     public Guid Id { get; private set; } = Guid.NewGuid();
@@ -18,6 +19,7 @@ public sealed class TicketAttachment
 
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
 
+    /// <summary>EF Core materialization.</summary>
     private TicketAttachment()
     {
     }
@@ -28,7 +30,8 @@ public sealed class TicketAttachment
         string storedFileName,
         string filePath,
         string contentType,
-        long fileSize)
+        long fileSize,
+        DateTime? createdAtUtc = null)
     {
         TicketMessageId = ticketMessageId;
         FileName = fileName;
@@ -36,5 +39,6 @@ public sealed class TicketAttachment
         FilePath = filePath;
         ContentType = contentType;
         FileSize = fileSize;
+        CreatedAt = createdAtUtc ?? DateTime.UtcNow;
     }
 }

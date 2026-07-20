@@ -50,8 +50,21 @@ public sealed class GetTicketDetailsHandler(IApplicationDbContext applicationDbC
                 message.CreatedAt))
             .ToList();
 
-        // Attachment table not mapped yet — return empty metadata (schema later).
-        IReadOnlyList<TicketAttachmentMetaDto> attachments = Array.Empty<TicketAttachmentMetaDto>();
+        var messageIds = messages.Select(message => message.Id).ToArray();
+        IReadOnlyList<TicketAttachmentMetaDto> attachments = messageIds.Length == 0
+            ? Array.Empty<TicketAttachmentMetaDto>()
+            : applicationDbContext.TicketAttachments
+                .Where(attachment => messageIds.Contains(attachment.TicketMessageId))
+                .OrderBy(attachment => attachment.CreatedAt)
+                .ThenBy(attachment => attachment.Id)
+                .Select(attachment => new TicketAttachmentMetaDto(
+                    attachment.Id,
+                    attachment.TicketMessageId,
+                    attachment.FileName,
+                    attachment.ContentType,
+                    attachment.FileSize,
+                    attachment.CreatedAt))
+                .ToList();
 
         var details = new TicketDetailsDto(
             ticket.Id,

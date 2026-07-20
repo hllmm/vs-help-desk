@@ -10,6 +10,8 @@ public interface IApplicationDbContext
 
     IQueryable<TicketMessage> TicketMessages { get; }
 
+    IQueryable<TicketAttachment> TicketAttachments { get; }
+
     IQueryable<ProcessedEmailMessage> ProcessedEmailMessages { get; }
 
     void Add<TEntity>(TEntity entity) where TEntity : class;

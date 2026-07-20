@@ -123,6 +123,9 @@ public sealed class AuthControllerTests
         public IQueryable<TicketMessage> TicketMessages { get; } =
             Array.Empty<TicketMessage>().AsQueryable();
 
+        public IQueryable<TicketAttachment> TicketAttachments { get; } =
+            Array.Empty<TicketAttachment>().AsQueryable();
+
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages { get; } =
             Array.Empty<ProcessedEmailMessage>().AsQueryable();
 

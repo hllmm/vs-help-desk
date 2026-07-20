@@ -207,12 +207,14 @@ public sealed class ProcessIncomingEmailsHandlerTests
         public List<User> UsersList { get; } = [];
         public List<Ticket> TicketsList { get; } = [];
         public List<TicketMessage> TicketMessagesList { get; } = [];
+        public List<TicketAttachment> TicketAttachmentsList { get; } = [];
         public List<ProcessedEmailMessage> ProcessedEmailMessagesList { get; } = [];
         private readonly List<object> pending = [];
 
         public IQueryable<User> Users => UsersList.AsQueryable();
         public IQueryable<Ticket> Tickets => TicketsList.AsQueryable();
         public IQueryable<TicketMessage> TicketMessages => TicketMessagesList.AsQueryable();
+        public IQueryable<TicketAttachment> TicketAttachments => TicketAttachmentsList.AsQueryable();
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
             ProcessedEmailMessagesList.AsQueryable();
 

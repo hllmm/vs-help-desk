@@ -104,6 +104,27 @@ public sealed class ApplicationDbContextTests
             index => index.IsUnique &&
                 index.Properties.Select(property => property.Name)
                     .SequenceEqual([nameof(ProcessedEmailMessage.MessageId)]));
+
+        var attachmentType = context.Model.FindEntityType(typeof(TicketAttachment));
+        Assert.NotNull(attachmentType);
+        Assert.Equal("TicketAttachments", attachmentType.GetTableName());
+        Assert.Equal(255, attachmentType.FindProperty(nameof(TicketAttachment.FileName))!.GetMaxLength());
+        Assert.Equal(260, attachmentType.FindProperty(nameof(TicketAttachment.StoredFileName))!.GetMaxLength());
+        Assert.False(attachmentType.FindProperty(nameof(TicketAttachment.ContentType))!.IsNullable);
+        Assert.Equal(
+            "timestamp with time zone",
+            attachmentType.FindProperty(nameof(TicketAttachment.CreatedAt))!.GetColumnType());
+        Assert.Contains(
+            attachmentType.GetForeignKeys(),
+            foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(TicketMessage) &&
+                foreignKey.Properties.Select(property => property.Name)
+                    .SequenceEqual([nameof(TicketAttachment.TicketMessageId)]) &&
+                foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
+        Assert.Contains(
+            attachmentType.GetIndexes(),
+            index => index.IsUnique &&
+                index.Properties.Select(property => property.Name)
+                    .SequenceEqual([nameof(TicketAttachment.StoredFileName)]));
     }
 
     [Fact]
