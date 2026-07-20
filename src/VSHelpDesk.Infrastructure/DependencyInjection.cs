@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Email;
@@ -79,6 +80,13 @@ public static class DependencyInjection
 
         // Singleton factory: each call opens/disposes an async scope; no scoped ctor deps.
         services.AddSingleton<IInboundEmailItemProcessorFactory, ScopedInboundEmailItemProcessorFactory>();
+
+        // Dedicated per-lease Npgsql connections; not the EF pool.
+        services.AddSingleton<IProcessIncomingEmailsGate>(serviceProvider =>
+            new PostgresProcessIncomingEmailsGate(
+                connectionString,
+                serviceProvider.GetRequiredService<
+                    ILogger<PostgresProcessIncomingEmailsGate>>()));
 
         return services;
     }

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
@@ -299,7 +300,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
     }
 
     [Fact]
-    public async Task GateBusy_ReturnsExistingFailureResult()
+    public async Task GateBusy_ThrowsJobAlreadyRunningException()
     {
         var handler = new ProcessIncomingEmailsHandler(
             new FakeReceiver([]),
@@ -308,10 +309,10 @@ public sealed class ProcessIncomingEmailsHandlerTests
             new BusyGate(),
             NullLogger<ProcessIncomingEmailsHandler>.Instance);
 
-        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+        var exception = await Assert.ThrowsAsync<JobAlreadyRunningException>(() =>
+            handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None));
 
-        Assert.True(result.IsFailure);
-        Assert.Equal("Process-incoming-emails is already running.", result.Error);
+        Assert.Equal("The incoming-email job is already running.", exception.Message);
     }
 
     [Fact]

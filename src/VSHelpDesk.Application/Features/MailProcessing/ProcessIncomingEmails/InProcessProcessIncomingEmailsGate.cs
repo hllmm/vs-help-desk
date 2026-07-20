@@ -1,7 +1,7 @@
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
 /// <summary>
-/// Temporary in-process lease gate. Task 8 replaces production registration with PostgreSQL.
+/// In-process lease gate for unit tests. Production uses PostgreSQL advisory locks.
 /// </summary>
 public sealed class InProcessProcessIncomingEmailsGate : IProcessIncomingEmailsGate
 {

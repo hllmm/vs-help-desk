@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Models;
 
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
@@ -23,13 +24,9 @@ public sealed class ProcessIncomingEmailsHandler(
     {
         _ = command;
 
-        await using var lease = await processIncomingEmailsGate.TryAcquireAsync(cancellationToken);
-        if (lease is null)
-        {
-            logger.LogWarning("ProcessIncomingEmails skipped because another run is in progress");
-            return Result.Failure<ProcessIncomingEmailsResult>(
-                "Process-incoming-emails is already running.");
-        }
+        await using var lease =
+            await processIncomingEmailsGate.TryAcquireAsync(cancellationToken)
+            ?? throw new JobAlreadyRunningException();
 
         return await HandleCoreAsync(cancellationToken);
     }

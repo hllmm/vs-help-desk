@@ -43,6 +43,8 @@ public sealed class ExceptionHandlingMiddleware
         {
             NotFoundException => (HttpStatusCode.NotFound, "The requested resource was not found."),
             UnauthorizedApplicationException => (HttpStatusCode.Unauthorized, "Unauthorized."),
+            ConflictApplicationException =>
+                (HttpStatusCode.Conflict, "The request conflicts with current state."),
             DomainException => (HttpStatusCode.BadRequest, "A domain rule was violated."),
             _ => (HttpStatusCode.InternalServerError, "An unexpected error occurred.")
         };

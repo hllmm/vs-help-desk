@@ -23,6 +23,7 @@ public sealed class JobsController(ProcessIncomingEmailsHandler processIncomingE
             new ProcessIncomingEmailsCommand(),
             cancellationToken);
 
+        // 502 only for receiver/infrastructure Result failures; contention throws and maps to 409.
         if (result.IsFailure)
         {
             return StatusCode(
