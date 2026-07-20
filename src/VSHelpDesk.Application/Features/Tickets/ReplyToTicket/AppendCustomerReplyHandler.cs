@@ -8,7 +8,8 @@ namespace VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 
 public sealed class AppendCustomerReplyHandler(
     IApplicationDbContext applicationDbContext,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IDatabaseErrorClassifier databaseErrorClassifier)
 {
     public async Task<Result<AppendCustomerReplyResult>> HandleAsync(
         AppendCustomerReplyCommand command,
@@ -24,9 +25,9 @@ public sealed class AppendCustomerReplyHandler(
             return Result.Failure<AppendCustomerReplyResult>("TicketNumber is required.");
         }
 
-        var messageId = command.MessageId.Trim();
+        var idempotencyKey = command.MessageId.Trim();
         var existing = applicationDbContext.ProcessedEmailMessages
-            .FirstOrDefault(processed => processed.MessageId == messageId);
+            .FirstOrDefault(processed => processed.IdempotencyKey == idempotencyKey);
         if (existing is not null)
         {
             var existingTicket = existing.TicketId is null
@@ -77,7 +78,11 @@ public sealed class AppendCustomerReplyHandler(
 
         ticket.MarkAsCustomerReplied(now);
 
-        var processed = new ProcessedEmailMessage(messageId, now, ticket.Id);
+        var processed = ProcessedEmailMessage.ForAppendedReply(
+            idempotencyKey,
+            sourceMessageId: idempotencyKey,
+            processedAtUtc: now,
+            ticketId: ticket.Id);
         applicationDbContext.Add(message);
         applicationDbContext.Add(processed);
 
@@ -89,11 +94,10 @@ public sealed class AppendCustomerReplyHandler(
         {
             applicationDbContext.ClearTrackedChanges();
 
-            if (applicationDbContext.IsUniqueConstraintViolation(ex) ||
-                ex is InvalidOperationException)
+            if (databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
             {
                 var afterRace = applicationDbContext.ProcessedEmailMessages
-                    .FirstOrDefault(processedRow => processedRow.MessageId == messageId);
+                    .FirstOrDefault(processedRow => processedRow.IdempotencyKey == idempotencyKey);
                 if (afterRace is not null)
                 {
                     return Result.Success(new AppendCustomerReplyResult(

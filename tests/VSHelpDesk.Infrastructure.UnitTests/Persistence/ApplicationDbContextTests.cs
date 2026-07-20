@@ -94,16 +94,28 @@ public sealed class ApplicationDbContextTests
         var processedType = context.Model.FindEntityType(typeof(ProcessedEmailMessage));
         Assert.NotNull(processedType);
         Assert.Equal("ProcessedEmailMessages", processedType.GetTableName());
-        Assert.Equal(998, processedType.FindProperty(nameof(ProcessedEmailMessage.MessageId))!.GetMaxLength());
-        Assert.False(processedType.FindProperty(nameof(ProcessedEmailMessage.MessageId))!.IsNullable);
+        Assert.Equal(998, processedType.FindProperty(nameof(ProcessedEmailMessage.IdempotencyKey))!.GetMaxLength());
+        Assert.False(processedType.FindProperty(nameof(ProcessedEmailMessage.IdempotencyKey))!.IsNullable);
+        Assert.Equal(
+            998,
+            processedType.FindProperty(nameof(ProcessedEmailMessage.SourceMessageId))!.GetMaxLength());
+        Assert.Equal(
+            500,
+            processedType.FindProperty(nameof(ProcessedEmailMessage.ProcessingNote))!.GetMaxLength());
         Assert.Equal(
             "timestamp with time zone",
             processedType.FindProperty(nameof(ProcessedEmailMessage.ProcessedAt))!.GetColumnType());
-        Assert.Contains(
-            processedType.GetIndexes(),
-            index => index.IsUnique &&
-                index.Properties.Select(property => property.Name)
-                    .SequenceEqual([nameof(ProcessedEmailMessage.MessageId)]));
+        var unique = Assert.Single(processedType.GetIndexes(), index => index.IsUnique);
+        Assert.Equal("UX_ProcessedEmailMessages_IdempotencyKey", unique.GetDatabaseName());
+        Assert.Equal(
+            [nameof(ProcessedEmailMessage.IdempotencyKey)],
+            unique.Properties.Select(property => property.Name));
+
+        var version = ticketType.FindProperty(nameof(Ticket.Version))!;
+        Assert.True(version.IsConcurrencyToken);
+        Assert.Equal(
+            Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate,
+            version.ValueGenerated);
 
         var attachmentType = context.Model.FindEntityType(typeof(TicketAttachment));
         Assert.NotNull(attachmentType);

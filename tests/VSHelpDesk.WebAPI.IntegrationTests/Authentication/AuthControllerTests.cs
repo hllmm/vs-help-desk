@@ -140,7 +140,6 @@ public sealed class AuthControllerTests
         {
         }
 
-        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 
     private sealed class FakePasswordHasher(string validPassword) : IPasswordHasher

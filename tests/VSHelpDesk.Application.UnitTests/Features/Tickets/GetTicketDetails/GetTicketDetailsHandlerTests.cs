@@ -84,6 +84,5 @@ public sealed class GetTicketDetailsHandlerTests
         {
         }
 
-        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 }

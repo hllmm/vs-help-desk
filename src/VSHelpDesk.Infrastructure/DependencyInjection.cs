@@ -44,6 +44,7 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
         services.AddScoped<ITicketNumberGenerator, TicketNumberGenerator>();
+        services.AddSingleton<IDatabaseErrorClassifier, PostgresDatabaseErrorClassifier>();
 
         services.AddSingleton<IValidateOptions<EmailOptions>, EmailOptionsValidator>();
         services.AddOptions<EmailOptions>()

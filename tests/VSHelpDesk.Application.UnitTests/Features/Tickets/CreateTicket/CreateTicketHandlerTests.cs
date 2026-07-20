@@ -15,7 +15,7 @@ public sealed class CreateTicketHandlerTests
     {
         var context = new FakeApplicationDbContext();
         var numbers = new FakeTicketNumberGenerator("VS-000007");
-        var handler = new CreateTicketHandler(context, numbers, new FixedTimeProvider(CreateTime));
+        var handler = CreateHandler(context, numbers);
 
         var result = await handler.HandleAsync(
             new CreateTicketCommand(
@@ -44,9 +44,33 @@ public sealed class CreateTicketHandlerTests
         Assert.Equal(MessageSenderType.Customer, message.SenderType);
         Assert.Equal("Printer jam", message.Content);
         Assert.Equal(CreateTime.UtcDateTime, message.CreatedAt);
-        Assert.Equal("<msg-new-001@example.test>", processed.MessageId);
+        Assert.Equal("<msg-new-001@example.test>", processed.IdempotencyKey);
         Assert.Equal(ticket.Id, processed.TicketId);
         Assert.Equal(result.Value.FirstTicketMessageId, message.Id);
+        Assert.Equal(result.Value.ProcessedEmailMessageId, processed.Id);
+    }
+
+    [Fact]
+    public async Task Create_PersistsCreatedTicketDispositionAndPendingAck()
+    {
+        var context = new FakeApplicationDbContext();
+        var handler = CreateHandler(context, new FakeTicketNumberGenerator("VS-000100"));
+
+        var result = await handler.HandleAsync(
+            new CreateTicketCommand(
+                MessageId: "<msg-disp@example.test>",
+                Subject: "Disposition",
+                CustomerName: "Ada",
+                CustomerEmail: "ada@example.test",
+                Content: "Body"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var processed = Assert.Single(context.ProcessedEmailMessagesList);
+        Assert.Equal(ProcessedEmailDisposition.CreatedTicket, processed.Disposition);
+        Assert.Equal(AcknowledgementStatus.Pending, processed.AcknowledgementStatus);
+        Assert.Equal(CreateTime.UtcDateTime, processed.AcknowledgementNextAttemptAt);
+        Assert.Equal(result.Value!.ProcessedEmailMessageId, processed.Id);
     }
 
     [Fact]
@@ -54,7 +78,7 @@ public sealed class CreateTicketHandlerTests
     {
         var context = new FakeApplicationDbContext();
         var numbers = new FakeTicketNumberGenerator("VS-000008", "VS-000009");
-        var handler = new CreateTicketHandler(context, numbers, new FixedTimeProvider(CreateTime));
+        var handler = CreateHandler(context, numbers);
         var command = new CreateTicketCommand(
             MessageId: "<msg-dup-001@example.test>",
             Subject: "Duplicate mail",
@@ -72,6 +96,7 @@ public sealed class CreateTicketHandlerTests
         Assert.Equal(first.Value.TicketId, second.Value.TicketId);
         Assert.Equal(first.Value.TicketNumber, second.Value.TicketNumber);
         Assert.Equal(first.Value.FirstTicketMessageId, second.Value.FirstTicketMessageId);
+        Assert.Equal(first.Value.ProcessedEmailMessageId, second.Value.ProcessedEmailMessageId);
         Assert.NotEqual(Guid.Empty, second.Value.FirstTicketMessageId);
 
         Assert.Single(context.TicketsList);
@@ -85,10 +110,9 @@ public sealed class CreateTicketHandlerTests
     [Fact]
     public async Task UC002_EmptyMessageId_ReturnsValidationFailure()
     {
-        var handler = new CreateTicketHandler(
+        var handler = CreateHandler(
             new FakeApplicationDbContext(),
-            new FakeTicketNumberGenerator("VS-000012"),
-            new FixedTimeProvider(CreateTime));
+            new FakeTicketNumberGenerator("VS-000012"));
 
         var result = await handler.HandleAsync(
             new CreateTicketCommand("  ", "S", "Ada", "ada@example.test", "Body"),
@@ -101,9 +125,12 @@ public sealed class CreateTicketHandlerTests
     [Fact]
     public async Task UC002_SaveChangesUniqueRace_ReturnsAlreadyProcessed()
     {
-        var context = new FakeApplicationDbContext { SimulateConcurrentMessageIdWinner = true };
+        var context = new FakeApplicationDbContext { SimulateConcurrentIdempotencyWinner = true };
         var numbers = new FakeTicketNumberGenerator("VS-000013", "VS-000014");
-        var handler = new CreateTicketHandler(context, numbers, new FixedTimeProvider(CreateTime));
+        var handler = CreateHandler(
+            context,
+            numbers,
+            new FakeDatabaseErrorClassifier { TreatIdempotencyRaceAsConflict = true });
         var command = new CreateTicketCommand(
             MessageId: "<msg-race@example.test>",
             Subject: "Race",
@@ -118,11 +145,52 @@ public sealed class CreateTicketHandlerTests
         Assert.NotEqual(Guid.Empty, result.Value.TicketId);
         Assert.Equal("VS-WINNER", result.Value.TicketNumber);
         Assert.NotEqual(Guid.Empty, result.Value.FirstTicketMessageId);
+        Assert.NotEqual(Guid.Empty, result.Value.ProcessedEmailMessageId);
         Assert.Equal(1, numbers.NextCallCount);
         // Loser pending inserts discarded; only concurrent winner remains.
         Assert.Single(context.TicketsList);
         Assert.Single(context.TicketMessagesList);
         Assert.Single(context.ProcessedEmailMessagesList);
+    }
+
+    [Fact]
+    public async Task GenericInvalidOperation_IsNotTreatedAsIdempotencyRace()
+    {
+        var context = new FakeApplicationDbContext { ThrowGenericInvalidOperation = true };
+        var handler = CreateHandler(context, new FakeTicketNumberGenerator("VS-000015"));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            handler.HandleAsync(
+                new CreateTicketCommand(
+                    MessageId: "<msg-generic@example.test>",
+                    Subject: "S",
+                    CustomerName: "Ada",
+                    CustomerEmail: "ada@example.test",
+                    Content: "Body"),
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WrongUniqueConstraint_IsNotTreatedAsIdempotencyRace()
+    {
+        var context = new FakeApplicationDbContext { ThrowWrongUniqueConstraint = true };
+        // Classifier that only accepts the processed-email index name — wrong constraint must propagate.
+        var handler = CreateHandler(
+            context,
+            new FakeTicketNumberGenerator("VS-000016"),
+            new FakeDatabaseErrorClassifier { TreatIdempotencyRaceAsConflict = true });
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            handler.HandleAsync(
+                new CreateTicketCommand(
+                    MessageId: "<msg-wrong-ux@example.test>",
+                    Subject: "S",
+                    CustomerName: "Ada",
+                    CustomerEmail: "ada@example.test",
+                    Content: "Body"),
+                CancellationToken.None));
+
+        Assert.Contains("IX_Tickets_TicketNumber", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -138,11 +206,38 @@ public sealed class CreateTicketHandlerTests
         Assert.True(TicketNumberFormat.IsCanonical(second));
     }
 
+    private static CreateTicketHandler CreateHandler(
+        FakeApplicationDbContext context,
+        FakeTicketNumberGenerator numbers,
+        IDatabaseErrorClassifier? classifier = null) =>
+        new(
+            context,
+            numbers,
+            new FixedTimeProvider(CreateTime),
+            classifier ?? new FakeDatabaseErrorClassifier());
+
+    private sealed class FakeDatabaseErrorClassifier : IDatabaseErrorClassifier
+    {
+        public bool TreatIdempotencyRaceAsConflict { get; init; }
+
+        public bool IsProcessedEmailIdempotencyConflict(Exception exception) =>
+            TreatIdempotencyRaceAsConflict &&
+            exception.Message.Contains(
+                "UX_ProcessedEmailMessages_IdempotencyKey",
+                StringComparison.Ordinal);
+
+        public bool IsOptimisticConcurrencyConflict(Exception exception) => false;
+    }
+
     private sealed class FakeApplicationDbContext : IApplicationDbContext
     {
         public int SaveChangesCallCount { get; private set; }
 
-        public bool SimulateConcurrentMessageIdWinner { get; init; }
+        public bool SimulateConcurrentIdempotencyWinner { get; init; }
+
+        public bool ThrowGenericInvalidOperation { get; init; }
+
+        public bool ThrowWrongUniqueConstraint { get; init; }
 
         public List<User> UsersList { get; } = [];
         public List<Ticket> TicketsList { get; } = [];
@@ -168,7 +263,20 @@ public sealed class CreateTicketHandlerTests
         {
             SaveChangesCallCount++;
 
-            if (SimulateConcurrentMessageIdWinner &&
+            if (ThrowGenericInvalidOperation)
+            {
+                pending.Clear();
+                throw new InvalidOperationException("Simulated non-idempotency failure.");
+            }
+
+            if (ThrowWrongUniqueConstraint)
+            {
+                pending.Clear();
+                throw new InvalidOperationException(
+                    "Simulated IX_Tickets_TicketNumber unique violation.");
+            }
+
+            if (SimulateConcurrentIdempotencyWinner &&
                 pending.OfType<ProcessedEmailMessage>().FirstOrDefault() is { } racing)
             {
                 var winnerTicket = Ticket.Create(
@@ -182,12 +290,17 @@ public sealed class CreateTicketHandlerTests
                     MessageSenderType.Customer,
                     "Body",
                     createdAtUtc: CreateTime.UtcDateTime);
+                var winnerProcessed = ProcessedEmailMessage.ForCreatedTicket(
+                    racing.IdempotencyKey,
+                    racing.IdempotencyKey,
+                    CreateTime.UtcDateTime,
+                    winnerTicket.Id);
                 TicketsList.Add(winnerTicket);
                 TicketMessagesList.Add(winnerMessage);
-                ProcessedEmailMessagesList.Add(
-                    new ProcessedEmailMessage(racing.MessageId, CreateTime.UtcDateTime, winnerTicket.Id));
+                ProcessedEmailMessagesList.Add(winnerProcessed);
                 pending.Clear();
-                throw new InvalidOperationException("Simulated unique MessageId violation.");
+                throw new InvalidOperationException(
+                    "Simulated UX_ProcessedEmailMessages_IdempotencyKey unique violation.");
             }
 
             foreach (var entity in pending)
@@ -216,9 +329,6 @@ public sealed class CreateTicketHandlerTests
         }
 
         public void ClearTrackedChanges() => pending.Clear();
-
-        public bool IsUniqueConstraintViolation(Exception exception) =>
-            exception is InvalidOperationException;
     }
 
     private sealed class FakeTicketNumberGenerator(params string[] numbers) : ITicketNumberGenerator

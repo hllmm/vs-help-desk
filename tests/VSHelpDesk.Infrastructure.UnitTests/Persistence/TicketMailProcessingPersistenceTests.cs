@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Npgsql;
+using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
+using VSHelpDesk.Infrastructure.Persistence.Configurations;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Persistence;
 
@@ -24,7 +28,8 @@ public sealed class TicketMailProcessingPersistenceTests
             "Hello, the office printer is offline.",
             isHtml: false,
             createdAtUtc: now);
-        var processed = new ProcessedEmailMessage(
+        var processed = ProcessedEmailMessage.ForCreatedTicket(
+            "<msg-id-unique-001@example.test>",
             "<msg-id-unique-001@example.test>",
             now,
             ticket.Id);
@@ -48,7 +53,8 @@ public sealed class TicketMailProcessingPersistenceTests
         Assert.Equal(ticket.Id, storedMessage.TicketId);
         Assert.Equal(MessageSenderType.Customer, storedMessage.SenderType);
         Assert.Equal(ticket.Id, storedProcessed.TicketId);
-        Assert.Equal("<msg-id-unique-001@example.test>", storedProcessed.MessageId);
+        Assert.Equal("<msg-id-unique-001@example.test>", storedProcessed.IdempotencyKey);
+        Assert.Equal(ProcessedEmailDisposition.CreatedTicket, storedProcessed.Disposition);
     }
 
     [Fact]
@@ -64,15 +70,131 @@ public sealed class TicketMailProcessingPersistenceTests
     }
 
     [Fact]
-    public void Model_HasUniqueIndex_OnProcessedEmailMessageId()
+    public void Model_HasUniqueIndex_OnProcessedEmailIdempotencyKey()
     {
         using var metadata = CreateMetadataContext();
-        var processedType = metadata.Model.FindEntityType(typeof(ProcessedEmailMessage))!;
-        Assert.Contains(
-            processedType.GetIndexes(),
-            index => index.IsUnique &&
-                index.Properties.Select(property => property.Name)
-                    .SequenceEqual([nameof(ProcessedEmailMessage.MessageId)]));
+        var processed = metadata.Model.FindEntityType(typeof(ProcessedEmailMessage))!;
+        var unique = Assert.Single(processed.GetIndexes(), index => index.IsUnique);
+        Assert.Equal(
+            "UX_ProcessedEmailMessages_IdempotencyKey",
+            unique.GetDatabaseName());
+        Assert.Equal(
+            [nameof(ProcessedEmailMessage.IdempotencyKey)],
+            unique.Properties.Select(property => property.Name));
+        Assert.Equal(
+            998,
+            processed.FindProperty(nameof(ProcessedEmailMessage.SourceMessageId))!
+                .GetMaxLength());
+        Assert.Equal(
+            500,
+            processed.FindProperty(nameof(ProcessedEmailMessage.ProcessingNote))!
+                .GetMaxLength());
+
+        var version = metadata.Model.FindEntityType(typeof(Ticket))!
+            .FindProperty(nameof(Ticket.Version))!;
+        Assert.True(version.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.OnAddOrUpdate, version.ValueGenerated);
+    }
+
+    [PostgresFact]
+    public async Task DuplicateIdempotencyKey_IsOnlyRecoverableUniqueConflict()
+    {
+        var idempotencyKey = $"<dup-{Guid.NewGuid():N}@example.test>";
+        var now = DateTime.UtcNow;
+        var classifier = new PostgresDatabaseErrorClassifier();
+        await using var context = PostgresTestConnection.CreateContext();
+
+        try
+        {
+            context.Add(ProcessedEmailMessage.ForQuarantine(idempotencyKey, idempotencyKey, now));
+            await context.SaveChangesAsync();
+
+            context.Add(ProcessedEmailMessage.ForQuarantine(
+                idempotencyKey,
+                idempotencyKey,
+                now.AddSeconds(1)));
+            var exception = await Assert.ThrowsAsync<DbUpdateException>(
+                () => context.SaveChangesAsync());
+
+            Assert.True(classifier.IsProcessedEmailIdempotencyConflict(exception));
+            Assert.Contains(
+                ProcessedEmailMessageConfiguration.IdempotencyUniqueIndexName,
+                exception.InnerException?.Message ?? exception.Message,
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            await context.ProcessedEmailMessages
+                .Where(processed => processed.IdempotencyKey == idempotencyKey)
+                .ExecuteDeleteAsync();
+        }
+    }
+
+    [PostgresFact]
+    public async Task ForeignKeyViolation_IsNotIdempotencyConflict()
+    {
+        var classifier = new PostgresDatabaseErrorClassifier();
+        await using var context = PostgresTestConnection.CreateContext();
+        var unknownTicketId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+
+        context.Add(new TicketMessage(
+            unknownTicketId,
+            MessageSenderType.Customer,
+            "orphan message",
+            createdAtUtc: now));
+
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(
+            () => context.SaveChangesAsync());
+
+        var postgres = FindPostgresException(exception);
+        Assert.NotNull(postgres);
+        Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, postgres.SqlState);
+        Assert.False(classifier.IsProcessedEmailIdempotencyConflict(exception));
+    }
+
+    [PostgresFact]
+    public async Task TicketXmin_SecondWriterBecomesOptimisticConcurrencyException()
+    {
+        var ticketNumber = $"TX{Guid.NewGuid():N}"[..18];
+        var stamp = DateTime.UtcNow;
+        Guid ticketId;
+
+        await using (var seed = PostgresTestConnection.CreateContext())
+        {
+            var ticket = Ticket.Create(
+                ticketNumber,
+                "Concurrency",
+                "Ada",
+                "ada@example.test",
+                stamp);
+            seed.Add(ticket);
+            await seed.SaveChangesAsync();
+            ticketId = ticket.Id;
+        }
+
+        try
+        {
+            await using var first = PostgresTestConnection.CreateContext();
+            await using var second = PostgresTestConnection.CreateContext();
+
+            var left = await first.Tickets.SingleAsync(ticket => ticket.Id == ticketId);
+            var right = await second.Tickets.SingleAsync(ticket => ticket.Id == ticketId);
+
+            left.RecordMessageActivity(stamp.AddMinutes(1));
+            await first.SaveChangesAsync();
+
+            right.RecordMessageActivity(stamp.AddMinutes(2));
+            await Assert.ThrowsAsync<OptimisticConcurrencyException>(
+                () => second.SaveChangesAsync());
+        }
+        finally
+        {
+            await using var cleanup = PostgresTestConnection.CreateContext();
+            await cleanup.Tickets
+                .Where(ticket => ticket.Id == ticketId)
+                .ExecuteDeleteAsync();
+        }
     }
 
     [PostgresFact]
@@ -92,6 +214,7 @@ public sealed class TicketMailProcessingPersistenceTests
                 () => context.SaveChangesAsync());
 
             Assert.Contains("IX_Tickets_TicketNumber", exception.InnerException?.Message ?? exception.Message, StringComparison.Ordinal);
+            Assert.False(new PostgresDatabaseErrorClassifier().IsProcessedEmailIdempotencyConflict(exception));
         }
         finally
         {
@@ -101,33 +224,17 @@ public sealed class TicketMailProcessingPersistenceTests
         }
     }
 
-    [PostgresFact]
-    public async Task PostgreSQL_DuplicateMessageId_ThrowsDbUpdateException()
+    private static PostgresException? FindPostgresException(Exception exception)
     {
-        var messageId = $"<dup-{Guid.NewGuid():N}@example.test>";
-        var now = DateTime.UtcNow;
-        await using var context = PostgresTestConnection.CreateContext();
-
-        try
+        for (var current = exception; current is not null; current = current.InnerException)
         {
-            context.Add(new ProcessedEmailMessage(messageId, now));
-            await context.SaveChangesAsync();
-
-            context.Add(new ProcessedEmailMessage(messageId, now.AddSeconds(1)));
-            var exception = await Assert.ThrowsAsync<DbUpdateException>(
-                () => context.SaveChangesAsync());
-
-            Assert.Contains(
-                "IX_ProcessedEmailMessages_MessageId",
-                exception.InnerException?.Message ?? exception.Message,
-                StringComparison.Ordinal);
+            if (current is PostgresException postgres)
+            {
+                return postgres;
+            }
         }
-        finally
-        {
-            await context.ProcessedEmailMessages
-                .Where(processed => processed.MessageId == messageId)
-                .ExecuteDeleteAsync();
-        }
+
+        return null;
     }
 
     private static ApplicationDbContext CreateInMemoryContext()

@@ -143,6 +143,5 @@ public sealed class SupportReplyToTicketHandlerTests
 
         public void ClearTrackedChanges() => pending.Clear();
 
-        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 }

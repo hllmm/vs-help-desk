@@ -36,6 +36,52 @@ public sealed class ProcessIncomingEmailsHandlerTests
     }
 
     [Fact]
+    public async Task ProcessJob_AckSuccess_RecordsSent()
+    {
+        var context = new FakeDb();
+        var sender = new RecordingSender();
+        var receiver = new FakeReceiver(
+        [
+            Mail("<msg-ack-ok@test>", "customer@example.test", "Help", "Body")
+        ]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000220");
+
+        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.Equal(1, result.Value!.AckSent);
+        var processed = Assert.Single(context.ProcessedEmailMessagesList);
+        Assert.Equal(AcknowledgementStatus.Sent, processed.AcknowledgementStatus);
+        Assert.Equal(FixedNow.UtcDateTime, processed.AcknowledgementSentAt);
+        Assert.Null(processed.AcknowledgementNextAttemptAt);
+        Assert.Null(processed.AcknowledgementLastError);
+    }
+
+    [Fact]
+    public async Task ProcessJob_AckFailure_RecordsSafeErrorAndNextDue()
+    {
+        var context = new FakeDb();
+        var sender = new RecordingSender
+        {
+            ThrowOnSend = true,
+            ExceptionMessage = "SMTP unavailable: secret=password"
+        };
+        var receiver = new FakeReceiver(
+        [
+            Mail("<msg-ack-fail-safe@test>", "customer@example.test", "Help", "Body")
+        ]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000221");
+
+        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.Equal(1, result.Value!.AckFailed);
+        var processed = Assert.Single(context.ProcessedEmailMessagesList);
+        Assert.Equal(AcknowledgementStatus.Failed, processed.AcknowledgementStatus);
+        Assert.Equal("SMTP acknowledgement failed.", processed.AcknowledgementLastError);
+        Assert.Equal(FixedNow.UtcDateTime.AddMinutes(1), processed.AcknowledgementNextAttemptAt);
+        Assert.DoesNotContain("password", processed.AcknowledgementLastError, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task T2_BR007_MatchingSubject_AppendsCustomerReply()
     {
         var context = new FakeDb();
@@ -225,8 +271,9 @@ public sealed class ProcessIncomingEmailsHandlerTests
         params string[] numbers)
     {
         var time = new FixedTimeProvider(FixedNow);
-        var create = new CreateTicketHandler(context, new SequenceNumbers(numbers), time);
-        var reply = new AppendCustomerReplyHandler(context, time);
+        var classifier = new NeverConflictClassifier();
+        var create = new CreateTicketHandler(context, new SequenceNumbers(numbers), time, classifier);
+        var reply = new AppendCustomerReplyHandler(context, time, classifier);
         return new ProcessIncomingEmailsHandler(
             receiver,
             sender,
@@ -237,6 +284,13 @@ public sealed class ProcessIncomingEmailsHandlerTests
             time,
             new AlwaysEnterGate(),
             NullLogger<ProcessIncomingEmailsHandler>.Instance);
+    }
+
+    private sealed class NeverConflictClassifier : IDatabaseErrorClassifier
+    {
+        public bool IsProcessedEmailIdempotencyConflict(Exception exception) => false;
+
+        public bool IsOptimisticConcurrencyConflict(Exception exception) => false;
     }
 
     private sealed class AlwaysEnterGate : IProcessIncomingEmailsGate
@@ -292,13 +346,14 @@ public sealed class ProcessIncomingEmailsHandlerTests
     private sealed class RecordingSender : IEmailSender
     {
         public bool ThrowOnSend { get; init; }
+        public string ExceptionMessage { get; init; } = "SMTP down";
         public List<EmailMessage> Sent { get; } = [];
 
         public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
         {
             if (ThrowOnSend)
             {
-                throw new InvalidOperationException("SMTP down");
+                throw new InvalidOperationException(ExceptionMessage);
             }
 
             Sent.Add(message);
@@ -350,7 +405,5 @@ public sealed class ProcessIncomingEmailsHandlerTests
         }
 
         public void ClearTrackedChanges() => pending.Clear();
-
-        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 }

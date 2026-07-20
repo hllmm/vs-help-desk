@@ -230,29 +230,36 @@ public sealed class ProcessIncomingEmailsHandler(
                 created.TicketId);
 
             // Commit done in CreateTicketHandler. Ack is best-effort after commit (BR-002).
+            var processed = applicationDbContext.ProcessedEmailMessages
+                .First(row => row.Id == created.ProcessedEmailMessageId);
+            var attemptedAt = timeProvider.GetUtcNow().UtcDateTime;
+
             try
             {
                 await emailSender.SendAsync(
                     BuildAcknowledgement(mail, created.TicketNumber),
                     cancellationToken);
+                processed.RecordAcknowledgementSent(attemptedAt);
                 ackSent++;
                 logger.LogInformation(
-                    "ProcessIncomingEmails ack sent messageId={MessageId} ticketNumber={TicketNumber} to={ToAddress}",
-                    messageId,
+                    "ProcessIncomingEmails ack sent ticketNumber={TicketNumber} processedEmailMessageId={ProcessedEmailMessageId}",
                     created.TicketNumber,
-                    mail.FromAddress);
+                    processed.Id);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                ackFailed++;
                 logger.LogError(
                     ex,
-                    "ProcessIncomingEmails ack failed after commit messageId={MessageId} ticketNumber={TicketNumber} to={ToAddress}",
-                    messageId,
-                    created.TicketNumber,
-                    mail.FromAddress);
+                    "Acknowledgement delivery failed processedEmailMessageId={ProcessedEmailMessageId} ticketId={TicketId}",
+                    processed.Id,
+                    created.TicketId);
+                processed.RecordAcknowledgementFailure(
+                    attemptedAt,
+                    "SMTP acknowledgement failed.");
+                ackFailed++;
             }
 
+            await applicationDbContext.SaveChangesAsync(cancellationToken);
             await SafeMarkProcessedAsync(messageId, cancellationToken);
         }
 
@@ -283,20 +290,20 @@ public sealed class ProcessIncomingEmailsHandler(
     }
 
     /// <summary>
-    /// Permanent poison: record MessageId without a ticket so re-fetch does not loop forever.
+    /// Permanent poison: record idempotency key without a ticket so re-fetch does not loop forever.
     /// </summary>
     private async Task QuarantineAsync(string messageId, CancellationToken cancellationToken)
     {
         try
         {
             var already = applicationDbContext.ProcessedEmailMessages
-                .Any(row => row.MessageId == messageId);
+                .Any(row => row.IdempotencyKey == messageId);
             if (!already)
             {
-                applicationDbContext.Add(new ProcessedEmailMessage(
+                applicationDbContext.Add(ProcessedEmailMessage.ForQuarantine(
                     messageId,
-                    timeProvider.GetUtcNow().UtcDateTime,
-                    ticketId: null));
+                    sourceMessageId: messageId,
+                    processedAtUtc: timeProvider.GetUtcNow().UtcDateTime));
                 await applicationDbContext.SaveChangesAsync(cancellationToken);
             }
         }

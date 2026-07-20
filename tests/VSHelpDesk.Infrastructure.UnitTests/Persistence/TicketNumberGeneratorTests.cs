@@ -69,4 +69,34 @@ public sealed class TicketNumberGeneratorTests
             await context.Database.CloseConnectionAsync();
         }
     }
+
+    [PostgresFact]
+    public async Task TicketNumberSequence_Has999999MaximumAndDoesNotCycle()
+    {
+        await using var context = PostgresTestConnection.CreateContext();
+        await context.Database.OpenConnectionAsync();
+        try
+        {
+            await using var command = context.Database.GetDbConnection().CreateCommand();
+            command.CommandText = $"""
+                SELECT maximum_value, cycle_option
+                FROM information_schema.sequences
+                WHERE sequence_name = '{TicketNumberGenerator.SequenceName}'
+                """;
+
+            await using var reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            var maximum = Convert.ToInt64(
+                reader.GetValue(0),
+                System.Globalization.CultureInfo.InvariantCulture);
+            var cycle = reader.GetString(1);
+
+            Assert.Equal(TicketNumberFormat.MaxSequenceValue, maximum);
+            Assert.Equal("NO", cycle, ignoreCase: true);
+        }
+        finally
+        {
+            await context.Database.CloseConnectionAsync();
+        }
+    }
 }

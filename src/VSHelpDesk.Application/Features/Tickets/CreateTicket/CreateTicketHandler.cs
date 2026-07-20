@@ -9,7 +9,8 @@ namespace VSHelpDesk.Application.Features.Tickets.CreateTicket;
 public sealed class CreateTicketHandler(
     IApplicationDbContext applicationDbContext,
     ITicketNumberGenerator ticketNumberGenerator,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IDatabaseErrorClassifier databaseErrorClassifier)
 {
     public async Task<Result<CreateTicketResult>> HandleAsync(
         CreateTicketCommand command,
@@ -21,8 +22,8 @@ public sealed class CreateTicketHandler(
             return Result.Failure<CreateTicketResult>(validationError);
         }
 
-        var messageId = command.MessageId.Trim();
-        var existing = FindProcessed(messageId);
+        var idempotencyKey = command.MessageId.Trim();
+        var existing = FindProcessed(idempotencyKey);
         if (existing is not null)
         {
             return Result.Success(BuildAlreadyProcessedResult(existing));
@@ -49,7 +50,11 @@ public sealed class CreateTicketHandler(
 
         ticket.RecordMessageActivity(now);
 
-        var processed = new ProcessedEmailMessage(messageId, now, ticket.Id);
+        var processed = ProcessedEmailMessage.ForCreatedTicket(
+            idempotencyKey,
+            sourceMessageId: idempotencyKey,
+            processedAtUtc: now,
+            ticketId: ticket.Id);
 
         applicationDbContext.Add(ticket);
         applicationDbContext.Add(firstMessage);
@@ -64,11 +69,9 @@ public sealed class CreateTicketHandler(
             // Drop failed graph so later mails in the same scoped context can save.
             applicationDbContext.ClearTrackedChanges();
 
-            // Unique race (or unit FakeDb InvalidOperationException simulation).
-            if (applicationDbContext.IsUniqueConstraintViolation(ex) ||
-                ex is InvalidOperationException)
+            if (databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
             {
-                var afterRace = FindProcessed(messageId);
+                var afterRace = FindProcessed(idempotencyKey);
                 if (afterRace is not null)
                 {
                     return Result.Success(BuildAlreadyProcessedResult(afterRace));
@@ -82,12 +85,13 @@ public sealed class CreateTicketHandler(
             ticket.Id,
             ticket.TicketNumber,
             firstMessage.Id,
+            processed.Id,
             WasAlreadyProcessed: false));
     }
 
-    private ProcessedEmailMessage? FindProcessed(string messageId) =>
+    private ProcessedEmailMessage? FindProcessed(string idempotencyKey) =>
         applicationDbContext.ProcessedEmailMessages
-            .FirstOrDefault(processed => processed.MessageId == messageId);
+            .FirstOrDefault(processed => processed.IdempotencyKey == idempotencyKey);
 
     private CreateTicketResult BuildAlreadyProcessedResult(ProcessedEmailMessage existing)
     {
@@ -107,6 +111,7 @@ public sealed class CreateTicketHandler(
             existing.TicketId ?? existingTicket?.Id ?? Guid.Empty,
             existingTicket?.TicketNumber ?? string.Empty,
             firstMessageId,
+            existing.Id,
             WasAlreadyProcessed: true);
     }
 

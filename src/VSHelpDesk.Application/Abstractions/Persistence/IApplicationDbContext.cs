@@ -20,13 +20,7 @@ public interface IApplicationDbContext
 
     /// <summary>
     /// Drops tracked pending entities after a failed SaveChanges so the scoped context
-    /// can continue processing later mails (MessageId race recovery).
+    /// can continue processing later mails (idempotency race recovery).
     /// </summary>
     void ClearTrackedChanges();
-
-    /// <summary>
-    /// True when the exception is a unique-constraint / concurrency conflict that may
-    /// indicate a racing MessageId insert (PostgreSQL 23505 / EF DbUpdateException).
-    /// </summary>
-    bool IsUniqueConstraintViolation(Exception exception);
 }

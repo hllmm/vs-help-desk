@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Domain.Entities;
 
 namespace VSHelpDesk.Infrastructure.Persistence;
@@ -32,32 +33,34 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     void IApplicationDbContext.ClearTrackedChanges() => ChangeTracker.Clear();
 
-    bool IApplicationDbContext.IsUniqueConstraintViolation(Exception exception)
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        for (var current = exception; current is not null; current = current.InnerException)
+        try
         {
-            if (current is DbUpdateException)
-            {
-                return true;
-            }
-
-            // Npgsql.PostgresException is not referenced here; match by type name + SQLSTATE.
-            var typeName = current.GetType().FullName ?? current.GetType().Name;
-            if (typeName.Contains("PostgresException", StringComparison.Ordinal) &&
-                current.Message.Contains("23505", StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            // Property SqlState on PostgresException via reflection fallback.
-            var sqlState = current.GetType().GetProperty("SqlState")?.GetValue(current) as string;
-            if (string.Equals(sqlState, "23505", StringComparison.Ordinal))
-            {
-                return true;
-            }
+            return base.SaveChanges(acceptAllChangesOnSuccess);
         }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new OptimisticConcurrencyException(
+                "The entity was modified by another process.",
+                ex);
+        }
+    }
 
-        return false;
+    public override async Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new OptimisticConcurrencyException(
+                "The entity was modified by another process.",
+                ex);
+        }
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

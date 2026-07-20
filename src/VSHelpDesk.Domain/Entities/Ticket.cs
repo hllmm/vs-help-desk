@@ -31,6 +31,9 @@ public sealed class Ticket
 
     public Guid? ClosedByUserId { get; private set; }
 
+    /// <summary>PostgreSQL xmin concurrency token (Npgsql row version).</summary>
+    public uint Version { get; private set; }
+
     /// <summary>EF Core materialization.</summary>
     private Ticket()
     {

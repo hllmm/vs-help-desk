@@ -4,4 +4,5 @@ public sealed record CreateTicketResult(
     Guid TicketId,
     string TicketNumber,
     Guid FirstTicketMessageId,
+    Guid ProcessedEmailMessageId,
     bool WasAlreadyProcessed);

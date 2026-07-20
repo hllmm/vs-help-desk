@@ -138,7 +138,6 @@ public sealed class LoginHandlerTests
         {
         }
 
-        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 
     private sealed class FakePasswordHasher(string validPassword) : IPasswordHasher

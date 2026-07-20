@@ -15,7 +15,7 @@ public sealed class AppendCustomerReplyHandlerTests
         var ticket = Ticket.Create("VS-000080", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
         ticket.MarkAsWaitingCustomerReply(FixedNow.UtcDateTime.AddMinutes(-10));
         var db = new FakeDb(ticket);
-        var handler = new AppendCustomerReplyHandler(db, new FixedTimeProvider(FixedNow));
+        var handler = CreateHandler(db);
 
         var result = await handler.HandleAsync(
             new AppendCustomerReplyCommand(
@@ -35,12 +35,35 @@ public sealed class AppendCustomerReplyHandlerTests
     }
 
     [Fact]
+    public async Task Reply_PersistsAppendedReplyAndNotRequiredAck()
+    {
+        var ticket = Ticket.Create("VS-000085", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
+        var db = new FakeDb(ticket);
+        var handler = CreateHandler(db);
+
+        var result = await handler.HandleAsync(
+            new AppendCustomerReplyCommand(
+                "<reply-disp@test>",
+                "VS-000085",
+                "Body",
+                FromAddress: "ada@example.test"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        var processed = Assert.Single(db.Processed);
+        Assert.Equal(ProcessedEmailDisposition.AppendedReply, processed.Disposition);
+        Assert.Equal(AcknowledgementStatus.NotRequired, processed.AcknowledgementStatus);
+        Assert.Null(processed.AcknowledgementNextAttemptAt);
+        Assert.Equal("<reply-disp@test>", processed.IdempotencyKey);
+    }
+
+    [Fact]
     public async Task BR010_ResolvedTicket_SetsWasReopened()
     {
         var ticket = Ticket.Create("VS-000081", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
         ticket.Resolve(FixedNow.UtcDateTime.AddHours(-1));
         var db = new FakeDb(ticket);
-        var handler = new AppendCustomerReplyHandler(db, new FixedTimeProvider(FixedNow));
+        var handler = CreateHandler(db);
 
         var result = await handler.HandleAsync(
             new AppendCustomerReplyCommand("<reopen@test>", "VS-000081", "Back", FromAddress: "ada@example.test"),
@@ -57,7 +80,7 @@ public sealed class AppendCustomerReplyHandlerTests
     {
         var ticket = Ticket.Create("VS-000082", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
         var db = new FakeDb(ticket);
-        var handler = new AppendCustomerReplyHandler(db, new FixedTimeProvider(FixedNow));
+        var handler = CreateHandler(db);
         var command = new AppendCustomerReplyCommand(
             "<dup@test>",
             "VS-000082",
@@ -77,7 +100,7 @@ public sealed class AppendCustomerReplyHandlerTests
     [Fact]
     public async Task UnknownTicketNumber_ReturnsFailure()
     {
-        var handler = new AppendCustomerReplyHandler(new FakeDb(), new FixedTimeProvider(FixedNow));
+        var handler = CreateHandler(new FakeDb());
 
         var result = await handler.HandleAsync(
             new AppendCustomerReplyCommand("<x@test>", "VS-000099", "Body"),
@@ -91,7 +114,7 @@ public sealed class AppendCustomerReplyHandlerTests
     public async Task FromMismatch_ReturnsFailure()
     {
         var ticket = Ticket.Create("VS-000083", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
-        var handler = new AppendCustomerReplyHandler(new FakeDb(ticket), new FixedTimeProvider(FixedNow));
+        var handler = CreateHandler(new FakeDb(ticket));
 
         var result = await handler.HandleAsync(
             new AppendCustomerReplyCommand(
@@ -104,6 +127,16 @@ public sealed class AppendCustomerReplyHandlerTests
         Assert.True(result.IsFailure);
         Assert.Contains("does not match", result.Error, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(TicketStatus.New, ticket.Status);
+    }
+
+    private static AppendCustomerReplyHandler CreateHandler(FakeDb db) =>
+        new(db, new FixedTimeProvider(FixedNow), new NeverConflictClassifier());
+
+    private sealed class NeverConflictClassifier : IDatabaseErrorClassifier
+    {
+        public bool IsProcessedEmailIdempotencyConflict(Exception exception) => false;
+
+        public bool IsOptimisticConcurrencyConflict(Exception exception) => false;
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
@@ -150,7 +183,5 @@ public sealed class AppendCustomerReplyHandlerTests
         }
 
         public void ClearTrackedChanges() => pending.Clear();
-
-        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 }

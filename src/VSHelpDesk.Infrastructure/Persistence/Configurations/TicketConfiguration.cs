@@ -22,6 +22,7 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
         builder.Property(ticket => ticket.UpdatedAt).IsRequired().HasColumnType("timestamp with time zone");
         builder.Property(ticket => ticket.ResolvedAt).HasColumnType("timestamp with time zone");
         builder.Property(ticket => ticket.LastActivityAt).IsRequired().HasColumnType("timestamp with time zone");
+        builder.Property(ticket => ticket.Version).IsRowVersion();
 
         builder.HasIndex(ticket => ticket.TicketNumber).IsUnique();
 

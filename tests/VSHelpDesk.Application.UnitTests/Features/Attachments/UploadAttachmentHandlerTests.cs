@@ -207,6 +207,5 @@ public sealed class UploadAttachmentHandlerTests
 
         public void ClearTrackedChanges() => pending.Clear();
 
-        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 }

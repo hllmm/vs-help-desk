@@ -66,6 +66,5 @@ public sealed class GetTicketListHandlerTests
         {
         }
 
-        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 }
