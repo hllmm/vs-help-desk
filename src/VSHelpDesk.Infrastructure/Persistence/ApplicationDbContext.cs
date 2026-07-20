@@ -9,7 +9,20 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 {
     public DbSet<User> Users => Set<User>();
 
+    public DbSet<Ticket> Tickets => Set<Ticket>();
+
+    public DbSet<TicketMessage> TicketMessages => Set<TicketMessage>();
+
+    public DbSet<ProcessedEmailMessage> ProcessedEmailMessages => Set<ProcessedEmailMessage>();
+
     IQueryable<User> IApplicationDbContext.Users => Users;
+
+    IQueryable<Ticket> IApplicationDbContext.Tickets => Tickets;
+
+    IQueryable<TicketMessage> IApplicationDbContext.TicketMessages => TicketMessages;
+
+    IQueryable<ProcessedEmailMessage> IApplicationDbContext.ProcessedEmailMessages =>
+        ProcessedEmailMessages;
 
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Add(entity);
 
