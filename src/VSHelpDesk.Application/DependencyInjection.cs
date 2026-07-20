@@ -4,6 +4,8 @@ using VSHelpDesk.Application.Features.Attachments.UploadAttachment;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
+using VSHelpDesk.Application.Features.Parameters.GetParameters;
+using VSHelpDesk.Application.Features.Parameters.UpdateParameter;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
@@ -35,6 +37,8 @@ public static class DependencyInjection
         services.AddScoped<GetTicketDetailsHandler>();
         services.AddScoped<UploadAttachmentHandler>();
         services.AddScoped<GetAttachmentHandler>();
+        services.AddScoped<GetParametersHandler>();
+        services.AddScoped<UpdateParameterHandler>();
 
         return services;
     }
