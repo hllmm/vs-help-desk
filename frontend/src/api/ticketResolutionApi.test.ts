@@ -16,12 +16,14 @@ const sampleResolve: ResolveTicketResult = {
 describe('ticket resolution API', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    document.cookie = 'vshd.csrf=; Max-Age=0; path=/'
     vi.unstubAllGlobals()
   })
 
+
   it('resolveTicket posts no body to encoded /api/tickets/{id}/resolve with signal', async () => {
     const controller = new AbortController()
-    sessionStorage.setItem('vshd.accessToken', 'secret-token')
+    document.cookie = 'vshd.csrf=resolve-csrf'
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(sampleResolve), {
         status: 200,
@@ -42,13 +44,15 @@ describe('ticket resolution API', () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: 'POST',
       signal: controller.signal,
+      credentials: 'include',
     })
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined()
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
-    expect(headers.get('Authorization')).toBe('Bearer secret-token')
+    expect(headers.get('Authorization')).toBeNull()
+    expect(headers.get('X-CSRF-Token')).toBe('resolve-csrf')
     expect(headers.has('Content-Type')).toBe(false)
-    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('secret-token')
   })
+
 
   it('returns 200 resolve payload without treating it as user copy', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -63,7 +67,6 @@ describe('ticket resolution API', () => {
   })
 
   it('surfaces protected 401 via shared client session expiry', async () => {
-    sessionStorage.setItem('vshd.accessToken', 'token')
     sessionStorage.setItem(
       'vshd.user',
       JSON.stringify({
@@ -89,9 +92,10 @@ describe('ticket resolution API', () => {
       status: 401,
       name: 'ApiError',
     })
-    expect(sessionStorage.getItem('vshd.accessToken')).toBeNull()
+    expect(sessionStorage.getItem('vshd.user')).toBeNull()
     expect(assign).toHaveBeenCalledWith('/login?reason=session-expired')
   })
+
 
   it('maps 404 through ApiError without exposing a UI string contract', async () => {
     const fetchMock = vi.fn().mockResolvedValue(

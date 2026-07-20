@@ -7,9 +7,8 @@ describe('downloadAttachment', () => {
     vi.unstubAllGlobals()
   })
 
-  it('GETs /api/attachments/{encoded-id} with AbortSignal and bearer header', async () => {
+  it('GETs /api/attachments/{encoded-id} with AbortSignal and cookie credentials', async () => {
     const controller = new AbortController()
-    sessionStorage.setItem('vshd.accessToken', 'download-token')
     const bytes = new TextEncoder().encode('file-bytes')
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(bytes, {
@@ -34,10 +33,10 @@ describe('downloadAttachment', () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: 'GET',
       signal: controller.signal,
+      credentials: 'include',
     })
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
-    expect(headers.get('Authorization')).toBe('Bearer download-token')
+    expect(headers.get('Authorization')).toBeNull()
     expect(headers.has('Content-Type')).toBe(false)
-    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('download-token')
   })
 })

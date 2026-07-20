@@ -42,9 +42,11 @@ describe('LoginPage', () => {
   it('logs in and reaches the protected ticket list', async () => {
     const user = userEvent.setup()
     mockFetch((url) => {
+      if (url.includes('/api/auth/me')) {
+        return jsonResponse({ message: 'Unauthorized' }, 401)
+      }
       if (url.includes('/api/auth/login')) {
         return jsonResponse({
-          accessToken: 'token-abc',
           userId: 'user-1',
           fullName: 'Destek Kullanıcısı',
           username: 'support',
@@ -65,16 +67,23 @@ describe('LoginPage', () => {
     await waitFor(() => {
       expect(window.location.pathname).toBe('/tickets')
     })
+    expect(sessionStorage.getItem('vshd.accessToken')).toBeNull()
+    expect(sessionStorage.getItem('vshd.user')).not.toBeNull()
   })
+
 
   it('keeps invalid credentials on login and focuses password', async () => {
     const user = userEvent.setup()
     mockFetch((url) => {
+      if (url.includes('/api/auth/me')) {
+        return jsonResponse({ message: 'Unauthorized' }, 401)
+      }
       if (url.includes('/api/auth/login')) {
         return jsonResponse({ message: 'Unauthorized' }, 401)
       }
       return jsonResponse({ message: 'not found' }, 404)
     })
+
 
     renderAt('/login')
 
@@ -90,6 +99,12 @@ describe('LoginPage', () => {
   })
 
   it('shows allow-listed expiry copy and removes reason from the URL', async () => {
+    mockFetch((url) => {
+      if (url.includes('/api/auth/me')) {
+        return jsonResponse({ message: 'Unauthorized' }, 401)
+      }
+      return jsonResponse({ message: 'not found' }, 404)
+    })
     renderAt('/login?reason=session-expired')
 
     expect(screen.getByRole('status')).toHaveTextContent(
@@ -103,6 +118,12 @@ describe('LoginPage', () => {
   })
 
   it('never renders an arbitrary reason query', async () => {
+    mockFetch((url) => {
+      if (url.includes('/api/auth/me')) {
+        return jsonResponse({ message: 'Unauthorized' }, 401)
+      }
+      return jsonResponse({ message: 'not found' }, 404)
+    })
     renderAt('/login?reason=raw-backend-stack-trace')
 
     await waitFor(() => {
@@ -114,10 +135,14 @@ describe('LoginPage', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
+
   it('uses Turkish network and server failure copy', async () => {
     const user = userEvent.setup()
 
-    mockFetch(() => {
+    mockFetch((url) => {
+      if (url.includes('/api/auth/me')) {
+        return jsonResponse({ message: 'Unauthorized' }, 401)
+      }
       throw new TypeError('Failed to fetch')
     })
     renderAt('/login')
@@ -130,6 +155,9 @@ describe('LoginPage', () => {
     )
 
     mockFetch((url) => {
+      if (url.includes('/api/auth/me')) {
+        return jsonResponse({ message: 'Unauthorized' }, 401)
+      }
       if (url.includes('/api/auth/login')) {
         return jsonResponse({ message: 'boom' }, 500)
       }
@@ -143,6 +171,12 @@ describe('LoginPage', () => {
   })
 
   it('contains no implementation or sprint jargon', () => {
+    mockFetch((url) => {
+      if (url.includes('/api/auth/me')) {
+        return jsonResponse({ message: 'Unauthorized' }, 401)
+      }
+      return jsonResponse({ message: 'not found' }, 404)
+    })
     renderAt('/login')
 
     expect(document.body).not.toHaveTextContent(
@@ -150,3 +184,4 @@ describe('LoginPage', () => {
     )
   })
 })
+

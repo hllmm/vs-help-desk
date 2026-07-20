@@ -8,7 +8,7 @@ import type {
   TicketDetails,
   TicketListItem,
 } from '../api/types'
-import { setSession } from '../auth/tokenStorage'
+import { setStoredUser } from '../auth/tokenStorage'
 import { RESOLUTION_COPY } from '../features/ticket-details/useResolveTicket'
 import { REPLY_OUTCOME_MESSAGES } from '../features/ticket-details/useTicketReply'
 
@@ -40,11 +40,36 @@ function deferred<T>() {
 }
 
 function seedSession() {
-  setSession('test-token', {
+  const user = {
     userId: 'user-1',
     fullName: 'Destek Kullanıcısı',
     username: 'support',
-  })
+  }
+  setStoredUser(user)
+  // AuthProvider bootstraps GET /api/auth/me via fetch; keep session authenticated.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(user), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
+      if (url.includes('/api/auth/logout')) {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ message: 'not found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }),
+  )
 }
 
 function sampleDetail(overrides: Partial<TicketDetails> = {}): TicketDetails {

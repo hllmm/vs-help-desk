@@ -1,9 +1,36 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from '../auth/AuthContext'
-import { setSession } from '../auth/tokenStorage'
+import { setStoredUser } from '../auth/tokenStorage'
 import { Layout } from './Layout'
+
+function seedAuthenticatedUser() {
+  const user = {
+    userId: 'user-1',
+    fullName: 'Destek Kullanıcısı',
+    username: 'support',
+  }
+  setStoredUser(user)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/auth/me')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(user), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
+      if (url.includes('/api/auth/logout')) {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(new Response(null, { status: 404 }))
+    }),
+  )
+}
 
 function renderLayout(initialPath = '/') {
   return render(
@@ -18,6 +45,11 @@ function renderLayout(initialPath = '/') {
 }
 
 describe('Layout', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
   it('renders skip-link header main and footer landmarks', () => {
     renderLayout()
 
@@ -33,6 +65,11 @@ describe('Layout', () => {
   })
 
   it('hides Parametreler nav when unauthenticated', () => {
+    // /me bootstrap fails → stays logged out
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+    )
     renderLayout()
 
     expect(
@@ -44,11 +81,7 @@ describe('Layout', () => {
   })
 
   it('shows Parametreler nav when authenticated', () => {
-    setSession('test-token', {
-      userId: 'user-1',
-      fullName: 'Destek Kullanıcısı',
-      username: 'support',
-    })
+    seedAuthenticatedUser()
     renderLayout('/parameters')
 
     const nav = screen.getByRole('navigation', { name: 'Ana menü' })
@@ -70,4 +103,3 @@ describe('Layout', () => {
     )
   })
 })
-

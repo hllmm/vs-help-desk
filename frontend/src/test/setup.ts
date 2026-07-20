@@ -5,6 +5,8 @@ import { afterEach, vi } from 'vitest'
 afterEach(() => {
   cleanup()
   sessionStorage.clear()
+  // Clear CSRF double-submit cookie used by the API client.
+  document.cookie = 'vshd.csrf=; Max-Age=0; path=/'
   window.history.replaceState({}, '', '/')
   vi.useRealTimers()
   vi.restoreAllMocks()

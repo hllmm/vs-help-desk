@@ -1,4 +1,5 @@
-import { clearSession, getAccessToken } from '../auth/tokenStorage'
+import { getCsrfToken } from '../auth/csrf'
+import { clearSession } from '../auth/tokenStorage'
 
 export class ApiError extends Error {
   readonly status: number
@@ -15,6 +16,7 @@ export class ApiError extends Error {
 export type RequestOptions = {
   method?: string
   body?: unknown
+  /** @deprecated Cookie auth; kept for call-site clarity. Ignored for headers. */
   auth?: boolean
   skipAuthRedirect?: boolean
   signal?: AbortSignal
@@ -24,6 +26,8 @@ export type RedirectLocation = {
   pathname: string
   assign(url: string): void
 }
+
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
 export function normalizeApiBaseUrl(
   value: string | undefined,
@@ -56,13 +60,6 @@ function buildHeaders(options: RequestOptions): Headers {
     headers.set('Content-Type', 'application/json')
   }
 
-  if (options.auth !== false) {
-    const token = getAccessToken()
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`)
-    }
-  }
-
   return headers
 }
 
@@ -70,9 +67,20 @@ async function sendRequest(
   path: string,
   options: RequestOptions = {},
 ): Promise<Response> {
+  const method = (options.method ?? 'GET').toUpperCase()
+  const headers = buildHeaders(options)
+
+  if (UNSAFE_METHODS.has(method)) {
+    const csrf = getCsrfToken()
+    if (csrf) {
+      headers.set('X-CSRF-Token', csrf)
+    }
+  }
+
   const response = await fetch(buildApiUrl(path), {
-    method: options.method ?? 'GET',
-    headers: buildHeaders(options),
+    method,
+    headers,
+    credentials: 'include',
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     signal: options.signal,
   })
@@ -108,6 +116,7 @@ async function parseErrorBody(response: Response): Promise<unknown> {
 
 /**
  * Thin REST client — SPA talks only HTTP JSON to the ASP.NET Core API.
+ * Auth is cookie-based (`credentials: 'include'`); no Authorization Bearer.
  */
 export async function apiRequest<T>(
   path: string,
@@ -141,7 +150,7 @@ export async function apiRequest<T>(
 }
 
 /**
- * Authenticated binary download helper. Never puts tokens in URLs.
+ * Authenticated binary download helper. Cookie credentials only — never tokens in URLs.
  */
 export async function apiBlobRequest(
   path: string,

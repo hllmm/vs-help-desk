@@ -10,9 +10,14 @@ const sampleParameter: Parameter = {
   updatedAt: '2026-07-21T12:00:00.000Z',
 }
 
+function clearCsrfCookie() {
+  document.cookie = 'vshd.csrf=; Max-Age=0; path=/'
+}
+
 describe('parameters API', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    clearCsrfCookie()
     vi.unstubAllGlobals()
   })
 
@@ -34,13 +39,14 @@ describe('parameters API', () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: 'GET',
       signal: controller.signal,
+      credentials: 'include',
     })
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
     expect(headers.has('Content-Type')).toBe(false)
+    expect(headers.get('Authorization')).toBeNull()
   })
 
-  it('listParameters sends Authorization bearer token when present', async () => {
-    sessionStorage.setItem('vshd.accessToken', 'secret-token')
+  it('listParameters uses credentials include without Authorization', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify([sampleParameter]), {
         status: 200,
@@ -52,13 +58,15 @@ describe('parameters API', () => {
     await listParameters()
 
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
-    expect(headers.get('Authorization')).toBe('Bearer secret-token')
-    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('secret-token')
+    expect(headers.get('Authorization')).toBeNull()
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      credentials: 'include',
+    })
   })
 
-  it('updateParameter puts { value } only to /api/parameters/{encoded-key}', async () => {
+  it('updateParameter puts { value } only with CSRF when cookie present', async () => {
     const controller = new AbortController()
-    sessionStorage.setItem('vshd.accessToken', 'secret-token')
+    document.cookie = 'vshd.csrf=param-csrf'
     const updated: Parameter = {
       ...sampleParameter,
       value: '7',
@@ -87,6 +95,7 @@ describe('parameters API', () => {
       method: 'PUT',
       signal: controller.signal,
       body: JSON.stringify({ value: '7' }),
+      credentials: 'include',
     })
     const body = JSON.parse(
       fetchMock.mock.calls[0]?.[1]?.body as string,
@@ -95,9 +104,9 @@ describe('parameters API', () => {
     expect(body).not.toHaveProperty('key')
     expect(body).not.toHaveProperty('description')
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
-    expect(headers.get('Authorization')).toBe('Bearer secret-token')
+    expect(headers.get('Authorization')).toBeNull()
+    expect(headers.get('X-CSRF-Token')).toBe('param-csrf')
     expect(headers.get('Content-Type')).toBe('application/json')
-    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('secret-token')
   })
 
   it('updateParameter encodes keys with reserved characters', async () => {

@@ -5,8 +5,15 @@ export type LoginRequest = {
   password: string
 }
 
+/** UC-001 login body — JWT is HttpOnly cookie; no accessToken. */
 export type LoginResponse = {
-  accessToken: string
+  userId: string
+  fullName: string
+  username: string
+}
+
+/** GET /api/auth/me — mirrors CurrentUserResponse. */
+export type CurrentUser = {
   userId: string
   fullName: string
   username: string

@@ -33,8 +33,10 @@ const sampleReply: SupportReplyResult = {
 describe('ticket details API', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    document.cookie = 'vshd.csrf=; Max-Age=0; path=/'
     vi.unstubAllGlobals()
   })
+
 
   it('fetchTicketDetails uses GET /api/tickets/{encoded-id} with AbortSignal', async () => {
     const controller = new AbortController()
@@ -65,7 +67,7 @@ describe('ticket details API', () => {
 
   it('replyToTicket posts { content } only to /api/tickets/{encoded-id}/replies', async () => {
     const controller = new AbortController()
-    sessionStorage.setItem('vshd.accessToken', 'secret-token')
+    document.cookie = 'vshd.csrf=reply-csrf'
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(sampleReply), {
         status: 200,
@@ -89,6 +91,7 @@ describe('ticket details API', () => {
       method: 'POST',
       signal: controller.signal,
       body: JSON.stringify({ content: 'Merhaba' }),
+      credentials: 'include',
     })
     const body = JSON.parse(
       fetchMock.mock.calls[0]?.[1]?.body as string,
@@ -96,7 +99,8 @@ describe('ticket details API', () => {
     expect(body).toEqual({ content: 'Merhaba' })
     expect(body).not.toHaveProperty('isHtml')
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
-    expect(headers.get('Authorization')).toBe('Bearer secret-token')
-    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('secret-token')
+    expect(headers.get('Authorization')).toBeNull()
+    expect(headers.get('X-CSRF-Token')).toBe('reply-csrf')
   })
 })
+
