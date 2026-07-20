@@ -9,6 +9,7 @@ using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
 using VSHelpDesk.WebAPI.Extensions;
 using VSHelpDesk.WebAPI.Filters;
+using VSHelpDesk.WebAPI.Middleware;
 using VSHelpDesk.WebAPI.Options;
 using VSHelpDesk.WebAPI.Services;
 
@@ -124,6 +125,7 @@ app.UseExceptionHandling();
 app.UseCors("Portal");
 app.UseRateLimiter();
 app.UseAuthentication();
+app.UseMiddleware<CsrfProtectionMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();

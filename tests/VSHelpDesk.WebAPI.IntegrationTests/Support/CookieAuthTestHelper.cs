@@ -49,6 +49,28 @@ public static class CookieAuthTestHelper
             c.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Extracts the cookie value from a Set-Cookie header list (name=value; attrs…).
+    /// </summary>
+    public static string? GetCookieValue(IReadOnlyList<string> setCookies, string name)
+    {
+        var header = FindSetCookie(setCookies, name);
+        if (header is null)
+        {
+            return null;
+        }
+
+        var prefix = name + "=";
+        if (!header.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var rest = header[prefix.Length..];
+        var end = rest.IndexOf(';');
+        return end >= 0 ? rest[..end] : rest;
+    }
+
     public static bool HasCookieAttribute(string setCookieHeader, string attribute)
     {
         // Attributes are "; Attr" or "; Attr=value" (case-insensitive).

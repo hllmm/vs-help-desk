@@ -109,7 +109,14 @@ public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFac
         using var meBefore = await client.GetAsync("/api/auth/me");
         Assert.Equal(HttpStatusCode.OK, meBefore.StatusCode);
 
-        using var logoutResponse = await client.PostAsync("/api/auth/logout", content: null);
+        var csrf = CookieAuthTestHelper.GetCookieValue(
+            CookieAuthTestHelper.GetSetCookieHeaders(loginResponse),
+            CookieAuthTestHelper.CsrfCookieName);
+        Assert.False(string.IsNullOrWhiteSpace(csrf), "Expected vshd.csrf after login for logout CSRF");
+
+        using var logoutRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/logout");
+        logoutRequest.Headers.TryAddWithoutValidation("X-CSRF-Token", csrf);
+        using var logoutResponse = await client.SendAsync(logoutRequest);
         Assert.Equal(HttpStatusCode.NoContent, logoutResponse.StatusCode);
 
         using var meAfter = await client.GetAsync("/api/auth/me");
