@@ -9,9 +9,10 @@ Kaynak: **VS Help Desk — SRD & Sistem Tasarımı** (`VSHD-SRD-001` v1.0).
 İç kullanım deploy: [docs/deploy-production.md](docs/deploy-production.md)  
 (`docker compose -f docker-compose.prod.yml`, secrets env, CI, TLS proxy).
 
-Sonraki fazlar (cookie auth, K8s, multi-tenant): design roadmap in  
+Sonraki fazlar (K8s, multi-tenant): design roadmap in  
 `docs/superpowers/specs/2026-07-20-production-hardening-design.md`.  
-UC-010 parametre yönetimi (Faz 1) bu dalda: `GET/PUT /api/parameters` + portal **Parametreler**.
+UC-010 parametre yönetimi (Faz 1): `GET/PUT /api/parameters` + portal **Parametreler**.  
+Cookie auth + CSRF (Faz 2): HttpOnly `vshd.auth` JWT cookie; login body has **no** `accessToken`.
 
 ## Hızlı başlangıç (sırayla)
 
@@ -68,11 +69,12 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 
 ### Portal SPA
 
-- Local Vite development uses `.env.development` → `VITE_API_BASE_URL=http://localhost:5154`.
-- `VITE_API_BASE_URL` is an optional build-time override.
-- When absent, the production bundle calls relative `/api/...` URLs and expects a same-origin reverse proxy.
+- **Local dev (supported):** leave `VITE_API_BASE_URL` empty so the SPA uses relative `/api/...`; Vite proxies `/api` and `/health` to `http://127.0.0.1:5154`. Cookies stay same-origin to the browser (port 5173).
+- `VITE_API_BASE_URL` is an optional build-time override (avoid for cookie auth — cross-origin cookies need extra CORS/`SameSite` setup).
+- Production bundle: relative `/api/...` behind same-origin reverse proxy.
+- Auth: login sets HttpOnly `vshd.auth` + readable `vshd.csrf`; SPA uses `credentials: 'include'` and `X-CSRF-Token` on mutations; **no** JWT in sessionStorage/localStorage; bootstrap via `GET /api/auth/me`.
 - Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply + resolve), `/parameters` (UC-010 list/edit allowlisted keys).
-- Detail messages render as literal text; attachments download via authenticated Blob + Bearer header (no token in URL).
+- Detail messages render as literal text; attachments download via authenticated Blob + cookies (no token in URL).
 - Support reply: `POST /api/tickets/{id}/replies` with `{ content }` only; max **65,536** characters; saved-vs-delivered outcomes include SMTP failure warning without status change.
 - Manual resolve (detail): confirm dialog → `POST /api/tickets/{id}/resolve` (no body); server-confirmed **Çözüldü** state; reply composer hidden while resolved.
 - Frontend scripts: `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` (see [frontend/README.md](frontend/README.md)).
@@ -82,12 +84,14 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 
 | Endpoint / kural | Davranış |
 |------------------|----------|
-| `POST /api/tickets/{id}/resolve` | Bearer auth; **gövde yok**; açık ticket’ı manuel kapatır; `ClosedByUserId` = oturum kullanıcısı; zaten `Resolved` ise **idempotent** (orijinal closer/timestamp korunur) |
+| `POST /api/auth/login` | Cookie auth; body: `{ userId, fullName, username }` — **no `accessToken`**; sets `vshd.auth` (HttpOnly) + `vshd.csrf` |
+| `POST /api/auth/logout` | Clears auth + CSRF cookies (CSRF header required when session cookie present) |
+| `POST /api/tickets/{id}/resolve` | Cookie auth + CSRF; **gövde yok**; açık ticket’ı manuel kapatır; `ClosedByUserId` = oturum kullanıcısı; zaten `Resolved` ise **idempotent** (orijinal closer/timestamp korunur) |
 | Resolved + destek yanıtı | Kalıcılık/SMTP öncesi reddedilir (HTTP 409) — müşteri e-postası reopen edene kadar |
-| `POST /api/jobs/resolve-inactive-tickets` | `X-Jobs-Api-Key` zorunlu; JWT yok; eşik `AutoResolve.InactiveDays` (varsayılan 3, 1–30); `Status == WaitingCustomerReply` ve `WaitingCustomerSince <= now - days` |
+| `POST /api/jobs/resolve-inactive-tickets` | `X-Jobs-Api-Key` zorunlu; JWT/cookie yok; eşik `AutoResolve.InactiveDays` (varsayılan 3, 1–30); `Status == WaitingCustomerReply` ve `WaitingCustomerSince <= now - days` |
 | Otomatik kapanış | `ClosedByUserId` **null** (sistem); `ResolvedAt` set |
 | Reopen | Yalnızca müşteri e-postası; kanonik ticket numarası + müşteri kimliği + idempotency (Message-ID / receipt); subject değişmez; manuel reopen UI/API **yok** |
-| `GET/PUT /api/parameters` | Bearer auth; allowlist katalog (şimdilik `AutoResolve.InactiveDays`); bilinmeyen key → 404; geçersiz değer → 400; SMTP sırları DB’de **yok** |
+| `GET/PUT /api/parameters` | Cookie auth (+ CSRF on PUT); allowlist katalog (şimdilik `AutoResolve.InactiveDays`); bilinmeyen key → 404; geçersiz değer → 400; SMTP sırları DB’de **yok** |
 | Atama | **Uygulanmadı** — public assign rotası yok |
 
 Zamanlayıcı kurulumu uygulama **dışındadır**. Örnek dış çağrı / cron (yer tutucu anahtar):

@@ -2,20 +2,22 @@
 
 React + Vite SPA. **Only REST** to the ASP.NET Core API (no Next.js / Nuxt).
 
-## Auth choice
+## Auth choice (Faz 2 cookie auth)
 
 | Decision | Value |
 |---|---|
-| Token | JWT from `POST /api/auth/login` |
-| Storage | `sessionStorage` (`vshd.accessToken`) — tab-scoped |
-| Header | `Authorization: Bearer <token>` |
-| Logout | Clears session keys |
-| 401 | Clear session → navigate to `/login?reason=session-expired` |
+| Auth JWT | HttpOnly cookie `vshd.auth` set by `POST /api/auth/login` (never readable by JS) |
+| Login body | `{ userId, fullName, username }` only — **no `accessToken`** |
+| CSRF | Readable cookie `vshd.csrf` + header `X-CSRF-Token` on unsafe methods |
+| Credentials | `fetch(..., { credentials: 'include' })` — no `Authorization` header |
+| Profile cache | Optional non-secret `sessionStorage` (`vshd.user`); bootstrap via `GET /api/auth/me` |
+| Logout | `POST /api/auth/logout` then clear local profile cache |
+| 401 | Clear local session → navigate to `/login?reason=session-expired` |
 
 ## API base URL and production same-origin behavior
 
 Leave `VITE_API_BASE_URL` empty so the SPA uses relative `/api/...` URLs.
-In local Vite dev, `vite.config.ts` proxies `/api` and `/health` to `http://127.0.0.1:5154`.
+In local Vite dev, `vite.config.ts` proxies `/api` and `/health` to `http://127.0.0.1:5154` so cookies stay same-origin.
 In production, the reverse proxy (nginx) serves the SPA and API under the same origin.
 
 | Env | Local development | Production build |
@@ -32,9 +34,9 @@ Depends on the merged Week 2 portal (login, protected layout, ticket list, four 
 | `/tickets` | Ticket list (protected) |
 | `/tickets/:ticketId` | Detail + timeline + reply + resolve panel (protected) |
 | `GET /api/tickets/{id}` | Detail + chronological messages + attachment metadata |
-| `GET /api/attachments/{id}` | Authenticated Blob download (Bearer header; never token-in-URL) |
-| `POST /api/tickets/{id}/replies` | Plain-text support reply body `{ content }` only (no `isHtml`) |
-| `POST /api/tickets/{id}/resolve` | No body; bearer auth; server-confirmed **Çözüldü**; idempotent when already resolved |
+| `GET /api/attachments/{id}` | Authenticated Blob download (cookies; never token-in-URL) |
+| `POST /api/tickets/{id}/replies` | Plain-text support reply body `{ content }` only (no `isHtml`); CSRF header |
+| `POST /api/tickets/{id}/resolve` | No body; cookie auth + CSRF; server-confirmed **Çözüldü**; idempotent when already resolved |
 
 Message bodies render as **literal text** (no HTML injection). Reply limit is **65,536** characters after trim. Saved-versus-delivered outcomes:
 
