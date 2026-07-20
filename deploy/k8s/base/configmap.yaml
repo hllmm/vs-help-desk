@@ -13,9 +13,14 @@ data:
   POSTGRES_USER: "stajyer"
   POSTGRES_DB: "VS_HelpDesk_DB"
   Email__ReceiverMode: "Imap"
+  # Replace-me hosts — Production ValidateOnStart requires non-empty SmtpHost always
+  # and ImapHost when ReceiverMode=Imap. Ops MUST replace with company SMTP/IMAP hosts
+  # before real traffic (empty values fail API start).
+  Email__SmtpHost: "smtp.example.local"
+  Email__ImapHost: "imap.example.local"
   Email__SmtpPort: "587"
   Email__SmtpSecurityMode: "StartTls"
   Email__ImapPort: "993"
   Email__ImapSecurityMode: "SslOnConnect"
   Email__ImapFolder: "INBOX"
-  # Hosts/usernames can live in ConfigMap or Secret — put hosts in ConfigMap, passwords in Secret
+  # Passwords / usernames / account id: Secret vshelpdesk-secrets (Email__* keys)

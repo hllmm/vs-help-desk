@@ -31,12 +31,14 @@ spec:
               containerPort: 8080
               protocol: TCP
           envFrom:
-            # Non-secret settings (ASPNETCORE_*, FileStorage__RootPath, Email__* ports/modes, etc.)
+            # Non-secret settings (ASPNETCORE_*, FileStorage__RootPath, Email__* hosts/ports/modes)
             - configMapRef:
                 name: vshelpdesk-config
-            # Injects secret keys as env vars (e.g. ConnectionStrings__DefaultConnection,
-            # AUTH_SIGNING_KEY, JOBS_API_KEY, POSTGRES_PASSWORD). See explicit remaps below
-            # for ASP.NET Auth/Jobs binding names.
+            # Injects secret keys as env vars. Keys that already use ASP.NET double-underscore
+            # names bind as-is: ConnectionStrings__DefaultConnection, Email__ImapUsername,
+            # Email__ImapPassword, Email__ImapAccountId, Email__SmtpUsername, Email__SmtpPassword.
+            # Compose-style keys (AUTH_SIGNING_KEY, JOBS_API_KEY, POSTGRES_PASSWORD) need remaps
+            # below for Auth/Jobs (POSTGRES_PASSWORD is for the DB StatefulSet only).
             - secretRef:
                 name: vshelpdesk-secrets
           env:
@@ -59,6 +61,9 @@ spec:
                 secretKeyRef:
                   name: vshelpdesk-secrets
                   key: ConnectionStrings__DefaultConnection
+            # Email__* secret keys match ASP.NET binding — no remaps; envFrom is sufficient.
+            # Required for api start when ConfigMap Email__ReceiverMode=Imap (default):
+            # Email__ImapUsername, Email__ImapPassword, Email__ImapAccountId (+ hosts in ConfigMap).
           volumeMounts:
             - name: attachments
               mountPath: /var/vshelpdesk/attachments
