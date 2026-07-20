@@ -4,29 +4,35 @@ Staj eğitim projesi: destek e-postalarından otomatik ticket oluşturma ve dest
 
 Kaynak: **VS Help Desk — SRD & Sistem Tasarımı** (`VSHD-SRD-001` v1.0).
 
-## Hızlı başlangıç
+## Hızlı başlangıç (sırayla)
 
 ```bash
-# Altyapı (PostgreSQL + Mailpit)
-docker compose up -d
+# 1) Altyapı (PostgreSQL + Mailpit) — veriyi silmez; down -v kullanma
+docker compose up -d postgres mailpit
 
-# API (user-secrets: ConnectionStrings + SeedUser:Password + Auth/Jobs secrets)
-dotnet restore
+# 2) Connection string (şifreyi notlara yazma; örnek placeholder)
+export ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=VS_HelpDesk_DB;Username=stajyer;Password=..."
+
+# 3) Migration + seed login (SeedUser:Password user-secrets / env)
+dotnet tool restore
+dotnet ef database update \
+  --project src/VSHelpDesk.Infrastructure \
+  --startup-project src/VSHelpDesk.WebAPI
+
+# 4) API (Auth:SigningKey, Jobs:ApiKey, SeedUser:Password)
+dotnet restore VSHelpDesk.slnx
 dotnet run --project src/VSHelpDesk.WebAPI
 
-# Portal SPA (ayrı terminal)
+# 5) Portal SPA (ayrı terminal)
 cd frontend && npm install && npm run dev -- --host 127.0.0.1
-
-# Testler
-dotnet test
-cd frontend && npm run lint && npm test && npm run build
-# Production-style browser smoke (preview + Playwright):
-# cd frontend && env -u VITE_API_BASE_URL npm run build && npx playwright test
 ```
+
+Seed kullanıcı: username `support` (Development `SeedUser`); parola yalnız `SeedUser:Password` kaynağından.
 
 | Servis | Adres |
 |--------|--------|
 | API | `http://localhost:5154` / `https://localhost:7269` (launchSettings) |
+| Health | `GET http://localhost:5154/health` |
 | Portal (dev) | http://127.0.0.1:5173 (Vite; CORS: `Cors:AllowedOrigins`) |
 | Portal (prod) | Same-origin with API via reverse proxy; relative `/api/...` when `VITE_API_BASE_URL` is unset |
 | PostgreSQL | `localhost:5432` — db: `VS_HelpDesk_DB`, user: `stajyer` |
@@ -34,17 +40,63 @@ cd frontend && npm run lint && npm test && npm run build
 | Mailpit SMTP | `localhost:1025` |
 | GreenMail (profile `imap-test`) | SMTP `localhost:3025`, IMAP `localhost:3143` |
 
+### Test komutları
+
+```bash
+# Backend
+dotnet restore VSHelpDesk.slnx
+dotnet build VSHelpDesk.slnx --no-restore
+dotnet test VSHelpDesk.slnx --no-build
+
+# Frontend (repo kökünden)
+cd frontend
+npm ci
+npm run lint
+npm test
+env -u VITE_API_BASE_URL npm run build
+npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
+```
+
 ### Portal SPA
 
 - Local Vite development uses `.env.development` → `VITE_API_BASE_URL=http://localhost:5154`.
 - `VITE_API_BASE_URL` is an optional build-time override.
 - When absent, the production bundle calls relative `/api/...` URLs and expects a same-origin reverse proxy.
-- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply).
+- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply + resolve).
 - Detail messages render as literal text; attachments download via authenticated Blob + Bearer header (no token in URL).
 - Support reply: `POST /api/tickets/{id}/replies` with `{ content }` only; max **65,536** characters; saved-vs-delivered outcomes include SMTP failure warning without status change.
+- Manual resolve (detail): confirm dialog → `POST /api/tickets/{id}/resolve` (no body); server-confirmed **Çözüldü** state; reply composer hidden while resolved.
 - Frontend scripts: `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` (see [frontend/README.md](frontend/README.md)).
-- Week 3 browser evidence: `frontend/e2e/ticket-detail.smoke.spec.ts` (four viewports) plus Week 2 `portal.smoke.spec.ts`.
+- Browser evidence: `portal.smoke.spec.ts` (Week 2), `ticket-detail.smoke.spec.ts` (Week 3), `ticket-resolution.smoke.spec.ts` (Week 4) — four Playwright projects.
 
+## Ticket çözümleme ve reopen (Hafta 4)
+
+| Endpoint / kural | Davranış |
+|------------------|----------|
+| `POST /api/tickets/{id}/resolve` | Bearer auth; **gövde yok**; açık ticket’ı manuel kapatır; `ClosedByUserId` = oturum kullanıcısı; zaten `Resolved` ise **idempotent** (orijinal closer/timestamp korunur) |
+| Resolved + destek yanıtı | Kalıcılık/SMTP öncesi reddedilir (HTTP 409) — müşteri e-postası reopen edene kadar |
+| `POST /api/jobs/resolve-inactive-tickets` | `X-Jobs-Api-Key` zorunlu; JWT yok; dahilî eşik: `Status == WaitingCustomerReply` ve `WaitingCustomerSince <= now - 3 days` (eşitlik uygun) |
+| Otomatik kapanış | `ClosedByUserId` **null** (sistem); `ResolvedAt` set |
+| Reopen | Yalnızca müşteri e-postası; kanonik ticket numarası + müşteri kimliği + idempotency (Message-ID / receipt); subject değişmez; manuel reopen UI/API **yok** |
+| Atama / UC-010 / eşik ayarı | **Uygulanmadı** — atama rotası yok; parametre uçları bonus `501`; eşik sabit 3 gün |
+
+Zamanlayıcı kurulumu uygulama **dışındadır**. Örnek dış çağrı / cron (yer tutucu anahtar):
+
+```bash
+curl -sS -X POST http://localhost:5154/api/jobs/resolve-inactive-tickets \
+  -H "X-Jobs-Api-Key: <JOBS_API_KEY>"
+
+curl -sS -X POST http://localhost:5154/api/jobs/process-incoming-emails \
+  -H "X-Jobs-Api-Key: <JOBS_API_KEY>"
+```
+
+```cron
+# Kurulum kapsam dışı — yalnızca örnek
+0 * * * * curl -sS -X POST https://<API_HOST>/api/jobs/resolve-inactive-tickets -H "X-Jobs-Api-Key: <JOBS_API_KEY>"
+0 * * * * curl -sS -X POST https://<API_HOST>/api/jobs/process-incoming-emails -H "X-Jobs-Api-Key: <JOBS_API_KEY>"
+```
+
+Demo akışı ve bilinen kısıtlar: [docs/demo-runbook.md](docs/demo-runbook.md), [docs/known-limitations.md](docs/known-limitations.md).
 ## Mail / job yapılandırması (Hafta 2 hardening)
 
 ### Receiver modes
@@ -139,11 +191,12 @@ Bağımlılık yönü: **Domain ← Application ← Infrastructure ← WebAPI** 
 | **1** | Ortam, DB şeması, User + Login (UC-001) | Domain/User, Infrastructure/Persistence + Authentication, Features/Authentication, Controllers |
 | **2** | Ticket/Message, e-posta alma (UC-002), eşleştirme (BR-005) | Domain/Ticket*, Features/MailProcessing + Tickets/CreateTicket, Infrastructure/Email |
 | **3** | Portal list/detail/reply, ekler (UC-003…005, BR-012) | Features/Tickets/*, Features/Attachments, frontend/, Infrastructure/Storage |
-| **4** | Otomatik resolve, manuel resolve/reopen, test/demo (UC-007…009) | Features/ScheduledJobs, ResolveTicket, ReopenTicket; Jobs endpoint |
+| **4** | Otomatik resolve, manuel resolve/reopen, test/demo (UC-007…009) | `ResolveTicket`, `ResolveInactiveTickets`, mail reopen (UC-009); korumalı Jobs endpoint; portal resolve UI |
 
 - **20 iş günlük şahsi takip planı:** [docs/gunluk-plan.md](docs/gunluk-plan.md)
 - **Detaylı 4 haftalık teknik plan (PDF §10 uyumlu):** [docs/haftalik-plan.md](docs/haftalik-plan.md)
 - Kısa klasör ↔ hafta haritası: [docs/weekly-plan.md](docs/weekly-plan.md)
+- Demo runbook / bilinen kısıtlar: [docs/demo-runbook.md](docs/demo-runbook.md), [docs/known-limitations.md](docs/known-limitations.md)
 
 ## Kısıtlar (SRD §2.5)
 
