@@ -5,10 +5,12 @@ using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.Infrastructure.Email;
 using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
+using VSHelpDesk.Infrastructure.Storage;
 
 namespace VSHelpDesk.Infrastructure;
 
@@ -63,7 +65,12 @@ public static class DependencyInjection
         services.AddScoped<FakeEmailReceiver>();
         services.AddScoped<NotConfiguredImapEmailReceiver>();
 
-        // Hafta 3: IFileStorage
+        services.AddSingleton<IValidateOptions<FileStorageOptions>, FileStorageOptionsValidator>();
+        services.AddOptions<FileStorageOptions>()
+            .Bind(configuration.GetSection(FileStorageOptions.SectionName))
+            .ValidateOnStart();
+        services.AddSingleton<IAttachmentUploadPolicy, ConfiguredAttachmentUploadPolicy>();
+        services.AddSingleton<IFileStorage, LocalFileStorage>();
 
         return services;
     }

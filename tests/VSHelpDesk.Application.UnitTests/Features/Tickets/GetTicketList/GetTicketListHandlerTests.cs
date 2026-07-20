@@ -49,6 +49,9 @@ public sealed class GetTicketListHandlerTests
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets { get; } = tickets.AsQueryable();
         public IQueryable<TicketMessage> TicketMessages => Array.Empty<TicketMessage>().AsQueryable();
+        public IQueryable<TicketAttachment> TicketAttachments =>
+            Array.Empty<TicketAttachment>().AsQueryable();
+
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
             Array.Empty<ProcessedEmailMessage>().AsQueryable();
 

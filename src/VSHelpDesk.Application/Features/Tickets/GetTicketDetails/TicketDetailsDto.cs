@@ -25,7 +25,7 @@ public sealed record TicketMessageDto(
     bool IsHtml,
     DateTime CreatedAt);
 
-/// <summary>Attachment metadata only (BR-012); empty until attachment persistence is enabled.</summary>
+/// <summary>Attachment metadata only (BR-012); binary content via GET /api/attachments/{id}.</summary>
 public sealed record TicketAttachmentMetaDto(
     Guid Id,
     Guid TicketMessageId,

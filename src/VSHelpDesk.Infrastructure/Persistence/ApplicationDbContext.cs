@@ -13,6 +13,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<TicketMessage> TicketMessages => Set<TicketMessage>();
 
+    public DbSet<TicketAttachment> TicketAttachments => Set<TicketAttachment>();
+
     public DbSet<ProcessedEmailMessage> ProcessedEmailMessages => Set<ProcessedEmailMessage>();
 
     IQueryable<User> IApplicationDbContext.Users => Users;
@@ -20,6 +22,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     IQueryable<Ticket> IApplicationDbContext.Tickets => Tickets;
 
     IQueryable<TicketMessage> IApplicationDbContext.TicketMessages => TicketMessages;
+
+    IQueryable<TicketAttachment> IApplicationDbContext.TicketAttachments => TicketAttachments;
 
     IQueryable<ProcessedEmailMessage> IApplicationDbContext.ProcessedEmailMessages =>
         ProcessedEmailMessages;

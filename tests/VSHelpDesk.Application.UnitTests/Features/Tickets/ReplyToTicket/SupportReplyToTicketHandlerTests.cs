@@ -119,6 +119,9 @@ public sealed class SupportReplyToTicketHandlerTests
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => new[] { ticket }.AsQueryable();
         public IQueryable<TicketMessage> TicketMessages => Messages.AsQueryable();
+        public IQueryable<TicketAttachment> TicketAttachments =>
+            Array.Empty<TicketAttachment>().AsQueryable();
+
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
             Array.Empty<ProcessedEmailMessage>().AsQueryable();
 
