@@ -6,7 +6,8 @@ namespace VSHelpDesk.WebAPI.Middleware;
 
 /// <summary>
 /// Double-submit CSRF gate for portal API mutations: <c>X-CSRF-Token</c> must match cookie <c>vshd.csrf</c>.
-/// Skips safe methods, login, anonymous logout (no auth cookie), and jobs API-key routes.
+/// Only applies when an authenticated browser session cookie (<c>vshd.auth</c>) is present.
+/// Skips safe methods, login, jobs API-key routes, non-API paths, and requests without <c>vshd.auth</c>.
 /// </summary>
 public sealed class CsrfProtectionMiddleware(RequestDelegate next)
 {
@@ -56,19 +57,18 @@ public sealed class CsrfProtectionMiddleware(RequestDelegate next)
             return false;
         }
 
-        // Anonymous logout is a no-op clear; only gate CSRF when an auth session cookie is present.
-        if (path.Equals("/api/auth/logout", StringComparison.OrdinalIgnoreCase)
-            && !context.Request.Cookies.ContainsKey(AuthCookieNames.Auth))
-        {
-            return false;
-        }
-
         if (path.StartsWith("/api/jobs", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
         if (!path.StartsWith("/api", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // CSRF only for authenticated browser sessions; unauthenticated mutations reach [Authorize] (401).
+        if (!context.Request.Cookies.ContainsKey(AuthCookieNames.Auth))
         {
             return false;
         }

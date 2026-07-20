@@ -32,8 +32,8 @@ public sealed class ParametersApiTests : IClassFixture<CustomWebApplicationFacto
         using var response = await client.PutAsJsonAsync(
             $"/api/parameters/{ApplicationParameterCatalog.AutoResolveInactiveDaysKey}",
             new { value = "5" });
-        // CSRF middleware gates unsafe /api methods before authorization (no cookies → 403).
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // No vshd.auth → CSRF skipped; [Authorize] returns 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]

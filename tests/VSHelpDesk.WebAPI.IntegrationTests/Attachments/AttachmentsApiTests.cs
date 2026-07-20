@@ -57,8 +57,8 @@ public sealed class AttachmentsApiTests : IClassFixture<CustomWebApplicationFact
         using var response = await client.PostAsync(
             $"/api/ticket-messages/{Guid.NewGuid()}/attachments",
             content);
-        // CSRF middleware gates unsafe /api methods before authorization (no cookies → 403).
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // No vshd.auth → CSRF skipped; [Authorize] returns 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]

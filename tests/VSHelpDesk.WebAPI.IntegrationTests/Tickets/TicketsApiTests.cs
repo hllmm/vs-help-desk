@@ -334,8 +334,8 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         using var response = await client.PostAsJsonAsync(
             $"/api/tickets/{Guid.NewGuid()}/replies",
             new { content = "Hello" });
-        // CSRF middleware gates unsafe /api methods before authorization (no cookies → 403).
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // No vshd.auth → CSRF skipped; [Authorize] returns 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -664,8 +664,8 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     {
         using var client = factory.CreateClient();
         using var response = await client.PostAsync($"/api/tickets/{Guid.NewGuid()}/resolve", content: null);
-        // CSRF middleware gates unsafe /api methods before authorization (no cookies → 403).
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // No vshd.auth → CSRF skipped; [Authorize] returns 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
