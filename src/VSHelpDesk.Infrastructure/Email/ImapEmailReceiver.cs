@@ -78,9 +78,9 @@ public sealed class ImapEmailReceiver(
             : htmlConverter.Convert(message.HtmlBody);
 
         var mailbox = message.From.Mailboxes.FirstOrDefault();
-        var messageId = string.IsNullOrWhiteSpace(message.MessageId)
-            ? null
-            : message.MessageId;
+        // MimeKit's MessageId property returns the token without angle brackets.
+        // Identity requires <left@right>; canonicalize at this boundary only.
+        var messageId = CanonicalizeMimeKitMessageId(message.MessageId);
 
         var receivedAt = message.Date == default
             ? DateTime.UtcNow
@@ -96,6 +96,76 @@ public sealed class ImapEmailReceiver(
             IsHtml: false,
             ReceivedAt: receivedAt,
             Attachments: MapAttachments(message));
+    }
+
+    /// <summary>
+    /// Maps MimeKit's unbracketed Message-Id into the RFC msg-id form expected by
+    /// <c>InboundEmailIdentityFactory</c>. Does not invent IDs for invalid strings.
+    /// </summary>
+    public static string? CanonicalizeMimeKitMessageId(string? messageId)
+    {
+        if (string.IsNullOrWhiteSpace(messageId))
+        {
+            return null;
+        }
+
+        var trimmed = messageId.Trim();
+
+        // Already angle-bracketed — pass through; identity validates shape/length.
+        if (trimmed.Length >= 2 && trimmed[0] == '<' && trimmed[^1] == '>')
+        {
+            return trimmed;
+        }
+
+        // Bare id-left@id-right (printable ASCII, single @) → wrap.
+        if (IsBareMessageIdToken(trimmed))
+        {
+            return $"<{trimmed}>";
+        }
+
+        // Clearly invalid: do not invent a Message-Id.
+        return trimmed;
+    }
+
+    /// <summary>
+    /// Single printable-ASCII token with exactly one '@' and non-empty left/right sides.
+    /// </summary>
+    private static bool IsBareMessageIdToken(string value)
+    {
+        // Minimum: a@b
+        if (value.Length < 3)
+        {
+            return false;
+        }
+
+        var atIndex = -1;
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+
+            // ASCII printable only; reject controls, space, and non-ASCII.
+            if (c is < (char)0x21 or > (char)0x7E)
+            {
+                return false;
+            }
+
+            if (c is '<' or '>')
+            {
+                return false;
+            }
+
+            if (c == '@')
+            {
+                if (atIndex >= 0)
+                {
+                    return false;
+                }
+
+                atIndex = i;
+            }
+        }
+
+        return atIndex > 0 && atIndex < value.Length - 1;
     }
 
     private static IReadOnlyList<IncomingEmailAttachment> MapAttachments(MimeMessage message)

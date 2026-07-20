@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Infrastructure.Email;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Email;
@@ -54,6 +55,7 @@ public sealed class ImapEmailReceiverTests
         var mime = new MimeMessage();
         mime.From.Add(new MailboxAddress("Bob", "bob@example.test"));
         mime.Subject = "HTML only";
+        // MimeKit stores/returns MessageId without angle brackets.
         mime.MessageId = "html-only@example.test";
         mime.Body = new TextPart("html")
         {
@@ -72,10 +74,60 @@ public sealed class ImapEmailReceiverTests
         var unread = await receiver.FetchUnreadAsync();
 
         var item = Assert.Single(unread);
-        Assert.False(string.IsNullOrWhiteSpace(item.MessageId));
+        // Boundary canonicalizes bare MimeKit id into <left@right> for identity.
+        Assert.Equal("<html-only@example.test>", item.MessageId);
         Assert.Contains("Hello", item.Body, StringComparison.Ordinal);
         Assert.DoesNotContain("alert", item.Body, StringComparison.OrdinalIgnoreCase);
         Assert.False(item.IsHtml);
+    }
+
+    [Fact]
+    public async Task Receiver_BareMimeKitMessageId_YieldsMessageIdIdempotencyKey()
+    {
+        // Regression: MimeKit MessageId is bare (no <>). Without boundary wrap,
+        // InboundEmailIdentityFactory rejects it and falls back to receipt:imap:{sha256}.
+        var mime = new MimeMessage();
+        mime.From.Add(new MailboxAddress("Dana", "dana@example.test"));
+        mime.Subject = "Idempotency";
+        mime.MessageId = "html-only@example.test";
+        Assert.Equal("html-only@example.test", mime.MessageId);
+        mime.Body = new TextPart("plain") { Text = "Body" };
+
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(UidValidity: 3u, Uid: 9u, Message: mime)
+            ]
+        };
+
+        var receiver = CreateReceiver(client);
+        var item = Assert.Single(await receiver.FetchUnreadAsync());
+
+        Assert.Equal("<html-only@example.test>", item.MessageId);
+
+        var identity = InboundEmailIdentityFactory.Create(item);
+        Assert.Equal("<html-only@example.test>", identity.IdempotencyKey);
+        Assert.Equal("<html-only@example.test>", identity.SourceMessageId);
+        Assert.DoesNotContain("receipt:imap:", identity.IdempotencyKey, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    [InlineData("html-only@example.test", "<html-only@example.test>")]
+    [InlineData("<already@bracketed.test>", "<already@bracketed.test>")]
+    [InlineData("  bare@example.test  ", "<bare@example.test>")]
+    [InlineData("not-an-id", "not-an-id")]
+    [InlineData("two@@example.test", "two@@example.test")]
+    [InlineData("@only-right", "@only-right")]
+    [InlineData("only-left@", "only-left@")]
+    public void CanonicalizeMimeKitMessageId_WrapsBareValidTokensOnly(
+        string? input,
+        string? expected)
+    {
+        Assert.Equal(expected, ImapEmailReceiver.CanonicalizeMimeKitMessageId(input));
     }
 
     [Fact]
@@ -104,6 +156,7 @@ public sealed class ImapEmailReceiverTests
         var marked = Assert.Single(client.Marked);
         Assert.Equal(99u, marked.ExpectedUidValidity);
         Assert.Equal(7u, marked.Uid);
+        Assert.Equal("<mark-me@example.test>", item.MessageId);
         Assert.DoesNotContain("mark-me@example.test", item.ReceiptHandle.Value, StringComparison.Ordinal);
     }
 
