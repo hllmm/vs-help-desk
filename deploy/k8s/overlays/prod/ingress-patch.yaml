@@ -1,0 +1,30 @@
+# Prod overlay patch for Ingress host and class.
+# Replace helpdesk.example.local with the real company DNS name.
+# Set ingressClassName to the controller installed in your cluster
+# (nginx, traefik, azure-application-gateway, etc.).
+# Optional cert-manager: uncomment the annotation and ensure the ClusterIssuer exists;
+# then either omit a pre-created TLS secret or let cert-manager manage vshelpdesk-tls.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vshelpdesk
+  annotations:
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  # Match your Ingress controller class (base default is nginx).
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - helpdesk.example.local
+      secretName: vshelpdesk-tls
+  rules:
+    - host: helpdesk.example.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80

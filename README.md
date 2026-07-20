@@ -6,13 +6,18 @@ Kaynak: **VS Help Desk — SRD & Sistem Tasarımı** (`VSHD-SRD-001` v1.0).
 
 ## Production (şirket içi)
 
-İç kullanım deploy: [docs/deploy-production.md](docs/deploy-production.md)  
-(`docker compose -f docker-compose.prod.yml`, secrets env, CI, TLS proxy).
+| Path | Doc |
+|------|-----|
+| Docker Compose (VM / tek host) | [docs/deploy-production.md](docs/deploy-production.md) — `docker compose -f docker-compose.prod.yml`, secrets env, CI, TLS proxy |
+| Kubernetes (Kustomize) | [docs/deploy-kubernetes.md](docs/deploy-kubernetes.md) — `deploy/k8s/` base + `overlays/prod`, Ingress TLS, CronJobs |
 
-Sonraki fazlar (K8s, multi-tenant): design roadmap in  
+Local intern DX remains Compose. K8s packaging reuses the same api/web images.
+
+Sonraki faz (multi-tenant): design roadmap in  
 `docs/superpowers/specs/2026-07-20-production-hardening-design.md`.  
 UC-010 parametre yönetimi (Faz 1): `GET/PUT /api/parameters` + portal **Parametreler**.  
-Cookie auth + CSRF (Faz 2): HttpOnly `vshd.auth` JWT cookie; login body has **no** `accessToken`.
+Cookie auth + CSRF (Faz 2): HttpOnly `vshd.auth` JWT cookie; login body has **no** `accessToken`.  
+Kubernetes packaging (Faz 3): Kustomize under `deploy/k8s/` — see deploy-kubernetes doc.
 
 ## Hızlı başlangıç (sırayla)
 
