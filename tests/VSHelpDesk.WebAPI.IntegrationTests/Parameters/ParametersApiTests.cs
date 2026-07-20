@@ -37,9 +37,34 @@ public sealed class ParametersApiTests : IClassFixture<CustomWebApplicationFacto
     }
 
     [Fact]
-    public async Task GetParameters_ReturnsCatalog_WhenAuthenticated()
+    public async Task GetParameters_Support_Returns403()
     {
         var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var response = await client.GetAsync("/api/parameters");
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task PutParameter_Support_Returns403()
+    {
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            CookieAuthTestHelper.UseDefaultCsrfHeader(client, csrf);
+            using var response = await client.PutAsJsonAsync(
+                $"/api/parameters/{ApplicationParameterCatalog.AutoResolveInactiveDaysKey}",
+                new { value = "5" });
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task GetParameters_Admin_Returns200Catalog()
+    {
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsAdminAsync(factory);
         using (client)
         {
             using var response = await client.GetAsync("/api/parameters");
@@ -68,9 +93,9 @@ public sealed class ParametersApiTests : IClassFixture<CustomWebApplicationFacto
     }
 
     [Fact]
-    public async Task PutParameter_UpdatesValue()
+    public async Task PutParameter_Admin_UpdatesValue()
     {
-        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsAdminAsync(factory);
         using (client)
         {
             CookieAuthTestHelper.UseDefaultCsrfHeader(client, csrf);
@@ -127,9 +152,9 @@ public sealed class ParametersApiTests : IClassFixture<CustomWebApplicationFacto
     [InlineData("0")]
     [InlineData("99")]
     [InlineData("")]
-    public async Task PutParameter_InvalidRange_Returns400(string invalidValue)
+    public async Task PutParameter_Admin_InvalidRange_Returns400(string invalidValue)
     {
-        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsAdminAsync(factory);
         using (client)
         {
             CookieAuthTestHelper.UseDefaultCsrfHeader(client, csrf);
@@ -149,9 +174,9 @@ public sealed class ParametersApiTests : IClassFixture<CustomWebApplicationFacto
     }
 
     [Fact]
-    public async Task PutParameter_UnknownKey_Returns404()
+    public async Task PutParameter_Admin_UnknownKey_Returns404()
     {
-        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsAdminAsync(factory);
         using (client)
         {
             CookieAuthTestHelper.UseDefaultCsrfHeader(client, csrf);
@@ -172,9 +197,9 @@ public sealed class ParametersApiTests : IClassFixture<CustomWebApplicationFacto
     }
 
     [Fact]
-    public async Task PutParameter_NullBody_Returns400()
+    public async Task PutParameter_Admin_NullBody_Returns400()
     {
-        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsAdminAsync(factory);
         using (client)
         {
             using var request = new HttpRequestMessage(

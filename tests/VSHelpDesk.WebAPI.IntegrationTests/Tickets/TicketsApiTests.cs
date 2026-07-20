@@ -808,6 +808,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             builder.UseSetting("environment", "Development");
             builder.UseEnvironment("Development");
             builder.UseSetting("SeedUser:Enabled", "false");
+            builder.UseSetting("SeedAdmin:Enabled", "false");
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IApplicationDbContext>();
