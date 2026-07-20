@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vshelpdesk
+  labels:
+    app.kubernetes.io/name: vshelpdesk
+    app.kubernetes.io/part-of: vs-help-desk
+  annotations:
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"  # optional
+spec:
+  ingressClassName: nginx   # overlay may patch
+  tls:
+    - hosts:
+        - helpdesk.example.local
+      secretName: vshelpdesk-tls
+  rules:
+    - host: helpdesk.example.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80

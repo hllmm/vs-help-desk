@@ -12,6 +12,9 @@ resources:
   - web-nginx-configmap.yaml
   - web-deployment.yaml
   - web-service.yaml
+  - ingress.yaml
+  - cronjob-process-incoming-emails.yaml
+  - cronjob-resolve-inactive-tickets.yaml
 commonLabels:
   app.kubernetes.io/part-of: vs-help-desk
 
