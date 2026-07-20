@@ -214,6 +214,11 @@ public sealed class CreateTicketHandlerTests
             pending.Clear();
             return Task.FromResult(1);
         }
+
+        public void ClearTrackedChanges() => pending.Clear();
+
+        public bool IsUniqueConstraintViolation(Exception exception) =>
+            exception is InvalidOperationException;
     }
 
     private sealed class FakeTicketNumberGenerator(params string[] numbers) : ITicketNumberGenerator

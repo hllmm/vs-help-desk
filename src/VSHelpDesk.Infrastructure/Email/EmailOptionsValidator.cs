@@ -14,6 +14,13 @@ public sealed class EmailOptionsValidator : IValidateOptions<EmailOptions>
                 "The Email:ReceiverMode configuration value must be 'Fake' or 'Imap'.");
         }
 
+        // Fake samples must never process production mailboxes.
+        if (mode.Equals("Fake", StringComparison.OrdinalIgnoreCase) && IsProductionLikeEnvironment())
+        {
+            return ValidateOptionsResult.Fail(
+                "Email:ReceiverMode 'Fake' is not allowed in Production/Staging. Use Imap with real credentials.");
+        }
+
         if (string.IsNullOrWhiteSpace(options.SmtpHost))
         {
             return ValidateOptionsResult.Fail("The Email:SmtpHost configuration value is required.");
@@ -46,5 +53,16 @@ public sealed class EmailOptionsValidator : IValidateOptions<EmailOptions>
         }
 
         return ValidateOptionsResult.Success;
+    }
+
+    private static bool IsProductionLikeEnvironment()
+    {
+        var environment =
+            Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+            ?? string.Empty;
+
+        return environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
+            || environment.Equals("Staging", StringComparison.OrdinalIgnoreCase);
     }
 }

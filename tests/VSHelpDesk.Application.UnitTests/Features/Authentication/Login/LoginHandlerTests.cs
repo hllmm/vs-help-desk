@@ -133,6 +133,12 @@ public sealed class LoginHandlerTests
             SaveChangesCallCount++;
             return Task.FromResult(1);
         }
+
+        public void ClearTrackedChanges()
+        {
+        }
+
+        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 
     private sealed class FakePasswordHasher(string validPassword) : IPasswordHasher

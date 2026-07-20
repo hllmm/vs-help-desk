@@ -130,17 +130,103 @@ public sealed class ProcessIncomingEmailsHandlerTests
         Assert.Equal("VS-000206", context.TicketsList[0].TicketNumber);
     }
 
+    [Fact]
+    public async Task T1_BR002_AckSmtpFailure_AfterCreate_KeepsTicketAndIncrementsAckFailed()
+    {
+        var context = new FakeDb();
+        var sender = new RecordingSender { ThrowOnSend = true };
+        var receiver = new FakeReceiver(
+        [
+            Mail("<msg-ack-fail@test>", "customer@example.test", "Help", "Body")
+        ]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000210");
+
+        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.CreatedTickets);
+        Assert.Equal(0, result.Value.AckSent);
+        Assert.Equal(1, result.Value.AckFailed);
+        Assert.Single(context.TicketsList);
+        Assert.Single(context.TicketMessagesList);
+        Assert.Single(context.ProcessedEmailMessagesList);
+        Assert.Contains("<msg-ack-fail@test>", receiver.Marked);
+    }
+
+    [Fact]
+    public async Task T1_NewMail_EmptyBody_CreatesTicketWithPlaceholder()
+    {
+        var context = new FakeDb();
+        var sender = new RecordingSender();
+        var receiver = new FakeReceiver(
+        [
+            Mail("<msg-empty@test>", "customer@example.test", "Empty body mail", "   ")
+        ]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000211");
+
+        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.Equal(1, result.Value!.CreatedTickets);
+        Assert.Equal(0, result.Value.SkippedInvalid);
+        Assert.Equal("(empty body)", context.TicketMessagesList[0].Content);
+        Assert.False(context.TicketMessagesList[0].IsHtml);
+    }
+
+    [Fact]
+    public async Task FromMismatch_OnSubjectMatch_CreatesNewTicketInsteadOfReply()
+    {
+        var context = new FakeDb();
+        var existing = Ticket.Create(
+            "VS-000070",
+            "Owned by Ada",
+            "Ada",
+            "ada@example.test",
+            FixedNow.UtcDateTime);
+        context.TicketsList.Add(existing);
+        var sender = new RecordingSender();
+        var receiver = new FakeReceiver(
+        [
+            Mail("<msg-spoof@test>", "attacker@evil.test", "Re: [VS-000070] Owned by Ada", "Inject")
+        ]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000212");
+
+        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.Equal(1, result.Value!.CreatedTickets);
+        Assert.Equal(0, result.Value.CustomerReplies);
+        Assert.Equal(2, context.TicketsList.Count);
+        Assert.Equal("attacker@evil.test", context.TicketsList[1].CustomerEmail);
+    }
+
+    [Fact]
+    public async Task T1_NewMail_AckSubjectContainsCanonicalTicketNumber_AndToIsCustomer()
+    {
+        var context = new FakeDb();
+        var sender = new RecordingSender();
+        var receiver = new FakeReceiver(
+        [
+            Mail("<msg-ack-subject@test>", "customer@example.test", "Help", "Body")
+        ]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000213");
+
+        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.Equal(1, result.Value!.AckSent);
+        Assert.Single(sender.Sent);
+        Assert.Contains("VS-000213", sender.Sent[0].Subject, StringComparison.Ordinal);
+        Assert.Equal("customer@example.test", sender.Sent[0].ToAddress);
+        Assert.Equal(TicketStatus.New, context.TicketsList[0].Status);
+    }
+
     private static ProcessIncomingEmailsHandler CreateHandler(
         FakeDb context,
         IEmailReceiver receiver,
         IEmailSender sender,
         params string[] numbers)
     {
-        var create = new CreateTicketHandler(
-            context,
-            new SequenceNumbers(numbers),
-            new FixedTimeProvider(FixedNow));
-        var reply = new AppendCustomerReplyHandler(context, new FixedTimeProvider(FixedNow));
+        var time = new FixedTimeProvider(FixedNow);
+        var create = new CreateTicketHandler(context, new SequenceNumbers(numbers), time);
+        var reply = new AppendCustomerReplyHandler(context, time);
         return new ProcessIncomingEmailsHandler(
             receiver,
             sender,
@@ -148,7 +234,19 @@ public sealed class ProcessIncomingEmailsHandlerTests
             context,
             create,
             reply,
+            time,
+            new AlwaysEnterGate(),
             NullLogger<ProcessIncomingEmailsHandler>.Instance);
+    }
+
+    private sealed class AlwaysEnterGate : IProcessIncomingEmailsGate
+    {
+        public Task<bool> TryEnterAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(true);
+
+        public void Exit()
+        {
+        }
     }
 
     private static IncomingEmail Mail(string id, string from, string subject, string body) =>
@@ -193,10 +291,16 @@ public sealed class ProcessIncomingEmailsHandlerTests
 
     private sealed class RecordingSender : IEmailSender
     {
+        public bool ThrowOnSend { get; init; }
         public List<EmailMessage> Sent { get; } = [];
 
         public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
         {
+            if (ThrowOnSend)
+            {
+                throw new InvalidOperationException("SMTP down");
+            }
+
             Sent.Add(message);
             return Task.CompletedTask;
         }
@@ -244,5 +348,9 @@ public sealed class ProcessIncomingEmailsHandlerTests
             pending.Clear();
             return Task.FromResult(1);
         }
+
+        public void ClearTrackedChanges() => pending.Clear();
+
+        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 }

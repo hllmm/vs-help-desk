@@ -1,5 +1,6 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Models;
+using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 
@@ -36,11 +37,13 @@ public sealed class CreateTicketHandler(
             command.CustomerEmail.Trim(),
             now);
 
+        // Inbound mail: store plain text only (HTML policy for portal safety).
+        var content = InboundMailLimits.NormalizeBody(command.Content);
         var firstMessage = new TicketMessage(
             ticket.Id,
             MessageSenderType.Customer,
-            command.Content.Trim(),
-            isHtml: command.IsHtml,
+            content,
+            isHtml: false,
             userId: null,
             createdAtUtc: now);
 
@@ -56,13 +59,20 @@ public sealed class CreateTicketHandler(
         {
             await applicationDbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Concurrent same MessageId: unique index wins; treat as idempotent success.
-            var afterRace = FindProcessed(messageId);
-            if (afterRace is not null)
+            // Drop failed graph so later mails in the same scoped context can save.
+            applicationDbContext.ClearTrackedChanges();
+
+            // Unique race (or unit FakeDb InvalidOperationException simulation).
+            if (applicationDbContext.IsUniqueConstraintViolation(ex) ||
+                ex is InvalidOperationException)
             {
-                return Result.Success(BuildAlreadyProcessedResult(afterRace));
+                var afterRace = FindProcessed(messageId);
+                if (afterRace is not null)
+                {
+                    return Result.Success(BuildAlreadyProcessedResult(afterRace));
+                }
             }
 
             throw;
@@ -120,11 +130,6 @@ public sealed class CreateTicketHandler(
         if (string.IsNullOrWhiteSpace(command.CustomerEmail))
         {
             return "CustomerEmail is required.";
-        }
-
-        if (string.IsNullOrWhiteSpace(command.Content))
-        {
-            return "Content is required.";
         }
 
         return null;
