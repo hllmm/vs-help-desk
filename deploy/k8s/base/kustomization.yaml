@@ -9,6 +9,9 @@ resources:
   - api-pvc-attachments.yaml
   - api-deployment.yaml
   - api-service.yaml
+  - web-nginx-configmap.yaml
+  - web-deployment.yaml
+  - web-service.yaml
 commonLabels:
   app.kubernetes.io/part-of: vs-help-desk
 
