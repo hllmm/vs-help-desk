@@ -9,8 +9,9 @@ Kaynak: **VS Help Desk — SRD & Sistem Tasarımı** (`VSHD-SRD-001` v1.0).
 İç kullanım deploy: [docs/deploy-production.md](docs/deploy-production.md)  
 (`docker compose -f docker-compose.prod.yml`, secrets env, CI, TLS proxy).
 
-Sonraki fazlar (UC-010 UI, cookie auth, K8s, multi-tenant): design roadmap in  
-`docs/superpowers/specs/2026-07-20-production-hardening-design.md`.
+Sonraki fazlar (cookie auth, K8s, multi-tenant): design roadmap in  
+`docs/superpowers/specs/2026-07-20-production-hardening-design.md`.  
+UC-010 parametre yönetimi (Faz 1) bu dalda: `GET/PUT /api/parameters` + portal **Parametreler**.
 
 ## Hızlı başlangıç (sırayla)
 
@@ -70,7 +71,7 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 - Local Vite development uses `.env.development` → `VITE_API_BASE_URL=http://localhost:5154`.
 - `VITE_API_BASE_URL` is an optional build-time override.
 - When absent, the production bundle calls relative `/api/...` URLs and expects a same-origin reverse proxy.
-- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply + resolve).
+- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply + resolve), `/parameters` (UC-010 list/edit allowlisted keys).
 - Detail messages render as literal text; attachments download via authenticated Blob + Bearer header (no token in URL).
 - Support reply: `POST /api/tickets/{id}/replies` with `{ content }` only; max **65,536** characters; saved-vs-delivered outcomes include SMTP failure warning without status change.
 - Manual resolve (detail): confirm dialog → `POST /api/tickets/{id}/resolve` (no body); server-confirmed **Çözüldü** state; reply composer hidden while resolved.
@@ -83,10 +84,11 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 |------------------|----------|
 | `POST /api/tickets/{id}/resolve` | Bearer auth; **gövde yok**; açık ticket’ı manuel kapatır; `ClosedByUserId` = oturum kullanıcısı; zaten `Resolved` ise **idempotent** (orijinal closer/timestamp korunur) |
 | Resolved + destek yanıtı | Kalıcılık/SMTP öncesi reddedilir (HTTP 409) — müşteri e-postası reopen edene kadar |
-| `POST /api/jobs/resolve-inactive-tickets` | `X-Jobs-Api-Key` zorunlu; JWT yok; dahilî eşik: `Status == WaitingCustomerReply` ve `WaitingCustomerSince <= now - 3 days` (eşitlik uygun) |
+| `POST /api/jobs/resolve-inactive-tickets` | `X-Jobs-Api-Key` zorunlu; JWT yok; eşik `AutoResolve.InactiveDays` (varsayılan 3, 1–30); `Status == WaitingCustomerReply` ve `WaitingCustomerSince <= now - days` |
 | Otomatik kapanış | `ClosedByUserId` **null** (sistem); `ResolvedAt` set |
 | Reopen | Yalnızca müşteri e-postası; kanonik ticket numarası + müşteri kimliği + idempotency (Message-ID / receipt); subject değişmez; manuel reopen UI/API **yok** |
-| Atama / UC-010 / eşik ayarı | **Uygulanmadı** — atama rotası yok; parametre uçları bonus `501`; eşik sabit 3 gün |
+| `GET/PUT /api/parameters` | Bearer auth; allowlist katalog (şimdilik `AutoResolve.InactiveDays`); bilinmeyen key → 404; geçersiz değer → 400; SMTP sırları DB’de **yok** |
+| Atama | **Uygulanmadı** — public assign rotası yok |
 
 Zamanlayıcı kurulumu uygulama **dışındadır**. Örnek dış çağrı / cron (yer tutucu anahtar):
 
