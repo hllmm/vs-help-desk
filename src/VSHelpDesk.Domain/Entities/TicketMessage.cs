@@ -18,6 +18,7 @@ public sealed class TicketMessage
 
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
 
+    /// <summary>EF Core materialization.</summary>
     private TicketMessage()
     {
     }
@@ -27,12 +28,14 @@ public sealed class TicketMessage
         MessageSenderType senderType,
         string content,
         bool isHtml = false,
-        Guid? userId = null)
+        Guid? userId = null,
+        DateTime? createdAtUtc = null)
     {
         TicketId = ticketId;
         SenderType = senderType;
         Content = content;
         IsHtml = isHtml;
         UserId = userId;
+        CreatedAt = createdAtUtc ?? DateTime.UtcNow;
     }
 }

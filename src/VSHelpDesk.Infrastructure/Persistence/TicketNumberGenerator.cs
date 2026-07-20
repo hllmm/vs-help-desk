@@ -9,6 +9,7 @@ namespace VSHelpDesk.Infrastructure.Persistence;
 /// </summary>
 public sealed class TicketNumberGenerator(ApplicationDbContext dbContext) : ITicketNumberGenerator
 {
+    /// <summary>Must match the fixed SQL below and the AddTicketNumberSequence migration.</summary>
     public const string SequenceName = "ticket_number_seq";
 
     public async Task<string> NextAsync(CancellationToken cancellationToken = default)
@@ -17,7 +18,8 @@ public sealed class TicketNumberGenerator(ApplicationDbContext dbContext) : ITic
         try
         {
             await using var command = dbContext.Database.GetDbConnection().CreateCommand();
-            command.CommandText = $"SELECT nextval('{SequenceName}')";
+            // Literal only — never interpolate user input into identifier SQL.
+            command.CommandText = "SELECT nextval('ticket_number_seq')";
             var scalar = await command.ExecuteScalarAsync(cancellationToken);
             var sequenceValue = Convert.ToInt64(scalar, System.Globalization.CultureInfo.InvariantCulture);
             return TicketNumberFormat.Format(sequenceValue);

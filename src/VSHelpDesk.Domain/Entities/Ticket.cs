@@ -31,11 +31,12 @@ public sealed class Ticket
 
     public Guid? ClosedByUserId { get; private set; }
 
+    /// <summary>EF Core materialization.</summary>
     private Ticket()
     {
     }
 
-    public Ticket(
+    private Ticket(
         string ticketNumber,
         string subject,
         string customerName,
@@ -57,14 +58,13 @@ public sealed class Ticket
         string customerEmail,
         DateTime createdAtUtc)
     {
-        var ticket = new Ticket(ticketNumber, subject, customerName, customerEmail)
+        return new Ticket(ticketNumber, subject, customerName, customerEmail)
         {
             Status = TicketStatus.New,
             CreatedAt = createdAtUtc,
             UpdatedAt = createdAtUtc,
             LastActivityAt = createdAtUtc
         };
-        return ticket;
     }
 
     /// <summary>BR-019 — bump activity when a conversation message is added.</summary>

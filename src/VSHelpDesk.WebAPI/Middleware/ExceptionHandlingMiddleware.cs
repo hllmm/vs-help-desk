@@ -38,11 +38,12 @@ public sealed class ExceptionHandlingMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
+        // Client titles stay stable/non-sensitive; full detail is logged server-side.
         var (statusCode, title) = exception switch
         {
-            NotFoundException => (HttpStatusCode.NotFound, exception.Message),
-            UnauthorizedApplicationException => (HttpStatusCode.Unauthorized, exception.Message),
-            DomainException => (HttpStatusCode.BadRequest, exception.Message),
+            NotFoundException => (HttpStatusCode.NotFound, "The requested resource was not found."),
+            UnauthorizedApplicationException => (HttpStatusCode.Unauthorized, "Unauthorized."),
+            DomainException => (HttpStatusCode.BadRequest, "A domain rule was violated."),
             _ => (HttpStatusCode.InternalServerError, "An unexpected error occurred.")
         };
 
@@ -52,7 +53,11 @@ public sealed class ExceptionHandlingMiddleware
         }
         else
         {
-            _logger.LogWarning(exception, "Handled application exception: {Title}", title);
+            _logger.LogWarning(
+                exception,
+                "Handled application exception status={Status} detail={Detail}",
+                (int)statusCode,
+                exception.Message);
         }
 
         context.Response.ContentType = "application/json";
