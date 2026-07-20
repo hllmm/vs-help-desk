@@ -1,12 +1,10 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using VSHelpDesk.Application.Abstractions.Email;
@@ -15,7 +13,6 @@ using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
-
 using VSHelpDesk.WebAPI.IntegrationTests.Support;
 
 namespace VSHelpDesk.WebAPI.IntegrationTests.Tickets;
@@ -54,9 +51,8 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task UC003_GetTickets_WithBearer_Returns200Array()
+    public async Task UC003_GetTickets_WithAuthCookie_Returns200Array()
     {
-        var token = await LoginAsync();
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -70,30 +66,28 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/tickets");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var response = await client.GetAsync("/api/tickets");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-        Assert.Equal(JsonValueKind.Array, doc.RootElement.ValueKind);
-        Assert.True(doc.RootElement.GetArrayLength() >= 1);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal(JsonValueKind.Array, doc.RootElement.ValueKind);
+            Assert.True(doc.RootElement.GetArrayLength() >= 1);
+        }
     }
 
     [Fact]
     public async Task UC004_GetTicket_UnknownId_Returns404()
     {
-        var token = await LoginAsync();
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"/api/tickets/{Guid.NewGuid()}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var response = await client.GetAsync($"/api/tickets/{Guid.NewGuid()}");
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
     }
 
     [Fact]
@@ -107,23 +101,20 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     [Fact]
     public async Task GetById_UnknownTicket_Returns404WithoutRawException()
     {
-        var token = await LoginAsync();
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"/api/tickets/{Guid.NewGuid()}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var response = await client.GetAsync($"/api/tickets/{Guid.NewGuid()}");
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync();
-        AssertSafeMissingResourceBody(body);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            AssertSafeMissingResourceBody(body);
+        }
     }
 
     [Fact]
     public async Task GetById_ReturnsMessagesAndAttachmentsInDeterministicOrder()
     {
-        var token = await LoginAsync();
         Guid ticketId = Guid.Empty;
         List<TicketMessage> expectedMessages;
         List<TicketAttachment> expectedAttachments;
@@ -217,42 +208,43 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             Assert.Equal(expectedAttachments[1].CreatedAt, expectedAttachments[2].CreatedAt);
             Assert.True(expectedAttachments[1].Id.CompareTo(expectedAttachments[2].Id) < 0);
 
-            using var client = factory.CreateClient();
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/tickets/{ticketId}");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-            using var response = await client.SendAsync(request);
-
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var root = doc.RootElement;
-            Assert.Equal(ticketId, root.GetProperty("id").GetGuid());
-            Assert.Equal("Deterministic order subject", root.GetProperty("subject").GetString());
-
-            var messages = root.GetProperty("messages");
-            Assert.Equal(3, messages.GetArrayLength());
-            for (var i = 0; i < expectedMessages.Count; i++)
+            var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
             {
-                var expected = expectedMessages[i];
-                var actual = messages[i];
-                Assert.Equal(expected.Id, actual.GetProperty("id").GetGuid());
-                Assert.Equal(expected.SenderType.ToString(), actual.GetProperty("senderType").GetString());
-                Assert.Equal(expected.Content, actual.GetProperty("content").GetString());
-                Assert.Equal(expected.IsHtml, actual.GetProperty("isHtml").GetBoolean());
-                Assert.Equal(expected.CreatedAt, actual.GetProperty("createdAt").GetDateTime());
-            }
+                using var response = await client.GetAsync($"/api/tickets/{ticketId}");
 
-            var attachments = root.GetProperty("attachments");
-            Assert.Equal(3, attachments.GetArrayLength());
-            for (var i = 0; i < expectedAttachments.Count; i++)
-            {
-                var expected = expectedAttachments[i];
-                var actual = attachments[i];
-                Assert.Equal(expected.Id, actual.GetProperty("id").GetGuid());
-                Assert.Equal(expected.TicketMessageId, actual.GetProperty("ticketMessageId").GetGuid());
-                Assert.Equal(expected.FileName, actual.GetProperty("fileName").GetString());
-                Assert.Equal(expected.ContentType, actual.GetProperty("contentType").GetString());
-                Assert.Equal(expected.FileSize, actual.GetProperty("fileSize").GetInt64());
-                Assert.Equal(expected.CreatedAt, actual.GetProperty("createdAt").GetDateTime());
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                var root = doc.RootElement;
+                Assert.Equal(ticketId, root.GetProperty("id").GetGuid());
+                Assert.Equal("Deterministic order subject", root.GetProperty("subject").GetString());
+
+                var messages = root.GetProperty("messages");
+                Assert.Equal(3, messages.GetArrayLength());
+                for (var i = 0; i < expectedMessages.Count; i++)
+                {
+                    var expected = expectedMessages[i];
+                    var actual = messages[i];
+                    Assert.Equal(expected.Id, actual.GetProperty("id").GetGuid());
+                    Assert.Equal(expected.SenderType.ToString(), actual.GetProperty("senderType").GetString());
+                    Assert.Equal(expected.Content, actual.GetProperty("content").GetString());
+                    Assert.Equal(expected.IsHtml, actual.GetProperty("isHtml").GetBoolean());
+                    Assert.Equal(expected.CreatedAt, actual.GetProperty("createdAt").GetDateTime());
+                }
+
+                var attachments = root.GetProperty("attachments");
+                Assert.Equal(3, attachments.GetArrayLength());
+                for (var i = 0; i < expectedAttachments.Count; i++)
+                {
+                    var expected = expectedAttachments[i];
+                    var actual = attachments[i];
+                    Assert.Equal(expected.Id, actual.GetProperty("id").GetGuid());
+                    Assert.Equal(expected.TicketMessageId, actual.GetProperty("ticketMessageId").GetGuid());
+                    Assert.Equal(expected.FileName, actual.GetProperty("fileName").GetString());
+                    Assert.Equal(expected.ContentType, actual.GetProperty("contentType").GetString());
+                    Assert.Equal(expected.FileSize, actual.GetProperty("fileSize").GetInt64());
+                    Assert.Equal(expected.CreatedAt, actual.GetProperty("createdAt").GetDateTime());
+                }
             }
         }
         finally
@@ -283,7 +275,6 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     [Fact]
     public async Task UC004_GetTicket_Existing_ReturnsMessagesChronological()
     {
-        var token = await LoginAsync();
         Guid ticketId;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -310,19 +301,20 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/tickets/{ticketId}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var response = await client.GetAsync($"/api/tickets/{ticketId}");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-        Assert.Equal("Detail subject", doc.RootElement.GetProperty("subject").GetString());
-        var messages = doc.RootElement.GetProperty("messages");
-        Assert.Equal(2, messages.GetArrayLength());
-        Assert.Equal("First", messages[0].GetProperty("content").GetString());
-        Assert.Equal("Second", messages[1].GetProperty("content").GetString());
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal("Detail subject", doc.RootElement.GetProperty("subject").GetString());
+            var messages = doc.RootElement.GetProperty("messages");
+            Assert.Equal(2, messages.GetArrayLength());
+            Assert.Equal("First", messages[0].GetProperty("content").GetString());
+            Assert.Equal("Second", messages[1].GetProperty("content").GetString());
+        }
     }
 
     private static void AssertSafeMissingResourceBody(string body)
@@ -336,38 +328,40 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task UC005_Reply_WithoutToken_Returns401()
+    public async Task UC005_Reply_WithoutCookies_IsRejected()
     {
         using var client = factory.CreateClient();
         using var response = await client.PostAsJsonAsync(
             $"/api/tickets/{Guid.NewGuid()}/replies",
             new { content = "Hello" });
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        // CSRF middleware gates unsafe /api methods before authorization (no cookies → 403).
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
     public async Task Reply_Blank_Returns400WithReplyContentRequiredCode()
     {
-        var token = await LoginAsync();
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"/api/tickets/{Guid.NewGuid()}/replies")
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
         {
-            Content = JsonContent.Create(new { content = "   " })
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/tickets/{Guid.NewGuid()}/replies")
+            {
+                Content = JsonContent.Create(new { content = "   " })
+            };
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("reply-content-required", doc.RootElement.GetProperty("code").GetString());
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal("reply-content-required", doc.RootElement.GetProperty("code").GetString());
+        }
     }
 
     [Fact]
     public async Task Reply_OverLimit_Returns400WithReplyContentTooLongCode()
     {
-        var token = await LoginAsync();
         Guid ticketId;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -385,17 +379,20 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
         {
-            Content = JsonContent.Create(new { content = new string('x', 65_537) })
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+            {
+                Content = JsonContent.Create(new { content = new string('x', 65_537) })
+            };
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("reply-content-too-long", doc.RootElement.GetProperty("code").GetString());
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal("reply-content-too-long", doc.RootElement.GetProperty("code").GetString());
+        }
 
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -409,7 +406,6 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     {
         var sender = new RecordingEmailSender();
         var replyFactory = CreateFactoryWithEmailSender(sender);
-        var token = await LoginAsync();
 
         Guid ticketId;
         await using (var scope = replyFactory.Services.CreateAsyncScope())
@@ -428,19 +424,22 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        using var client = replyFactory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(replyFactory);
+        using (client)
         {
-            Content = JsonContent.Create(new
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
             {
-                content = "<strong>literal text</strong>",
-                isHtml = true
-            })
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+                Content = JsonContent.Create(new
+                {
+                    content = "<strong>literal text</strong>",
+                    isHtml = true
+                })
+            };
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
 
         await using (var scope = replyFactory.Services.CreateAsyncScope())
         {
@@ -463,8 +462,6 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     {
         var sender = new RecordingEmailSender();
         var replyFactory = CreateFactoryWithEmailSender(sender);
-        // Login against the fixture host (stable user-secrets); JWT validates on reply host too.
-        var token = await LoginAsync();
 
         Guid ticketId;
         string ticketNumber;
@@ -485,23 +482,26 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        using var client = replyFactory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(replyFactory);
+        using (client)
         {
-            Content = JsonContent.Create(new { content = "Please try restarting the printer." })
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+            {
+                Content = JsonContent.Create(new { content = "Please try restarting the printer." })
+            };
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        Assert.True(root.GetProperty("emailDelivered").GetBoolean());
-        Assert.True(root.GetProperty("ticketStateUpdated").GetBoolean());
-        Assert.Equal(JsonValueKind.Null, root.GetProperty("noticeCode").ValueKind);
-        Assert.Equal("WaitingCustomerReply", root.GetProperty("status").GetString());
-        Assert.Equal(ticketNumber, root.GetProperty("ticketNumber").GetString());
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            Assert.True(root.GetProperty("emailDelivered").GetBoolean());
+            Assert.True(root.GetProperty("ticketStateUpdated").GetBoolean());
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("noticeCode").ValueKind);
+            Assert.Equal("WaitingCustomerReply", root.GetProperty("status").GetString());
+            Assert.Equal(ticketNumber, root.GetProperty("ticketNumber").GetString());
+        }
 
         Assert.Single(sender.Sent);
         Assert.False(sender.Sent[0].IsHtml);
@@ -531,7 +531,6 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     {
         var sender = new RecordingEmailSender { ThrowOnSend = true };
         var replyFactory = CreateFactoryWithEmailSender(sender);
-        var token = await LoginAsync();
 
         Guid ticketId;
         await using (var scope = replyFactory.Services.CreateAsyncScope())
@@ -550,29 +549,32 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        using var client = replyFactory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(replyFactory);
+        using (client)
         {
-            Content = JsonContent.Create(new { content = "VPN enabled on your account." })
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+            {
+                Content = JsonContent.Create(new { content = "VPN enabled on your account." })
+            };
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        Assert.False(root.GetProperty("emailDelivered").GetBoolean());
-        Assert.False(root.GetProperty("ticketStateUpdated").GetBoolean());
-        Assert.Equal(
-            "smtp-delivery-failed",
-            root.GetProperty("noticeCode").GetString());
-        Assert.Equal("CustomerReplied", root.GetProperty("status").GetString());
-        Assert.False(root.TryGetProperty("emailDeliveryError", out _));
-        Assert.DoesNotContain("SMTP down", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("bob-fail@example.test", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("VPN enabled", json, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            Assert.False(root.GetProperty("emailDelivered").GetBoolean());
+            Assert.False(root.GetProperty("ticketStateUpdated").GetBoolean());
+            Assert.Equal(
+                "smtp-delivery-failed",
+                root.GetProperty("noticeCode").GetString());
+            Assert.Equal("CustomerReplied", root.GetProperty("status").GetString());
+            Assert.False(root.TryGetProperty("emailDeliveryError", out _));
+            Assert.DoesNotContain("SMTP down", json, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("bob-fail@example.test", json, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("VPN enabled", json, StringComparison.OrdinalIgnoreCase);
+        }
 
         await using (var scope = replyFactory.Services.CreateAsyncScope())
         {
@@ -594,7 +596,6 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     {
         var sender = new RecordingEmailSender();
         var replyFactory = CreateFactoryWithEmailSender(sender);
-        var token = await LoginAsync();
         Guid seedUserId;
         Guid ticketId;
         DateTime resolvedAt;
@@ -619,25 +620,29 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        using var client = replyFactory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(replyFactory);
+        using (client)
         {
-            Content = JsonContent.Create(new { content = replyContent })
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+            {
+                Content = JsonContent.Create(new { content = replyContent })
+            };
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
-        Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
-        Assert.Equal(
-            "The request conflicts with current state.",
-            doc.RootElement.GetProperty("title").GetString());
-        Assert.DoesNotContain(customerEmail, json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(replyContent, json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("ResolvedTicketReplyException", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("Exception", json, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
+            Assert.Equal(
+                "The request conflicts with current state.",
+                doc.RootElement.GetProperty("title").GetString());
+            Assert.DoesNotContain(customerEmail, json, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(replyContent, json, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("ResolvedTicketReplyException", json, StringComparison.Ordinal);
+            Assert.DoesNotContain("Exception", json, StringComparison.OrdinalIgnoreCase);
+        }
+
         Assert.Empty(sender.Sent);
 
         await using (var scope = replyFactory.Services.CreateAsyncScope())
@@ -655,32 +660,34 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task Resolve_WithoutToken_Returns401()
+    public async Task Resolve_WithoutCookies_IsRejected()
     {
         using var client = factory.CreateClient();
         using var response = await client.PostAsync($"/api/tickets/{Guid.NewGuid()}/resolve", content: null);
-        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        // CSRF middleware gates unsafe /api methods before authorization (no cookies → 403).
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
     public async Task Resolve_UnknownTicket_Returns404()
     {
-        var token = await LoginAsync();
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"/api/tickets/{Guid.NewGuid()}/resolve");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/tickets/{Guid.NewGuid()}/resolve");
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        AssertSafeMissingResourceBody(await response.Content.ReadAsStringAsync());
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            AssertSafeMissingResourceBody(await response.Content.ReadAsStringAsync());
+        }
     }
 
     [Fact]
     public async Task Resolve_OpenTicket_ReturnsExactResultAndPersistsCurrentUser()
     {
-        var token = await LoginAsync();
         Guid seedUserId;
         Guid ticketId;
         string ticketNumber;
@@ -701,22 +708,25 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/resolve");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/resolve");
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var root = doc.RootElement;
-        Assert.Equal(ticketId, root.GetProperty("ticketId").GetGuid());
-        Assert.Equal(ticketNumber, root.GetProperty("ticketNumber").GetString());
-        Assert.Equal("Resolved", root.GetProperty("status").GetString());
-        Assert.True(root.GetProperty("changed").GetBoolean());
-        Assert.Equal(seedUserId, root.GetProperty("closedByUserId").GetGuid());
-        Assert.True(root.TryGetProperty("resolvedAt", out _));
-        Assert.True(root.TryGetProperty("updatedAt", out _));
-        Assert.True(root.TryGetProperty("lastActivityAt", out _));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            Assert.Equal(ticketId, root.GetProperty("ticketId").GetGuid());
+            Assert.Equal(ticketNumber, root.GetProperty("ticketNumber").GetString());
+            Assert.Equal("Resolved", root.GetProperty("status").GetString());
+            Assert.True(root.GetProperty("changed").GetBoolean());
+            Assert.Equal(seedUserId, root.GetProperty("closedByUserId").GetGuid());
+            Assert.True(root.TryGetProperty("resolvedAt", out _));
+            Assert.True(root.TryGetProperty("updatedAt", out _));
+            Assert.True(root.TryGetProperty("lastActivityAt", out _));
+        }
 
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -731,7 +741,6 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     [Fact]
     public async Task Resolve_AlreadyResolved_ReturnsChangedFalseAndPreservesOriginalClosure()
     {
-        var token = await LoginAsync();
         Guid seedUserId;
         Guid ticketId;
         DateTime originalResolvedAt;
@@ -753,20 +762,23 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             await db.SaveChangesAsync();
         }
 
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/resolve");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/resolve");
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var root = doc.RootElement;
-        Assert.False(root.GetProperty("changed").GetBoolean());
-        Assert.Equal(seedUserId, root.GetProperty("closedByUserId").GetGuid());
-        Assert.Equal(
-            DateTime.SpecifyKind(originalResolvedAt, DateTimeKind.Utc),
-            DateTime.SpecifyKind(root.GetProperty("resolvedAt").GetDateTime(), DateTimeKind.Utc),
-            TimeSpan.FromMilliseconds(1));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var root = doc.RootElement;
+            Assert.False(root.GetProperty("changed").GetBoolean());
+            Assert.Equal(seedUserId, root.GetProperty("closedByUserId").GetGuid());
+            Assert.Equal(
+                DateTime.SpecifyKind(originalResolvedAt, DateTimeKind.Utc),
+                DateTime.SpecifyKind(root.GetProperty("resolvedAt").GetDateTime(), DateTimeKind.Utc),
+                TimeSpan.FromMilliseconds(1));
+        }
 
         await using (var scope = factory.Services.CreateAsyncScope())
         {
@@ -803,12 +815,16 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             });
         });
 
-        var token = await LoginAsync();
+        // Login against the base host (real Users store). conflictFactory replaces
+        // IApplicationDbContext with an empty in-memory stub, so seed login cannot run there.
+        // Replay captured cookies onto a conflictFactory client for the resolve call.
+        var (authJwt, csrf, _) = await CookieAuthTestHelper.CaptureSupportLoginAsync(factory);
         using var client = conflictFactory.CreateClient();
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             $"/api/tickets/{openTicket.Id}/resolve");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        CookieAuthTestHelper.AddAuthCookies(request, authJwt, csrf);
+        CookieAuthTestHelper.AddCsrf(request, csrf);
         using var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -824,42 +840,25 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     [Fact]
     public async Task AssignPlaceholder_IsNotExposed()
     {
-        var token = await LoginAsync();
-        using var client = factory.CreateClient();
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            $"/api/tickets/{Guid.NewGuid()}/assign");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await client.SendAsync(request);
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/tickets/{Guid.NewGuid()}/assign");
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
 
-        Assert.True(
-            response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,
-            $"Expected 404 or 405, got {(int)response.StatusCode}.");
-        var body = await response.Content.ReadAsStringAsync();
-        Assert.DoesNotContain("501", body, StringComparison.Ordinal);
-        Assert.DoesNotContain("NotImplemented", body, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Hafta", body, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("AssignTicket", body, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("BR-011", body, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private async Task<string> LoginAsync(WebApplicationFactory<Program>? appFactory = null)
-    {
-        var host = appFactory ?? factory;
-        using var scope = host.Services.CreateScope();
-        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-        var username = configuration["SeedUser:Username"];
-        var password = configuration["SeedUser:Password"];
-        Assert.False(string.IsNullOrWhiteSpace(username));
-        Assert.False(string.IsNullOrWhiteSpace(password));
-
-        using var client = host.CreateClient();
-        using var loginResponse = await client.PostAsJsonAsync(
-            "/api/auth/login",
-            new { username, password });
-        loginResponse.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync());
-        return doc.RootElement.GetProperty("accessToken").GetString()!;
+            Assert.True(
+                response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,
+                $"Expected 404 or 405, got {(int)response.StatusCode}.");
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain("501", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("NotImplemented", body, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Hafta", body, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("AssignTicket", body, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("BR-011", body, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private static async Task<Guid> GetSeedUserIdAsync(ApplicationDbContext db)
@@ -919,4 +918,3 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         public void ClearTrackedChanges() => ClearTrackedCallCount++;
     }
 }
-

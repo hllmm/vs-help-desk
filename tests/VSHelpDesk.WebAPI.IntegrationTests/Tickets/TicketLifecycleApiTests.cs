@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -62,7 +61,8 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
         await using var factory = CreateFactory(receiver, sender);
         var jobsApiKey = GetJobsApiKey(factory);
 
-        var (accessToken, loginUserId) = await LoginAsync(factory);
+        var (client, csrf, loginUserId) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using var portalClient = client;
         await ParkDueAcknowledgementsAsync(factory);
 
         Guid ticketId = default;
@@ -97,15 +97,12 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 initialMessageCount = 1;
             }
 
-            using var client = factory.CreateClient();
-
             // 3–4. Manual resolve
             using (var resolveRequest = new HttpRequestMessage(
                        HttpMethod.Post,
                        $"/api/tickets/{ticketId}/resolve"))
             {
-                resolveRequest.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
+                CookieAuthTestHelper.AddCsrf(resolveRequest, csrf);
                 using var resolveResponse = await client.SendAsync(resolveRequest);
                 Assert.Equal(HttpStatusCode.OK, resolveResponse.StatusCode);
                 using var resolveDoc = JsonDocument.Parse(
@@ -131,8 +128,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                        })
                    })
             {
-                replyRequest.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
+                CookieAuthTestHelper.AddCsrf(replyRequest, csrf);
                 using var replyResponse = await client.SendAsync(replyRequest);
                 Assert.Equal(HttpStatusCode.Conflict, replyResponse.StatusCode);
             }
@@ -208,8 +204,6 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                        HttpMethod.Get,
                        $"/api/tickets/{ticketId}"))
             {
-                detailRequest.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
                 using var detailResponse = await client.SendAsync(detailRequest);
                 Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
                 using var detailDoc = JsonDocument.Parse(
@@ -268,8 +262,6 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                        HttpMethod.Get,
                        $"/api/tickets/{ticketId}"))
             {
-                detailRequest.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
                 using var detailResponse = await client.SendAsync(detailRequest);
                 Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
                 using var detailDoc = JsonDocument.Parse(
@@ -422,7 +414,8 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
         var sender = new RecordingEmailSender();
         await using var factory = CreateFactory(receiver, sender);
         var jobsApiKey = GetJobsApiKey(factory);
-        var (accessToken, loginUserId) = await LoginAsync(factory);
+        var (client, _, loginUserId) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using var portalClient = client;
         await ParkDueAcknowledgementsAsync(factory);
 
         Guid originalTicketId = default;
@@ -460,7 +453,6 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 Attachments: Array.Empty<IncomingEmailAttachment>());
             receiver.Expose(incoming);
 
-            using var client = factory.CreateClient();
             using (var jobRequest = new HttpRequestMessage(
                        HttpMethod.Post,
                        "/api/jobs/process-incoming-emails"))
@@ -499,8 +491,6 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
             using var detailRequest = new HttpRequestMessage(
                 HttpMethod.Get,
                 $"/api/tickets/{originalTicketId}");
-            detailRequest.Headers.Authorization =
-                new AuthenticationHeaderValue("Bearer", accessToken);
             using var detailResponse = await client.SendAsync(detailRequest);
             Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
             using var detailDoc = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
@@ -531,7 +521,8 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
         var sender = new RecordingEmailSender();
         await using var factory = CreateFactory(receiver, sender);
         var jobsApiKey = GetJobsApiKey(factory);
-        var (accessToken, loginUserId) = await LoginAsync(factory);
+        var (client, csrf, loginUserId) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using var portalClient = client;
         await ParkDueAcknowledgementsAsync(factory);
 
         Guid ticketId = default;
@@ -564,14 +555,11 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 ticketIds.Add(ticketId);
             }
 
-            using var client = factory.CreateClient();
-
             using (var resolveRequest = new HttpRequestMessage(
                        HttpMethod.Post,
                        $"/api/tickets/{ticketId}/resolve"))
             {
-                resolveRequest.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
+                CookieAuthTestHelper.AddCsrf(resolveRequest, csrf);
                 using var resolveResponse = await client.SendAsync(resolveRequest);
                 Assert.Equal(HttpStatusCode.OK, resolveResponse.StatusCode);
             }
@@ -615,8 +603,6 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
 
             using (var listRequest = new HttpRequestMessage(HttpMethod.Get, "/api/tickets"))
             {
-                listRequest.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
                 using var listResponse = await client.SendAsync(listRequest);
                 Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
                 using var listDoc = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
@@ -676,8 +662,6 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                        HttpMethod.Get,
                        $"/api/tickets/{ticketId}"))
             {
-                detailRequest.Headers.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
                 using var detailResponse = await client.SendAsync(detailRequest);
                 Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
                 using var detailDoc = JsonDocument.Parse(
@@ -743,28 +727,6 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 services.AddSingleton<TimeProvider>(new FixedTimeProvider(FixedNow));
             });
         });
-
-    private static async Task<(string AccessToken, Guid UserId)> LoginAsync(
-        WebApplicationFactory<Program> factory)
-    {
-        using var scope = factory.Services.CreateScope();
-        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-        var username = configuration["SeedUser:Username"];
-        var password = configuration["SeedUser:Password"];
-        Assert.False(string.IsNullOrWhiteSpace(username));
-        Assert.False(string.IsNullOrWhiteSpace(password));
-
-        using var client = factory.CreateClient();
-        using var loginResponse = await client.PostAsJsonAsync(
-            "/api/auth/login",
-            new { username, password });
-        loginResponse.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync());
-        var accessToken = doc.RootElement.GetProperty("accessToken").GetString()!;
-        var userId = doc.RootElement.GetProperty("userId").GetGuid();
-        Assert.NotEqual(Guid.Empty, userId);
-        return (accessToken, userId);
-    }
 
     private static string GetJobsApiKey(WebApplicationFactory<Program> factory)
     {
