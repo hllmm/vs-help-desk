@@ -46,6 +46,33 @@ public sealed class Ticket
         CustomerEmail = customerEmail;
     }
 
+    /// <summary>
+    /// Creates a new ticket (UC-002). Subject is set only here (BR-021).
+    /// </summary>
+    public static Ticket Create(
+        string ticketNumber,
+        string subject,
+        string customerName,
+        string customerEmail,
+        DateTime createdAtUtc)
+    {
+        var ticket = new Ticket(ticketNumber, subject, customerName, customerEmail)
+        {
+            Status = TicketStatus.New,
+            CreatedAt = createdAtUtc,
+            UpdatedAt = createdAtUtc,
+            LastActivityAt = createdAtUtc
+        };
+        return ticket;
+    }
+
+    /// <summary>BR-019 — bump activity when a conversation message is added.</summary>
+    public void RecordMessageActivity(DateTime nowUtc)
+    {
+        UpdatedAt = nowUtc;
+        LastActivityAt = nowUtc;
+    }
+
     /// <summary>BR-006 — support replied; waiting on customer.</summary>
     public void MarkAsWaitingCustomerReply(DateTime now)
     {
@@ -77,11 +104,10 @@ public sealed class Ticket
         LastActivityAt = now;
     }
 
-    /// <summary>BR-011 — at most one assignee at a time.</summary>
+    /// <summary>BR-011 — at most one assignee at a time. Not conversation activity (BR-019).</summary>
     public void Assign(Guid userId, DateTime now)
     {
         AssignedUserId = userId;
         UpdatedAt = now;
     }
 }
-
