@@ -7,12 +7,10 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using VSHelpDesk.Domain.Entities;
-using VSHelpDesk.Infrastructure.Persistence;
+using VSHelpDesk.WebAPI.IntegrationTests.Support;
 
 namespace VSHelpDesk.WebAPI.IntegrationTests.Authentication;
 
@@ -106,19 +104,13 @@ public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<P
     [Fact]
     public async Task BR015_Login_InactiveUser_Returns401GenericMessage()
     {
-        var (username, password) = GetSeedCredentials();
-        await using var scope = factory.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var user = await db.Users.SingleAsync(candidate => candidate.Username == username);
-        user.Deactivate();
-        await db.SaveChangesAsync();
-
+        var inactive = await IntegrationTestUser.CreateInactiveAsync(factory.Services);
         try
         {
             using var client = factory.CreateClient();
             using var response = await client.PostAsJsonAsync(
                 "/api/auth/login",
-                new { username, password });
+                new { username = inactive.Username, password = inactive.Password });
 
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
             var body = await response.Content.ReadAsStringAsync();
@@ -126,13 +118,7 @@ public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<P
         }
         finally
         {
-            // Reactivate seed user for other tests in the same process.
-            await using var cleanupScope = factory.Services.CreateAsyncScope();
-            var cleanupDb = cleanupScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var inactive = await cleanupDb.Users.SingleAsync(candidate => candidate.Username == username);
-            cleanupDb.Entry(inactive).Property(nameof(User.IsActive)).CurrentValue = true;
-            cleanupDb.Entry(inactive).Property(nameof(User.IsActive)).IsModified = true;
-            await cleanupDb.SaveChangesAsync();
+            await IntegrationTestUser.DeleteAsync(factory.Services, inactive.Id);
         }
     }
 

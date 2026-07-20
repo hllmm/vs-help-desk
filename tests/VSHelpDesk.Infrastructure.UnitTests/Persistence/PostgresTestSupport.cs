@@ -7,11 +7,17 @@ namespace VSHelpDesk.Infrastructure.UnitTests.Persistence;
 
 /// <summary>
 /// Resolves the same local PostgreSQL connection used by WebAPI (user-secrets / env).
-/// Relational tests skip cleanly when the connection is not configured.
+/// Relational tests skip locally when the connection is not configured; fail when CI=true.
 /// </summary>
 internal static class PostgresTestConnection
 {
     private const string UserSecretsId = "VSHelpDesk.LocalDevelopment";
+
+    internal static bool IsCi =>
+        string.Equals(
+            Environment.GetEnvironmentVariable("CI"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
 
     public static string? TryGet()
     {
@@ -58,13 +64,17 @@ internal static class PostgresTestConnection
     }
 }
 
-/// <summary>xUnit fact that skips when PostgreSQL is unavailable.</summary>
+/// <summary>
+/// xUnit fact that skips when PostgreSQL is unavailable outside CI.
+/// Missing configuration in CI is a hard failure via <see cref="PostgresAvailabilityTests"/>.
+/// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
 public sealed class PostgresFactAttribute : FactAttribute
 {
     public PostgresFactAttribute()
     {
-        if (string.IsNullOrWhiteSpace(PostgresTestConnection.TryGet()))
+        if (!PostgresTestConnection.IsCi
+            && string.IsNullOrWhiteSpace(PostgresTestConnection.TryGet()))
         {
             Skip =
                 "ConnectionStrings:DefaultConnection not configured (user-secrets or env). " +
@@ -81,7 +91,11 @@ public sealed class PostgresAvailabilityTests
         var connection = PostgresTestConnection.TryGet();
         if (string.IsNullOrWhiteSpace(connection))
         {
-            // Visible always-green signal that relational suite was skipped (not a silent pass).
+            Assert.False(
+                PostgresTestConnection.IsCi,
+                "CI=true requires ConnectionStrings__DefaultConnection (or user-secrets) so PostgreSQL " +
+                "relational tests run; missing configuration must fail the build.");
+            // Local: explicit soft-skip signal (not a silent pass of uniqueness coverage).
             Assert.True(
                 true,
                 "PostgreSQL not configured: PostgresFact uniqueness tests skipped. " +
