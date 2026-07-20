@@ -2,10 +2,14 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Infrastructure.Authentication;
+using VSHelpDesk.WebAPI.Authentication;
 using VSHelpDesk.WebAPI.Contracts.Authentication;
 using VSHelpDesk.WebAPI.Controllers;
 
@@ -29,7 +33,6 @@ public sealed class AuthControllerTests
         var ok = Assert.IsType<OkObjectResult>(result);
         Assert.Equal(StatusCodes.Status200OK, ok.StatusCode);
         var body = Assert.IsType<LoginResponse>(ok.Value);
-        Assert.Equal("access-token", body.AccessToken);
         Assert.Equal(user.Id, body.UserId);
         Assert.Equal(user.FullName, body.FullName);
         Assert.Equal(user.Username, body.Username);
@@ -38,6 +41,13 @@ public sealed class AuthControllerTests
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PasswordHash", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("stored-password-hash", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("accessToken", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("access-token", json, StringComparison.OrdinalIgnoreCase);
+
+        var setCookie = controller.Response.Headers.SetCookie.ToString();
+        Assert.Contains(AuthCookieNames.Auth, setCookie, StringComparison.Ordinal);
+        Assert.Contains(AuthCookieNames.Csrf, setCookie, StringComparison.Ordinal);
+        Assert.Contains("httponly", setCookie, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -100,6 +110,19 @@ public sealed class AuthControllerTests
         Assert.Equal("Local Support User", body.FullName);
     }
 
+    [Fact]
+    public void Logout_ClearsAuthCookies_Returns204()
+    {
+        var controller = CreateController(CreateUser(), validPassword: "correct-password");
+
+        var result = controller.Logout();
+
+        Assert.IsType<NoContentResult>(result);
+        var setCookie = controller.Response.Headers.SetCookie.ToString();
+        Assert.Contains(AuthCookieNames.Auth, setCookie, StringComparison.Ordinal);
+        Assert.Contains(AuthCookieNames.Csrf, setCookie, StringComparison.Ordinal);
+    }
+
     private static AuthController CreateController(User user, string validPassword)
     {
         var context = new FakeApplicationDbContext(user);
@@ -108,7 +131,23 @@ public sealed class AuthControllerTests
             new FakePasswordHasher(validPassword),
             new FakeTokenService("access-token"),
             new FixedTimeProvider(LoginTime));
-        return new AuthController(handler);
+        var env = new FakeHostEnvironment { EnvironmentName = Environments.Development };
+        var authOptions = Microsoft.Extensions.Options.Options.Create(new AuthOptions
+        {
+            Issuer = "VSHelpDesk",
+            Audience = "VSHelpDesk",
+            SigningKey = "unit-test-signing-key-with-32-bytes!!",
+            ExpirationMinutes = 480
+        });
+
+        var controller = new AuthController(handler, env, authOptions)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext()
+            }
+        };
+        return controller;
     }
 
     private static User CreateUser(string username = "active.user") =>
@@ -161,5 +200,17 @@ public sealed class AuthControllerTests
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class FakeHostEnvironment : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+
+        public string ApplicationName { get; set; } = "VSHelpDesk.WebAPI.Tests";
+
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+
+        public IFileProvider ContentRootFileProvider { get; set; } =
+            new NullFileProvider();
     }
 }

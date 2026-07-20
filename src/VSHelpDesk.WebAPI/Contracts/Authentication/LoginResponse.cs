@@ -1,8 +1,7 @@
 namespace VSHelpDesk.WebAPI.Contracts.Authentication;
 
-/// <summary>UC-001 — response body. Wired in Hafta 1.</summary>
+/// <summary>UC-001 — response body (profile only; JWT is HttpOnly cookie).</summary>
 public sealed record LoginResponse(
-    string AccessToken,
     Guid UserId,
     string FullName,
     string Username);

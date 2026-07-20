@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using VSHelpDesk.Infrastructure.Authentication;
+using VSHelpDesk.WebAPI.Authentication;
 
 namespace VSHelpDesk.WebAPI.Extensions;
 
@@ -37,11 +38,28 @@ public static class AuthenticationExtensions
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromMinutes(1)
                 };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = context =>
+                    {
+                        if (string.IsNullOrEmpty(context.Token)
+                            && context.Request.Cookies.TryGetValue(
+                                AuthCookieNames.Auth,
+                                out var cookieToken)
+                            && !string.IsNullOrWhiteSpace(cookieToken))
+                        {
+                            context.Token = cookieToken;
+                        }
+
+                        return Task.CompletedTask;
+                    }
+                };
             });
 
         services.AddAuthorization(options =>
         {
-            // Portal endpoints require a bearer token unless explicitly [AllowAnonymous].
+            // Portal endpoints require an authenticated principal unless explicitly [AllowAnonymous].
             options.FallbackPolicy = new AuthorizationPolicyBuilder()
                 .RequireAuthenticatedUser()
                 .Build();

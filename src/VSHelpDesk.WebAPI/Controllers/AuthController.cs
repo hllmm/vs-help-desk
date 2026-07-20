@@ -3,17 +3,23 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Features.Authentication.Login;
+using VSHelpDesk.Infrastructure.Authentication;
+using VSHelpDesk.WebAPI.Authentication;
 using VSHelpDesk.WebAPI.Contracts.Authentication;
 
 namespace VSHelpDesk.WebAPI.Controllers;
 
 /// <summary>
-/// UC-001 Login / current user.
+/// UC-001 Login / current user / logout.
 /// </summary>
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(LoginHandler loginHandler) : ControllerBase
+public sealed class AuthController(
+    LoginHandler loginHandler,
+    IHostEnvironment hostEnvironment,
+    IOptions<AuthOptions> authOptions) : ControllerBase
 {
     /// <summary>POST api/auth/login — UC-001</summary>
     [AllowAnonymous]
@@ -33,11 +39,27 @@ public sealed class AuthController(LoginHandler loginHandler) : ControllerBase
         }
 
         var login = result.Value!;
-        return Ok(new LoginResponse(
+        var csrfToken = AuthCookieService.CreateCsrfToken();
+        AuthCookieService.AppendAuthCookies(
+            Response,
             login.AccessToken,
+            csrfToken,
+            authOptions.Value,
+            hostEnvironment.IsDevelopment());
+
+        return Ok(new LoginResponse(
             login.UserId,
             login.FullName,
             login.Username));
+    }
+
+    /// <summary>POST api/auth/logout — clears auth + CSRF cookies</summary>
+    [AllowAnonymous]
+    [HttpPost("logout")]
+    public IActionResult Logout()
+    {
+        AuthCookieService.ClearAuthCookies(Response, hostEnvironment.IsDevelopment());
+        return NoContent();
     }
 
     /// <summary>GET api/auth/me — protected; BR-014</summary>

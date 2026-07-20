@@ -43,27 +43,51 @@ public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFac
     }
 
     [Fact]
-    public async Task UC001_Login_ThenMe_WithBearerToken_Returns200AndUserSummary()
+    public async Task Login_SetsHttpOnlyAuthCookie_AndBodyHasNoAccessToken()
     {
         var (username, password) = GetSeedCredentials();
+        using var client = CookieAuthTestHelper.CreateCookieClient(factory);
 
-        using var client = factory.CreateClient();
-        using var loginResponse = await client.PostAsJsonAsync(
-            "/api/auth/login",
-            new { username, password });
+        using var loginResponse = await CookieAuthTestHelper.LoginAsync(client, username, password);
 
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
         var loginJson = await loginResponse.Content.ReadAsStringAsync();
         Assert.DoesNotContain("password", loginJson, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("PasswordHash", loginJson, StringComparison.OrdinalIgnoreCase);
 
-        using var loginDocument = JsonDocument.Parse(loginJson);
-        var accessToken = loginDocument.RootElement.GetProperty("accessToken").GetString();
-        Assert.False(string.IsNullOrWhiteSpace(accessToken));
+        var body = CookieAuthTestHelper.ParseLoginBody(loginJson);
+        Assert.NotNull(body);
+        Assert.False(body.HasAccessToken);
+        Assert.Equal(username, body.Username);
+        Assert.False(string.IsNullOrWhiteSpace(body.FullName));
+        Assert.NotEqual(Guid.Empty, body.UserId);
 
-        using var meRequest = new HttpRequestMessage(HttpMethod.Get, "/api/auth/me");
-        meRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        using var meResponse = await client.SendAsync(meRequest);
+        var setCookies = CookieAuthTestHelper.GetSetCookieHeaders(loginResponse);
+        var authCookie = CookieAuthTestHelper.FindSetCookie(
+            setCookies,
+            CookieAuthTestHelper.AuthCookieName);
+        var csrfCookie = CookieAuthTestHelper.FindSetCookie(
+            setCookies,
+            CookieAuthTestHelper.CsrfCookieName);
+
+        Assert.False(string.IsNullOrWhiteSpace(authCookie), "Expected Set-Cookie for vshd.auth");
+        Assert.True(
+            CookieAuthTestHelper.HasCookieAttribute(authCookie!, "HttpOnly"),
+            "vshd.auth must be HttpOnly");
+        Assert.False(string.IsNullOrWhiteSpace(csrfCookie), "Expected Set-Cookie for vshd.csrf");
+    }
+
+    [Fact]
+    public async Task Me_WithAuthCookie_NoBearer_Returns200()
+    {
+        var (username, password) = GetSeedCredentials();
+        using var client = CookieAuthTestHelper.CreateCookieClient(factory);
+
+        using var loginResponse = await CookieAuthTestHelper.LoginAsync(client, username, password);
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        // Cookie jar sends vshd.auth; no Authorization header.
+        using var meResponse = await client.GetAsync("/api/auth/me");
 
         Assert.Equal(HttpStatusCode.OK, meResponse.StatusCode);
         var me = await meResponse.Content.ReadFromJsonAsync<MePayload>(JsonOptions);
@@ -71,6 +95,25 @@ public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFac
         Assert.Equal(username, me.Username);
         Assert.False(string.IsNullOrWhiteSpace(me.FullName));
         Assert.NotEqual(Guid.Empty, me.UserId);
+    }
+
+    [Fact]
+    public async Task Logout_ClearsCookies_MeReturns401()
+    {
+        var (username, password) = GetSeedCredentials();
+        using var client = CookieAuthTestHelper.CreateCookieClient(factory);
+
+        using var loginResponse = await CookieAuthTestHelper.LoginAsync(client, username, password);
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        using var meBefore = await client.GetAsync("/api/auth/me");
+        Assert.Equal(HttpStatusCode.OK, meBefore.StatusCode);
+
+        using var logoutResponse = await client.PostAsync("/api/auth/logout", content: null);
+        Assert.Equal(HttpStatusCode.NoContent, logoutResponse.StatusCode);
+
+        using var meAfter = await client.GetAsync("/api/auth/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, meAfter.StatusCode);
     }
 
     [Fact]
