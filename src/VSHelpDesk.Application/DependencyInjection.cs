@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using VSHelpDesk.Application.Features.Authentication.Login;
+using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 
 namespace VSHelpDesk.Application;
 
@@ -12,6 +13,7 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<LoginHandler>();
+        services.AddScoped<CreateTicketHandler>();
 
         return services;
     }

@@ -39,6 +39,7 @@ public static class DependencyInjection
             .ValidateOnStart();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
+        services.AddScoped<ITicketNumberGenerator, TicketNumberGenerator>();
 
         // Hafta 1: DbContext (EF + Npgsql), seed
         // Hafta 2: IEmailSender, IEmailReceiver (SMTP/IMAP)
