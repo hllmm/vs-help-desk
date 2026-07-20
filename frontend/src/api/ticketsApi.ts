@@ -1,7 +1,14 @@
 import { apiRequest } from './client'
 import type { TicketListItem } from './types'
 
-export function fetchTickets(status?: string): Promise<TicketListItem[]> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : ''
-  return apiRequest<TicketListItem[]>(`/api/tickets${query}`)
+export type FetchTicketsOptions = {
+  signal?: AbortSignal
+}
+
+export function fetchTickets(
+  options: FetchTicketsOptions = {},
+): Promise<TicketListItem[]> {
+  return apiRequest<TicketListItem[]>('/api/tickets', {
+    signal: options.signal,
+  })
 }

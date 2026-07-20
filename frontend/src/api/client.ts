@@ -1,15 +1,5 @@
 import { clearSession, getAccessToken } from '../auth/tokenStorage'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
-  /\/$/,
-  '',
-)
-
-if (!API_BASE_URL) {
-  // Fail fast in dev if env is missing.
-  console.warn('VITE_API_BASE_URL is not set; REST calls will fail.')
-}
-
 export class ApiError extends Error {
   readonly status: number
   readonly body: unknown
@@ -26,8 +16,36 @@ export type RequestOptions = {
   method?: string
   body?: unknown
   auth?: boolean
-  /** When true, 401 does not clear session / redirect (e.g. login failures). */
   skipAuthRedirect?: boolean
+  signal?: AbortSignal
+}
+
+export type RedirectLocation = {
+  pathname: string
+  assign(url: string): void
+}
+
+export function normalizeApiBaseUrl(
+  value: string | undefined,
+): string {
+  return value?.trim().replace(/\/+$/, '') ?? ''
+}
+
+export function buildApiUrl(
+  path: string,
+  baseUrl = import.meta.env.VITE_API_BASE_URL as string | undefined,
+): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${normalizeApiBaseUrl(baseUrl)}${normalizedPath}`
+}
+
+export function expireSession(
+  location: RedirectLocation = window.location,
+): void {
+  clearSession()
+  if (location.pathname !== '/login') {
+    location.assign('/login?reason=session-expired')
+  }
 }
 
 /**
@@ -48,17 +66,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(buildApiUrl(path), {
     method: options.method ?? 'GET',
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    signal: options.signal,
   })
 
   if (response.status === 401 && !options.skipAuthRedirect) {
-    clearSession()
-    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-      window.location.assign('/login')
-    }
+    expireSession()
     throw new ApiError(401, 'Unauthorized')
   }
 
@@ -91,5 +107,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 }
 
 export function getApiBaseUrl(): string {
-  return API_BASE_URL ?? ''
+  return normalizeApiBaseUrl(
+    import.meta.env.VITE_API_BASE_URL as string | undefined,
+  )
 }
