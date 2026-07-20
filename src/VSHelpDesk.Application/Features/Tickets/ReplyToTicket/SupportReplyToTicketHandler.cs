@@ -22,7 +22,15 @@ public sealed class SupportReplyToTicketHandler(
     {
         if (string.IsNullOrWhiteSpace(command.Content))
         {
-            return Result.Failure<SupportReplyToTicketResult>("Content is required.");
+            return Result.Failure<SupportReplyToTicketResult>(
+                SupportReplyCodes.ContentRequired);
+        }
+
+        var content = command.Content.Trim();
+        if (content.Length > SupportReplyLimits.MaxContentLength)
+        {
+            return Result.Failure<SupportReplyToTicketResult>(
+                SupportReplyCodes.ContentTooLong);
         }
 
         var ticket = applicationDbContext.Tickets
@@ -37,8 +45,8 @@ public sealed class SupportReplyToTicketHandler(
         var message = new TicketMessage(
             ticket.Id,
             MessageSenderType.Support,
-            command.Content.Trim(),
-            isHtml: command.IsHtml,
+            content,
+            isHtml: false,
             userId: supportUserId,
             createdAtUtc: now);
 
@@ -47,8 +55,6 @@ public sealed class SupportReplyToTicketHandler(
         ticket.RecordMessageActivity(now);
         await applicationDbContext.SaveChangesAsync(cancellationToken);
 
-        var emailDelivered = false;
-        string? emailError = null;
         try
         {
             await emailSender.SendAsync(
@@ -56,37 +62,100 @@ public sealed class SupportReplyToTicketHandler(
                     ToAddress: ticket.CustomerEmail,
                     ToDisplayName: ticket.CustomerName,
                     Subject: $"[{ticket.TicketNumber}] {ticket.Subject}",
-                    Body: command.Content.Trim(),
-                    IsHtml: command.IsHtml),
+                    Body: content,
+                    IsHtml: false),
                 cancellationToken);
-            emailDelivered = true;
-
-            ticket.MarkAsWaitingCustomerReply(now);
-            await applicationDbContext.SaveChangesAsync(cancellationToken);
-
-            logger.LogInformation(
-                "Support reply delivered ticketNumber={TicketNumber} messageId={MessageId} to={ToAddress}",
-                ticket.TicketNumber,
-                message.Id,
-                ticket.CustomerEmail);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            emailError = "Email delivery failed; the support message was saved.";
             logger.LogError(
                 ex,
-                "Support reply SMTP failed after persist ticketNumber={TicketNumber} messageId={MessageId} to={ToAddress}",
+                "Support reply SMTP failed after persistence ticketId={TicketId} messageId={MessageId}",
+                ticket.Id,
+                message.Id);
+
+            return Result.Success(new SupportReplyToTicketResult(
+                ticket.Id,
                 ticket.TicketNumber,
                 message.Id,
-                ticket.CustomerEmail);
+                ticket.Status.ToString(),
+                EmailDelivered: false,
+                TicketStateUpdated: false,
+                NoticeCode: SupportReplyCodes.SmtpDeliveryFailed));
         }
+
+        var state = await TryMarkWaitingAsync(
+            ticket,
+            now,
+            message.Id,
+            cancellationToken);
 
         return Result.Success(new SupportReplyToTicketResult(
             ticket.Id,
             ticket.TicketNumber,
             message.Id,
-            ticket.Status.ToString(),
-            emailDelivered,
-            emailError));
+            state.ConfirmedStatus.ToString(),
+            EmailDelivered: true,
+            TicketStateUpdated: state.Updated,
+            NoticeCode: state.Updated
+                ? null
+                : SupportReplyCodes.TicketStateConflict));
+    }
+
+    private async Task<(bool Updated, TicketStatus ConfirmedStatus)>
+        TryMarkWaitingAsync(
+            Ticket ticket,
+            DateTime now,
+            Guid messageId,
+            CancellationToken cancellationToken)
+    {
+        // Status confirmed by the first message/activity commit (before waiting-state mutation).
+        var statusAfterMessageCommit = ticket.Status;
+
+        try
+        {
+            ticket.MarkAsWaitingCustomerReply(now);
+            await applicationDbContext.SaveChangesAsync(cancellationToken);
+            return (true, TicketStatus.WaitingCustomerReply);
+        }
+        catch (OptimisticConcurrencyException)
+        {
+            applicationDbContext.ClearTrackedChanges();
+        }
+
+        var reloaded = applicationDbContext.Tickets
+            .FirstOrDefault(candidate => candidate.Id == ticket.Id);
+        if (reloaded is null)
+        {
+            throw new NotFoundException($"Ticket '{ticket.Id}' was not found.");
+        }
+
+        try
+        {
+            reloaded.MarkAsWaitingCustomerReply(now);
+            await applicationDbContext.SaveChangesAsync(cancellationToken);
+            return (true, reloaded.Status);
+        }
+        catch (OptimisticConcurrencyException)
+        {
+            applicationDbContext.ClearTrackedChanges();
+
+            var confirmedStatus = applicationDbContext.Tickets
+                .Where(candidate => candidate.Id == ticket.Id)
+                .Select(candidate => (TicketStatus?)candidate.Status)
+                .FirstOrDefault()
+                ?? statusAfterMessageCommit;
+
+            logger.LogWarning(
+                "Support reply waiting-state conflict after SMTP ticketId={TicketId} messageId={MessageId}",
+                ticket.Id,
+                messageId);
+
+            return (false, confirmedStatus);
+        }
     }
 }

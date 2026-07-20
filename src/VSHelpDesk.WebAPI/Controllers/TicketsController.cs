@@ -50,16 +50,16 @@ public sealed class TicketsController(
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Content))
         {
-            return BadRequest(new { message = "content is required." });
+            return BadRequest(new { code = SupportReplyCodes.ContentRequired });
         }
 
         var result = await supportReplyToTicketHandler.HandleAsync(
-            new SupportReplyToTicketCommand(id, request.Content, request.IsHtml),
+            new SupportReplyToTicketCommand(id, request.Content),
             cancellationToken);
 
         if (result.IsFailure)
         {
-            return BadRequest(new { message = result.Error });
+            return BadRequest(new { code = result.Error });
         }
 
         return Ok(result.Value);

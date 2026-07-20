@@ -1,3 +1,3 @@
 namespace VSHelpDesk.WebAPI.Contracts.Tickets;
 
-public sealed record ReplyToTicketRequest(string Content, bool IsHtml = false);
+public sealed record ReplyToTicketRequest(string Content);

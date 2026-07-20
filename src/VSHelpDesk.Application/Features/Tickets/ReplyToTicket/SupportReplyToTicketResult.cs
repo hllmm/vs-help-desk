@@ -6,4 +6,5 @@ public sealed record SupportReplyToTicketResult(
     Guid MessageId,
     string Status,
     bool EmailDelivered,
-    string? EmailDeliveryError);
+    bool TicketStateUpdated,
+    string? NoticeCode);

@@ -148,7 +148,7 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
     }
 
     [Fact]
-    public async Task UC005_Reply_EmptyContent_Returns400()
+    public async Task Reply_Blank_Returns400WithReplyContentRequiredCode()
     {
         var token = await LoginAsync();
         using var client = factory.CreateClient();
@@ -162,10 +162,106 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
         using var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("reply-content-required", doc.RootElement.GetProperty("code").GetString());
     }
 
     [Fact]
-    public async Task UC005_Reply_Success_SavesSupportMessageAndWaits()
+    public async Task Reply_OverLimit_Returns400WithReplyContentTooLongCode()
+    {
+        var token = await LoginAsync();
+        Guid ticketId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var stamp = DateTime.UtcNow;
+            var ticket = Ticket.Create(
+                $"VS-OL{stamp:HHmmssfff}",
+                "Over limit",
+                "Ada",
+                "ada-over@example.test",
+                stamp);
+            ticket.MarkAsCustomerReplied(stamp);
+            ticketId = ticket.Id;
+            db.Add(ticket);
+            await db.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+        {
+            Content = JsonContent.Create(new { content = new string('x', 65_537) })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("reply-content-too-long", doc.RootElement.GetProperty("code").GetString());
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Empty(await db.TicketMessages.Where(m => m.TicketId == ticketId).ToListAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Reply_ExtraIsHtmlTrue_IsIgnoredAndStoredAsPlainText()
+    {
+        var sender = new RecordingEmailSender();
+        var replyFactory = CreateFactoryWithEmailSender(sender);
+        var token = await LoginAsync();
+
+        Guid ticketId;
+        await using (var scope = replyFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var stamp = DateTime.UtcNow;
+            var ticket = Ticket.Create(
+                $"VS-H{stamp:HHmmssfff}",
+                "HTML ignored",
+                "Ada",
+                "ada-html@example.test",
+                stamp);
+            ticket.MarkAsCustomerReplied(stamp);
+            ticketId = ticket.Id;
+            db.Add(ticket);
+            await db.SaveChangesAsync();
+        }
+
+        using var client = replyFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+        {
+            Content = JsonContent.Create(new
+            {
+                content = "<strong>literal text</strong>",
+                isHtml = true
+            })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await using (var scope = replyFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var messages = await db.TicketMessages
+                .Where(m => m.TicketId == ticketId)
+                .ToListAsync();
+            Assert.Single(messages);
+            Assert.Equal("<strong>literal text</strong>", messages[0].Content);
+            Assert.False(messages[0].IsHtml);
+        }
+
+        Assert.Single(sender.Sent);
+        Assert.False(sender.Sent[0].IsHtml);
+        Assert.Equal("<strong>literal text</strong>", sender.Sent[0].Body);
+    }
+
+    [Fact]
+    public async Task Reply_Success_ReturnsDeliveredAndStateUpdated()
     {
         var sender = new RecordingEmailSender();
         var replyFactory = CreateFactoryWithEmailSender(sender);
@@ -178,7 +274,7 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var stamp = DateTime.UtcNow;
-            ticketNumber = $"VS-R{stamp:HHmmss}";
+            ticketNumber = $"VS-R{stamp:HHmmssfff}";
             var ticket = Ticket.Create(
                 ticketNumber,
                 "Reply subject",
@@ -202,11 +298,15 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
-        Assert.True(doc.RootElement.GetProperty("emailDelivered").GetBoolean());
-        Assert.Equal("WaitingCustomerReply", doc.RootElement.GetProperty("status").GetString());
-        Assert.Equal(ticketNumber, doc.RootElement.GetProperty("ticketNumber").GetString());
+        var root = doc.RootElement;
+        Assert.True(root.GetProperty("emailDelivered").GetBoolean());
+        Assert.True(root.GetProperty("ticketStateUpdated").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("noticeCode").ValueKind);
+        Assert.Equal("WaitingCustomerReply", root.GetProperty("status").GetString());
+        Assert.Equal(ticketNumber, root.GetProperty("ticketNumber").GetString());
 
         Assert.Single(sender.Sent);
+        Assert.False(sender.Sent[0].IsHtml);
         Assert.Contains(ticketNumber, sender.Sent[0].Subject, StringComparison.Ordinal);
         Assert.Equal("ada-reply@example.test", sender.Sent[0].ToAddress);
 
@@ -222,13 +322,14 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
                 .ToListAsync();
             Assert.Single(messages);
             Assert.Equal(MessageSenderType.Support, messages[0].SenderType);
+            Assert.False(messages[0].IsHtml);
             Assert.Equal("Please try restarting the printer.", messages[0].Content);
             Assert.NotNull(messages[0].UserId);
         }
     }
 
     [Fact]
-    public async Task BR022_Reply_SmtpFailure_KeepsMessageAndReportsError()
+    public async Task Reply_SmtpFailure_ReturnsSavedOutcomeWithoutRawError()
     {
         var sender = new RecordingEmailSender { ThrowOnSend = true };
         var replyFactory = CreateFactoryWithEmailSender(sender);
@@ -240,7 +341,7 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var stamp = DateTime.UtcNow;
             var ticket = Ticket.Create(
-                $"VS-F{stamp:HHmmss}",
+                $"VS-F{stamp:HHmmssfff}",
                 "Fail SMTP",
                 "Bob",
                 "bob-fail@example.test",
@@ -262,12 +363,18 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
-        Assert.False(doc.RootElement.GetProperty("emailDelivered").GetBoolean());
-        Assert.Contains(
-            "saved",
-            doc.RootElement.GetProperty("emailDeliveryError").GetString(),
-            StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("CustomerReplied", doc.RootElement.GetProperty("status").GetString());
+        var root = doc.RootElement;
+        Assert.False(root.GetProperty("emailDelivered").GetBoolean());
+        Assert.False(root.GetProperty("ticketStateUpdated").GetBoolean());
+        Assert.Equal(
+            "smtp-delivery-failed",
+            root.GetProperty("noticeCode").GetString());
+        Assert.Equal("CustomerReplied", root.GetProperty("status").GetString());
+        Assert.False(root.TryGetProperty("emailDeliveryError", out _));
+        Assert.DoesNotContain("SMTP down", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("bob-fail@example.test", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("VPN enabled", json, StringComparison.OrdinalIgnoreCase);
 
         await using (var scope = replyFactory.Services.CreateAsyncScope())
         {
@@ -280,6 +387,7 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
                 .ToListAsync();
             Assert.Single(messages);
             Assert.Equal(MessageSenderType.Support, messages[0].SenderType);
+            Assert.False(messages[0].IsHtml);
         }
     }
 
