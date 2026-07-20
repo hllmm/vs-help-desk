@@ -1,5 +1,6 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Models;
+using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 
@@ -21,11 +22,6 @@ public sealed class AppendCustomerReplyHandler(
         if (string.IsNullOrWhiteSpace(command.TicketNumber))
         {
             return Result.Failure<AppendCustomerReplyResult>("TicketNumber is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(command.Content))
-        {
-            return Result.Failure<AppendCustomerReplyResult>("Content is required.");
         }
 
         var messageId = command.MessageId.Trim();
@@ -55,25 +51,31 @@ public sealed class AppendCustomerReplyHandler(
                 $"Ticket '{command.TicketNumber}' was not found.");
         }
 
+        // Optional From binding when caller supplies a customer address (ProcessIncoming).
+        if (!string.IsNullOrWhiteSpace(command.FromAddress) &&
+            !string.Equals(
+                ticket.CustomerEmail.Trim(),
+                command.FromAddress.Trim(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return Result.Failure<AppendCustomerReplyResult>(
+                "From address does not match the ticket customer email.");
+        }
+
         var statusBefore = ticket.Status;
         var wasResolved = statusBefore == TicketStatus.Resolved;
-        var originalSubject = ticket.Subject;
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        var content = InboundMailLimits.NormalizeBody(command.Content);
 
         var message = new TicketMessage(
             ticket.Id,
             MessageSenderType.Customer,
-            command.Content.Trim(),
-            isHtml: command.IsHtml,
+            content,
+            isHtml: false,
             userId: null,
             createdAtUtc: now);
 
         ticket.MarkAsCustomerReplied(now);
-        // BR-021: subject must remain the original conversation subject.
-        if (!string.Equals(originalSubject, ticket.Subject, StringComparison.Ordinal))
-        {
-            return Result.Failure<AppendCustomerReplyResult>("Ticket subject must remain immutable.");
-        }
 
         var processed = new ProcessedEmailMessage(messageId, now, ticket.Id);
         applicationDbContext.Add(message);
@@ -83,20 +85,26 @@ public sealed class AppendCustomerReplyHandler(
         {
             await applicationDbContext.SaveChangesAsync(cancellationToken);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            var afterRace = applicationDbContext.ProcessedEmailMessages
-                .FirstOrDefault(processedRow => processedRow.MessageId == messageId);
-            if (afterRace is not null)
+            applicationDbContext.ClearTrackedChanges();
+
+            if (applicationDbContext.IsUniqueConstraintViolation(ex) ||
+                ex is InvalidOperationException)
             {
-                return Result.Success(new AppendCustomerReplyResult(
-                    afterRace.TicketId ?? ticket.Id,
-                    ticket.TicketNumber,
-                    Guid.Empty,
-                    statusBefore,
-                    ticket.Status,
-                    WasAlreadyProcessed: true,
-                    WasReopened: false));
+                var afterRace = applicationDbContext.ProcessedEmailMessages
+                    .FirstOrDefault(processedRow => processedRow.MessageId == messageId);
+                if (afterRace is not null)
+                {
+                    return Result.Success(new AppendCustomerReplyResult(
+                        afterRace.TicketId ?? ticket.Id,
+                        ticket.TicketNumber,
+                        Guid.Empty,
+                        statusBefore,
+                        ticket.Status,
+                        WasAlreadyProcessed: true,
+                        WasReopened: false));
+                }
             }
 
             throw;

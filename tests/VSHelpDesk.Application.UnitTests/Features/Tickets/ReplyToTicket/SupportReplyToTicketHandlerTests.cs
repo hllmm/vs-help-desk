@@ -140,5 +140,9 @@ public sealed class SupportReplyToTicketHandlerTests
             pending.Clear();
             return Task.FromResult(1);
         }
+
+        public void ClearTrackedChanges() => pending.Clear();
+
+        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 }

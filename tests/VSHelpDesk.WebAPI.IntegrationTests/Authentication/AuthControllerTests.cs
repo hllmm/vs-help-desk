@@ -135,6 +135,12 @@ public sealed class AuthControllerTests
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(1);
+
+        public void ClearTrackedChanges()
+        {
+        }
+
+        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 
     private sealed class FakePasswordHasher(string validPassword) : IPasswordHasher

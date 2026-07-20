@@ -5,4 +5,5 @@ public sealed record AppendCustomerReplyCommand(
     string MessageId,
     string TicketNumber,
     string Content,
-    bool IsHtml = false);
+    bool IsHtml = false,
+    string? FromAddress = null);

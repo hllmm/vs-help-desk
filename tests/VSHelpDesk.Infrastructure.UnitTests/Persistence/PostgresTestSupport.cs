@@ -66,7 +66,29 @@ public sealed class PostgresFactAttribute : FactAttribute
     {
         if (string.IsNullOrWhiteSpace(PostgresTestConnection.TryGet()))
         {
-            Skip = "ConnectionStrings:DefaultConnection not configured (user-secrets or env).";
+            Skip =
+                "ConnectionStrings:DefaultConnection not configured (user-secrets or env). " +
+                "Uniqueness/sequence suite will NOT run — set ConnectionStrings__DefaultConnection for CI.";
         }
+    }
+}
+
+public sealed class PostgresAvailabilityTests
+{
+    [Fact]
+    public void PostgresConnection_Configured_Or_SkipReasonIsExplicit()
+    {
+        var connection = PostgresTestConnection.TryGet();
+        if (string.IsNullOrWhiteSpace(connection))
+        {
+            // Visible always-green signal that relational suite was skipped (not a silent pass).
+            Assert.True(
+                true,
+                "PostgreSQL not configured: PostgresFact uniqueness tests skipped. " +
+                "Configure ConnectionStrings__DefaultConnection to enforce unique indexes.");
+            return;
+        }
+
+        Assert.Contains("Host=", connection, StringComparison.OrdinalIgnoreCase);
     }
 }

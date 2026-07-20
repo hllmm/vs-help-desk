@@ -9,5 +9,6 @@ public sealed record ProcessIncomingEmailsResult(
     int AlreadyProcessed,
     int AckSent,
     int AckFailed,
+    int SkippedInvalid,
     IReadOnlyList<string> MessageIds,
     IReadOnlyList<string> CreatedTicketNumbers);

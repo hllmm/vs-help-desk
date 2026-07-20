@@ -79,5 +79,11 @@ public sealed class GetTicketDetailsHandlerTests
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(0);
+
+        public void ClearTrackedChanges()
+        {
+        }
+
+        public bool IsUniqueConstraintViolation(Exception exception) => false;
     }
 }

@@ -5,7 +5,13 @@ namespace VSHelpDesk.Domain.Tickets;
 /// <summary>BR-005 — extract canonical ticket numbers from free text (e.g. email subject).</summary>
 public static partial class TicketNumberParser
 {
-    [GeneratedRegex(@"VS-(\d{1,6})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    /// <summary>
+    /// Word-boundary aware: avoids matching inside tokens like <c>CVS-000001</c>.
+    /// Caps at six digits so <c>VS-1234567</c> does not silently truncate.
+    /// </summary>
+    [GeneratedRegex(
+        @"(?<![A-Za-z0-9])VS-(\d{1,6})(?!\d)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex EmbeddedPattern();
 
     /// <summary>

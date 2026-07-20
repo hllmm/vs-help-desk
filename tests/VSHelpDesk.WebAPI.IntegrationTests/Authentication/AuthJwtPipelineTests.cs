@@ -181,6 +181,16 @@ public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<P
     }
 
     [Fact]
+    public async Task T5_Jobs_WithWrongApiKey_Returns401()
+    {
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/jobs/process-incoming-emails");
+        request.Headers.Add("X-Jobs-Api-Key", "definitely-not-the-configured-jobs-api-key!!");
+        using var response = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Jobs_WithValidApiKey_ReturnsOkBoundaryResult()
     {
         using var scope = factory.Services.CreateScope();
@@ -193,7 +203,7 @@ public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<P
         request.Headers.Add("X-Jobs-Api-Key", apiKey);
         using var response = await client.SendAsync(request);
 
-        // Day 8: handler runs (Fake fetch + optional SMTP probe). 200 if Mailpit up; 502 if SMTP down.
+        // Fake fetch + best-effort SMTP ack: 200 when handler completes; 502 only on fetch failure.
         Assert.True(
             response.StatusCode is HttpStatusCode.OK or HttpStatusCode.BadGateway,
             $"Unexpected status {(int)response.StatusCode}");
@@ -203,6 +213,7 @@ public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<P
             Assert.Contains("fetchedCount", json, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("createdTickets", json, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("messageIds", json, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("skippedInvalid", json, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain("Password", json, StringComparison.OrdinalIgnoreCase);
         }
     }
