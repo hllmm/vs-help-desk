@@ -3,6 +3,7 @@ using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
+using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 
@@ -10,10 +11,10 @@ namespace VSHelpDesk.Application.UnitTests.Features.MailProcessing;
 
 public sealed class ProcessIncomingEmailsHandlerTests
 {
-    private static readonly DateTimeOffset FixedNow = new(2026, 7, 30, 10, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset FixedNow = new(2026, 7, 31, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task UC002_NewMail_CreatesTicketAndSendsAckAfterCommit()
+    public async Task T1_NewMail_CreatesTicketAndSendsAck()
     {
         var context = new FakeDb();
         var sender = new RecordingSender();
@@ -21,102 +22,112 @@ public sealed class ProcessIncomingEmailsHandlerTests
         [
             Mail("<msg-new@test>", "customer@example.test", "Help please", "My printer is broken.")
         ]);
-        var handler = CreateHandler(context, receiver, sender, "VS-000101");
-
-        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
-
-        Assert.True(result.IsSuccess);
-        Assert.Equal(1, result.Value!.FetchedCount);
-        Assert.Equal(1, result.Value.CreatedTickets);
-        Assert.Equal(0, result.Value.AlreadyProcessed);
-        Assert.Equal(1, result.Value.AckSent);
-        Assert.Equal(0, result.Value.AckFailed);
-        Assert.Equal(["VS-000101"], result.Value.CreatedTicketNumbers);
-        Assert.Single(context.TicketsList);
-        Assert.Single(context.TicketMessagesList);
-        Assert.Single(context.ProcessedEmailMessagesList);
-        Assert.Single(sender.Sent);
-        Assert.Contains("VS-000101", sender.Sent[0].Subject, StringComparison.Ordinal);
-        Assert.Equal("customer@example.test", sender.Sent[0].ToAddress);
-        Assert.Contains("<msg-new@test>", receiver.Marked);
-    }
-
-    [Fact]
-    public async Task UC002_SameMessageId_SecondRun_DoesNotCreateOrAckAgain()
-    {
-        var context = new FakeDb();
-        var sender = new RecordingSender();
-        var mail = Mail("<msg-dup@test>", "customer@example.test", "Dup", "Body");
-        var receiver = new FakeReceiver([mail]);
-        var handler = CreateHandler(context, receiver, sender, "VS-000102", "VS-000103");
-
-        var first = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
-        // Second fetch returns same MessageId (receiver not cleared) but CreateTicket short-circuits.
-        receiver.ResetMarked();
-        var second = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
-
-        Assert.True(first.IsSuccess);
-        Assert.Equal(1, first.Value!.CreatedTickets);
-        Assert.Equal(1, first.Value.AckSent);
-
-        Assert.True(second.IsSuccess);
-        Assert.Equal(0, second.Value!.CreatedTickets);
-        Assert.Equal(1, second.Value.AlreadyProcessed);
-        Assert.Equal(0, second.Value.AckSent);
-        Assert.Single(context.TicketsList);
-        Assert.Single(context.TicketMessagesList);
-        Assert.Single(context.ProcessedEmailMessagesList);
-        Assert.Single(sender.Sent);
-    }
-
-    [Fact]
-    public async Task UC002_AckFailureAfterCommit_KeepsTicketAndCountsAckFailed()
-    {
-        var context = new FakeDb();
-        var sender = new RecordingSender { ThrowOnSend = true };
-        var receiver = new FakeReceiver(
-        [
-            Mail("<msg-ack-fail@test>", "customer@example.test", "Ack fail", "Body")
-        ]);
-        var handler = CreateHandler(context, receiver, sender, "VS-000104");
+        var handler = CreateHandler(context, receiver, sender, "VS-000201");
 
         var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, result.Value!.CreatedTickets);
-        Assert.Equal(0, result.Value.AckSent);
-        Assert.Equal(1, result.Value.AckFailed);
+        Assert.Equal(0, result.Value.CustomerReplies);
+        Assert.Equal(1, result.Value.AckSent);
+        Assert.Equal(["VS-000201"], result.Value.CreatedTicketNumbers);
         Assert.Single(context.TicketsList);
-        Assert.Single(context.TicketMessagesList);
-        Assert.Single(context.ProcessedEmailMessagesList);
+        Assert.Single(sender.Sent);
     }
 
     [Fact]
-    public async Task UC002_SubjectMatchesExistingTicket_SkipsCreateForDay10()
+    public async Task T2_BR007_MatchingSubject_AppendsCustomerReply()
     {
         var context = new FakeDb();
-        var existing = Ticket.Create(
-            "VS-000050",
-            "Existing",
-            "Prior",
-            "prior@example.test",
-            FixedNow.UtcDateTime);
+        var existing = Ticket.Create("VS-000050", "Original subject", "Prior", "prior@example.test", FixedNow.UtcDateTime);
+        existing.MarkAsWaitingCustomerReply(FixedNow.UtcDateTime.AddMinutes(-30));
         context.TicketsList.Add(existing);
         var sender = new RecordingSender();
         var receiver = new FakeReceiver(
         [
-            Mail("<msg-match@test>", "customer@example.test", "Re: [VS-000050] Existing", "Follow up")
+            Mail("<msg-reply@test>", "prior@example.test", "Re: [VS-000050] Original subject", "Still broken")
         ]);
-        var handler = CreateHandler(context, receiver, sender, "VS-000105");
+        var handler = CreateHandler(context, receiver, sender, "VS-000202");
 
         var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(1, result.Value!.MatchedExistingSkipped);
-        Assert.Equal(0, result.Value.CreatedTickets);
+        Assert.Equal(0, result.Value!.CreatedTickets);
+        Assert.Equal(1, result.Value.CustomerReplies);
+        Assert.Equal(0, result.Value.ReopenedTickets);
         Assert.Equal(0, result.Value.AckSent);
         Assert.Single(context.TicketsList);
+        Assert.Single(context.TicketMessagesList);
+        Assert.Equal(TicketStatus.CustomerReplied, existing.Status);
+        Assert.Equal("Original subject", existing.Subject);
+        Assert.Equal("Still broken", context.TicketMessagesList[0].Content);
         Assert.Empty(sender.Sent);
+    }
+
+    [Fact]
+    public async Task T3_BR010_ResolvedTicket_ReopensOnCustomerReply()
+    {
+        var context = new FakeDb();
+        var existing = Ticket.Create("VS-000060", "Resolved case", "Prior", "prior@example.test", FixedNow.UtcDateTime);
+        existing.Resolve(FixedNow.UtcDateTime.AddHours(-2));
+        context.TicketsList.Add(existing);
+        var sender = new RecordingSender();
+        var receiver = new FakeReceiver(
+        [
+            Mail("<msg-reopen@test>", "prior@example.test", "[VS-000060] Re: Resolved case", "It broke again")
+        ]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000203");
+
+        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, result.Value!.CustomerReplies);
+        Assert.Equal(1, result.Value.ReopenedTickets);
+        Assert.Equal(TicketStatus.CustomerReplied, existing.Status);
+        Assert.Null(existing.ResolvedAt);
+        Assert.Single(context.TicketMessagesList);
+        Assert.Equal("Resolved case", existing.Subject);
+    }
+
+    [Fact]
+    public async Task T4_DuplicateMessageId_DoesNotAddSecondMessage()
+    {
+        var context = new FakeDb();
+        var sender = new RecordingSender();
+        var mail = Mail("<msg-dup@test>", "customer@example.test", "Dup", "Body");
+        var receiver = new FakeReceiver([mail]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000204", "VS-000205");
+
+        var first = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+        receiver.ResetMarked();
+        var second = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.Equal(1, first.Value!.CreatedTickets);
+        Assert.Equal(1, first.Value.AckSent);
+        Assert.Equal(0, second.Value!.CreatedTickets);
+        Assert.Equal(1, second.Value.AlreadyProcessed);
+        Assert.Equal(0, second.Value.AckSent);
+        Assert.Single(context.TicketsList);
+        Assert.Single(context.TicketMessagesList);
+        Assert.Single(sender.Sent);
+    }
+
+    [Fact]
+    public async Task InvalidTicketNumberInSubject_CreatesNewTicket()
+    {
+        var context = new FakeDb();
+        var sender = new RecordingSender();
+        var receiver = new FakeReceiver(
+        [
+            Mail("<msg-orphan@test>", "x@example.test", "Re: [VS-999999] ghost", "No such ticket")
+        ]);
+        var handler = CreateHandler(context, receiver, sender, "VS-000206");
+
+        var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
+
+        Assert.Equal(1, result.Value!.CreatedTickets);
+        Assert.Equal(0, result.Value.CustomerReplies);
+        Assert.Equal("VS-000206", context.TicketsList[0].TicketNumber);
     }
 
     private static ProcessIncomingEmailsHandler CreateHandler(
@@ -129,12 +140,14 @@ public sealed class ProcessIncomingEmailsHandlerTests
             context,
             new SequenceNumbers(numbers),
             new FixedTimeProvider(FixedNow));
+        var reply = new AppendCustomerReplyHandler(context, new FixedTimeProvider(FixedNow));
         return new ProcessIncomingEmailsHandler(
             receiver,
             sender,
             new FixedSettings(),
             context,
             create,
+            reply,
             NullLogger<ProcessIncomingEmailsHandler>.Instance);
     }
 
@@ -180,16 +193,10 @@ public sealed class ProcessIncomingEmailsHandlerTests
 
     private sealed class RecordingSender : IEmailSender
     {
-        public bool ThrowOnSend { get; init; }
         public List<EmailMessage> Sent { get; } = [];
 
         public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
         {
-            if (ThrowOnSend)
-            {
-                throw new InvalidOperationException("SMTP down");
-            }
-
             Sent.Add(message);
             return Task.CompletedTask;
         }

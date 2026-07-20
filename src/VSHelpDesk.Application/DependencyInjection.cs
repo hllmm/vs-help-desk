@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
+using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 
 namespace VSHelpDesk.Application;
 
@@ -15,6 +16,7 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<LoginHandler>();
         services.AddScoped<CreateTicketHandler>();
+        services.AddScoped<AppendCustomerReplyHandler>();
         services.AddScoped<ProcessIncomingEmailsHandler>();
 
         return services;

@@ -137,7 +137,9 @@ public sealed class TicketTests
             () => ticket.Assign(Guid.NewGuid(), T2));
 
         ticket.MarkAsCustomerReplied(T2);
-        Assert.Throws<VSHelpDesk.Domain.Exceptions.DomainException>(
-            () => ticket.MarkAsCustomerReplied(T3));
+        // CustomerReplied → CustomerReplied is allowed (additional customer messages).
+        ticket.MarkAsCustomerReplied(T3);
+        Assert.Equal(TicketStatus.CustomerReplied, ticket.Status);
+        Assert.Equal(T3, ticket.LastActivityAt);
     }
 }
