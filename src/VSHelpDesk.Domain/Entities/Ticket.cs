@@ -113,21 +113,53 @@ public sealed class Ticket
         LastActivityAt = now;
     }
 
-    /// <summary>BR-008 / BR-009 — manual or automatic resolution.</summary>
-    public void Resolve(DateTime now, Guid? closedByUserId = null)
+    /// <summary>BR-009 — manual resolution by an authenticated support user.</summary>
+    public bool ResolveManually(DateTime nowUtc, Guid closedByUserId)
     {
+        if (closedByUserId == Guid.Empty)
+        {
+            throw new DomainException("Closing user id is required.");
+        }
+
+        if (Status == TicketStatus.Resolved)
+        {
+            return false;
+        }
+
         EnsureCanTransitionTo(
             TicketStatus.Resolved,
             TicketStatus.New,
             TicketStatus.WaitingCustomerReply,
             TicketStatus.CustomerReplied);
 
+        ApplyResolution(nowUtc, closedByUserId);
+        return true;
+    }
+
+    /// <summary>BR-008 — automatic system resolution (no closer user).</summary>
+    public bool ResolveAutomatically(DateTime nowUtc)
+    {
+        if (Status == TicketStatus.Resolved)
+        {
+            return false;
+        }
+
+        EnsureCanTransitionTo(
+            TicketStatus.Resolved,
+            TicketStatus.WaitingCustomerReply);
+
+        ApplyResolution(nowUtc, closedByUserId: null);
+        return true;
+    }
+
+    private void ApplyResolution(DateTime nowUtc, Guid? closedByUserId)
+    {
         Status = TicketStatus.Resolved;
-        ResolvedAt = now;
+        ResolvedAt = nowUtc;
         ClosedByUserId = closedByUserId;
         WaitingCustomerSince = null;
-        UpdatedAt = now;
-        LastActivityAt = now;
+        UpdatedAt = nowUtc;
+        LastActivityAt = nowUtc;
     }
 
     /// <summary>BR-011 — at most one assignee at a time. Not conversation activity (BR-019).</summary>

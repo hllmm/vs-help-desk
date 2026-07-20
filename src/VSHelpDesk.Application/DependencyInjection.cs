@@ -8,6 +8,7 @@ using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
+using VSHelpDesk.Application.Features.Tickets.ResolveTicket;
 
 namespace VSHelpDesk.Application;
 
@@ -23,6 +24,7 @@ public static class DependencyInjection
         services.AddScoped<CreateTicketHandler>();
         services.AddScoped<AppendCustomerReplyHandler>();
         services.AddScoped<SupportReplyToTicketHandler>();
+        services.AddScoped<ResolveTicketHandler>();
         services.AddScoped<AcknowledgementDispatcher>();
         services.AddScoped<IInboundEmailItemProcessor, InboundEmailItemProcessor>();
         services.AddScoped<ProcessIncomingEmailsHandler>();

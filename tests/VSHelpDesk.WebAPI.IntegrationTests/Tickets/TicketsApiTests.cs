@@ -10,6 +10,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
@@ -585,6 +587,260 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
         }
     }
 
+    [Fact]
+    public async Task Reply_ResolvedTicket_Returns409WithoutMessageOrEmail()
+    {
+        var sender = new RecordingEmailSender();
+        var replyFactory = CreateFactoryWithEmailSender(sender);
+        var token = await LoginAsync();
+        Guid seedUserId;
+        Guid ticketId;
+        DateTime resolvedAt;
+        const string customerEmail = "ada-resolved-reply@example.test";
+        const string replyContent = "Should never persist on resolved ticket.";
+
+        await using (var scope = replyFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seedUserId = await GetSeedUserIdAsync(db);
+            var stamp = DateTime.UtcNow;
+            resolvedAt = stamp.AddMinutes(-5);
+            var ticket = Ticket.Create(
+                $"VS-RR{stamp:HHmmssfff}",
+                "Resolved reply guard",
+                "Ada",
+                customerEmail,
+                stamp.AddMinutes(-10));
+            Assert.True(ticket.ResolveManually(resolvedAt, seedUserId));
+            ticketId = ticket.Id;
+            db.Add(ticket);
+            await db.SaveChangesAsync();
+        }
+
+        using var client = replyFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/replies")
+        {
+            Content = JsonContent.Create(new { content = replyContent })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
+        Assert.Equal(
+            "The request conflicts with current state.",
+            doc.RootElement.GetProperty("title").GetString());
+        Assert.DoesNotContain(customerEmail, json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(replyContent, json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ResolvedTicketReplyException", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("Exception", json, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(sender.Sent);
+
+        await using (var scope = replyFactory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ticket = await db.Tickets.SingleAsync(t => t.Id == ticketId);
+            Assert.Equal(TicketStatus.Resolved, ticket.Status);
+            Assert.Equal(seedUserId, ticket.ClosedByUserId);
+            Assert.Equal(
+                DateTime.SpecifyKind(resolvedAt, DateTimeKind.Utc),
+                DateTime.SpecifyKind(ticket.ResolvedAt!.Value, DateTimeKind.Utc),
+                TimeSpan.FromMilliseconds(1));
+            Assert.Empty(await db.TicketMessages.Where(m => m.TicketId == ticketId).ToListAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Resolve_WithoutToken_Returns401()
+    {
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsync($"/api/tickets/{Guid.NewGuid()}/resolve", content: null);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Resolve_UnknownTicket_Returns404()
+    {
+        var token = await LoginAsync();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/tickets/{Guid.NewGuid()}/resolve");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        AssertSafeMissingResourceBody(await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task Resolve_OpenTicket_ReturnsExactResultAndPersistsCurrentUser()
+    {
+        var token = await LoginAsync();
+        Guid seedUserId;
+        Guid ticketId;
+        string ticketNumber;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seedUserId = await GetSeedUserIdAsync(db);
+            var stamp = DateTime.UtcNow;
+            ticketNumber = $"VS-RO{stamp:HHmmssfff}";
+            var ticket = Ticket.Create(
+                ticketNumber,
+                "Resolve open",
+                "Ada",
+                "ada-resolve-open@example.test",
+                stamp);
+            ticketId = ticket.Id;
+            db.Add(ticket);
+            await db.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/resolve");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        Assert.Equal(ticketId, root.GetProperty("ticketId").GetGuid());
+        Assert.Equal(ticketNumber, root.GetProperty("ticketNumber").GetString());
+        Assert.Equal("Resolved", root.GetProperty("status").GetString());
+        Assert.True(root.GetProperty("changed").GetBoolean());
+        Assert.Equal(seedUserId, root.GetProperty("closedByUserId").GetGuid());
+        Assert.True(root.TryGetProperty("resolvedAt", out _));
+        Assert.True(root.TryGetProperty("updatedAt", out _));
+        Assert.True(root.TryGetProperty("lastActivityAt", out _));
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ticket = await db.Tickets.SingleAsync(t => t.Id == ticketId);
+            Assert.Equal(TicketStatus.Resolved, ticket.Status);
+            Assert.Equal(seedUserId, ticket.ClosedByUserId);
+            Assert.NotNull(ticket.ResolvedAt);
+        }
+    }
+
+    [Fact]
+    public async Task Resolve_AlreadyResolved_ReturnsChangedFalseAndPreservesOriginalClosure()
+    {
+        var token = await LoginAsync();
+        Guid seedUserId;
+        Guid ticketId;
+        DateTime originalResolvedAt;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            seedUserId = await GetSeedUserIdAsync(db);
+            var stamp = DateTime.UtcNow;
+            originalResolvedAt = stamp.AddMinutes(-15);
+            var ticket = Ticket.Create(
+                $"VS-RA{stamp:HHmmssfff}",
+                "Already resolved",
+                "Ada",
+                "ada-resolve-again@example.test",
+                stamp.AddMinutes(-30));
+            Assert.True(ticket.ResolveManually(originalResolvedAt, seedUserId));
+            ticketId = ticket.Id;
+            db.Add(ticket);
+            await db.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/tickets/{ticketId}/resolve");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+        Assert.False(root.GetProperty("changed").GetBoolean());
+        Assert.Equal(seedUserId, root.GetProperty("closedByUserId").GetGuid());
+        Assert.Equal(
+            DateTime.SpecifyKind(originalResolvedAt, DateTimeKind.Utc),
+            DateTime.SpecifyKind(root.GetProperty("resolvedAt").GetDateTime(), DateTimeKind.Utc),
+            TimeSpan.FromMilliseconds(1));
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var ticket = await db.Tickets.SingleAsync(t => t.Id == ticketId);
+            Assert.Equal(TicketStatus.Resolved, ticket.Status);
+            Assert.Equal(seedUserId, ticket.ClosedByUserId);
+            Assert.Equal(
+                DateTime.SpecifyKind(originalResolvedAt, DateTimeKind.Utc),
+                DateTime.SpecifyKind(ticket.ResolvedAt!.Value, DateTimeKind.Utc),
+                TimeSpan.FromMilliseconds(1));
+        }
+    }
+
+    [Fact]
+    public async Task Resolve_ConcurrencyConflict_Returns409WithoutRetry()
+    {
+        var openTicket = Ticket.Create(
+            $"VS-RC{DateTime.UtcNow:HHmmssfff}",
+            "Conflict resolve",
+            "Ada",
+            "ada-resolve-conflict@example.test",
+            DateTime.UtcNow);
+        var conflictDb = new ConflictOnSaveDbContext(openTicket);
+        var conflictFactory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Development");
+            builder.UseEnvironment("Development");
+            builder.UseSetting("SeedUser:Enabled", "false");
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IApplicationDbContext>();
+                services.AddSingleton<IApplicationDbContext>(conflictDb);
+            });
+        });
+
+        var token = await LoginAsync();
+        using var client = conflictFactory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/tickets/{openTicket.Id}/resolve");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
+        Assert.Equal(
+            "The request conflicts with current state.",
+            doc.RootElement.GetProperty("title").GetString());
+        Assert.Equal(1, conflictDb.SaveCallCount);
+        Assert.Equal(0, conflictDb.ClearTrackedCallCount);
+    }
+
+    [Fact]
+    public async Task AssignPlaceholder_IsNotExposed()
+    {
+        var token = await LoginAsync();
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/tickets/{Guid.NewGuid()}/assign");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await client.SendAsync(request);
+
+        Assert.True(
+            response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,
+            $"Expected 404 or 405, got {(int)response.StatusCode}.");
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("501", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("NotImplemented", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Hafta", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AssignTicket", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("BR-011", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task<string> LoginAsync(WebApplicationFactory<Program>? appFactory = null)
     {
         var host = appFactory ?? factory;
@@ -604,6 +860,16 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
         return doc.RootElement.GetProperty("accessToken").GetString()!;
     }
 
+    private static async Task<Guid> GetSeedUserIdAsync(ApplicationDbContext db)
+    {
+        var userId = await db.Users
+            .OrderBy(user => user.CreatedAt)
+            .Select(user => user.Id)
+            .FirstOrDefaultAsync();
+        Assert.NotEqual(Guid.Empty, userId);
+        return userId;
+    }
+
     private sealed class RecordingEmailSender : IEmailSender
     {
         public bool ThrowOnSend { get; init; }
@@ -620,4 +886,32 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
             return Task.CompletedTask;
         }
     }
+
+    private sealed class ConflictOnSaveDbContext(Ticket ticket) : IApplicationDbContext
+    {
+        public int SaveCallCount { get; private set; }
+        public int ClearTrackedCallCount { get; private set; }
+
+        public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
+        public IQueryable<Ticket> Tickets => new[] { ticket }.AsQueryable();
+        public IQueryable<TicketMessage> TicketMessages =>
+            Array.Empty<TicketMessage>().AsQueryable();
+        public IQueryable<TicketAttachment> TicketAttachments =>
+            Array.Empty<TicketAttachment>().AsQueryable();
+        public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
+            Array.Empty<ProcessedEmailMessage>().AsQueryable();
+
+        public void Add<TEntity>(TEntity entity) where TEntity : class
+        {
+        }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveCallCount++;
+            throw new OptimisticConcurrencyException("Simulated resolve concurrency conflict.");
+        }
+
+        public void ClearTrackedChanges() => ClearTrackedCallCount++;
+    }
 }
+

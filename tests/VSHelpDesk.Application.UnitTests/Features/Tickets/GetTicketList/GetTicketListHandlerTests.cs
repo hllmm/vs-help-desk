@@ -32,7 +32,9 @@ public sealed class GetTicketListHandlerTests
     {
         var open = Ticket.Create("VS-000010", "Open", "A", "a@t.com", T0);
         var resolved = Ticket.Create("VS-000011", "Done", "B", "b@t.com", T0);
-        resolved.Resolve(T0.AddHours(1));
+        resolved.ResolveManually(
+            T0.AddHours(1),
+            Guid.Parse("11111111-1111-1111-1111-111111111111"));
         var handler = new GetTicketListHandler(new FakeDb(open, resolved));
 
         var items = await handler.HandleAsync(

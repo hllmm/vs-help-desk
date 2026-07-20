@@ -131,7 +131,9 @@ public sealed class AppendCustomerReplyHandlerTests
     public async Task BR010_ResolvedTicket_SetsWasReopened()
     {
         var ticket = Ticket.Create("VS-000081", "Subject", "Ada", "ada@example.test", FixedNow.UtcDateTime);
-        ticket.Resolve(FixedNow.UtcDateTime.AddHours(-1));
+        ticket.ResolveManually(
+            FixedNow.UtcDateTime.AddHours(-1),
+            Guid.Parse("11111111-1111-1111-1111-111111111111"));
         var db = new FakeDb(ticket);
         var handler = CreateHandler(db);
 

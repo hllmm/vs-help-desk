@@ -106,7 +106,9 @@ public sealed class InboundEmailItemProcessorTests
             "Prior",
             "prior@example.test",
             FixedNow.UtcDateTime);
-        existing.Resolve(FixedNow.UtcDateTime.AddHours(-2));
+        existing.ResolveManually(
+            FixedNow.UtcDateTime.AddHours(-2),
+            Guid.Parse("11111111-1111-1111-1111-111111111111"));
         context.TicketsList.Add(existing);
         var processor = CreateProcessor(context, new RecordingSender(), "VS-000404");
         var mail = Mail(

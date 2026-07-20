@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
+using VSHelpDesk.Application.Features.Tickets.ResolveTicket;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.WebAPI.Contracts.Tickets;
 
@@ -17,7 +18,8 @@ namespace VSHelpDesk.WebAPI.Controllers;
 public sealed class TicketsController(
     GetTicketListHandler getTicketListHandler,
     GetTicketDetailsHandler getTicketDetailsHandler,
-    SupportReplyToTicketHandler supportReplyToTicketHandler) : ControllerBase
+    SupportReplyToTicketHandler supportReplyToTicketHandler,
+    ResolveTicketHandler resolveTicketHandler) : ControllerBase
 {
     /// <summary>GET api/tickets — UC-003</summary>
     [HttpGet]
@@ -67,11 +69,13 @@ public sealed class TicketsController(
 
     /// <summary>POST api/tickets/{id}/resolve — UC-007</summary>
     [HttpPost("{id:guid}/resolve")]
-    public IActionResult Resolve(Guid id)
-        => StatusCode(StatusCodes.Status501NotImplemented, new { message = $"Hafta 4: ResolveTicket (UC-007) id={id}." });
-
-    /// <summary>POST api/tickets/{id}/assign — BR-011</summary>
-    [HttpPost("{id:guid}/assign")]
-    public IActionResult Assign(Guid id)
-        => StatusCode(StatusCodes.Status501NotImplemented, new { message = $"Hafta 3: AssignTicket (BR-011) id={id}." });
+    public async Task<IActionResult> Resolve(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        var result = await resolveTicketHandler.HandleAsync(
+            new ResolveTicketCommand(id),
+            cancellationToken);
+        return Ok(result);
+    }
 }

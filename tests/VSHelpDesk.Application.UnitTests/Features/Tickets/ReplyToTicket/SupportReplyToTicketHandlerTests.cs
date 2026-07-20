@@ -207,6 +207,38 @@ public sealed class SupportReplyToTicketHandlerTests
         Assert.Empty(sender.Sent);
     }
 
+    [Fact]
+    public async Task ResolvedTicket_ThrowsConflictBeforeMessageSaveOrSmtp()
+    {
+        var ticket = Ticket.Create(
+            "VS-000309",
+            "Resolved reply",
+            "Ada",
+            "ada@example.test",
+            FixedNow.UtcDateTime.AddHours(-2));
+        var resolvedAt = FixedNow.UtcDateTime.AddHours(-1);
+        Assert.True(ticket.ResolveManually(resolvedAt, SupportUserId));
+        var originalUpdatedAt = ticket.UpdatedAt;
+        var originalLastActivityAt = ticket.LastActivityAt;
+        var db = new FakeDb(ticket);
+        var sender = new RecordingSender();
+        var handler = CreateHandler(db, sender);
+
+        await Assert.ThrowsAsync<ResolvedTicketReplyException>(() =>
+            handler.HandleAsync(
+                new SupportReplyToTicketCommand(ticket.Id, "Should not persist."),
+                CancellationToken.None));
+
+        Assert.Empty(db.Messages);
+        Assert.Empty(sender.Sent);
+        Assert.Equal(0, db.SaveCallCount);
+        Assert.Equal(TicketStatus.Resolved, ticket.Status);
+        Assert.Equal(resolvedAt, ticket.ResolvedAt);
+        Assert.Equal(SupportUserId, ticket.ClosedByUserId);
+        Assert.Equal(originalUpdatedAt, ticket.UpdatedAt);
+        Assert.Equal(originalLastActivityAt, ticket.LastActivityAt);
+    }
+
     private static Ticket CreateCustomerRepliedTicket(string ticketNumber)
     {
         var ticket = Ticket.Create(
@@ -404,7 +436,7 @@ public sealed class SupportReplyToTicketHandlerTests
             }
             else if (status == TicketStatus.Resolved)
             {
-                ticket.Resolve(updatedAt);
+                ticket.ResolveManually(updatedAt, SupportUserId);
             }
 
             SetPrivate(ticket, nameof(Ticket.WaitingCustomerSince), waitingSince);

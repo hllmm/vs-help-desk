@@ -40,6 +40,11 @@ public sealed class SupportReplyToTicketHandler(
             throw new NotFoundException($"Ticket '{command.TicketId}' was not found.");
         }
 
+        if (ticket.Status == TicketStatus.Resolved)
+        {
+            throw new ResolvedTicketReplyException();
+        }
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var supportUserId = currentUserService.UserId;
         var message = new TicketMessage(
