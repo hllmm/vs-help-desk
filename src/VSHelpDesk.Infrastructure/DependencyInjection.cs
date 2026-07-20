@@ -42,6 +42,8 @@ public static class DependencyInjection
         services.AddScoped<IApplicationParameterReader, ApplicationParameterReader>();
         services.AddOptions<SeedUserOptions>()
             .Bind(configuration.GetSection(SeedUserOptions.SectionName));
+        services.AddOptions<SeedAdminOptions>()
+            .Bind(configuration.GetSection(SeedAdminOptions.SectionName));
         services.AddScoped<DevelopmentDataSeeder>();
 
         services.AddSingleton<IValidateOptions<AuthOptions>, AuthOptionsValidator>();
