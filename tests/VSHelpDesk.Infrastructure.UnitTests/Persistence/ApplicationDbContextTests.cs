@@ -84,7 +84,8 @@ public sealed class ApplicationDbContextTests
             messageType.GetForeignKeys(),
             foreignKey => foreignKey.PrincipalEntityType.ClrType == typeof(Ticket) &&
                 foreignKey.Properties.Select(property => property.Name)
-                    .SequenceEqual([nameof(TicketMessage.TicketId)]));
+                    .SequenceEqual([nameof(TicketMessage.TicketId)]) &&
+                foreignKey.DeleteBehavior == DeleteBehavior.Restrict);
         Assert.Contains(
             messageType.GetIndexes(),
             index => index.Properties.Select(property => property.Name)

@@ -43,6 +43,7 @@ public sealed class CreateTicketHandlerTests
         Assert.Equal(ticket.Id, message.TicketId);
         Assert.Equal(MessageSenderType.Customer, message.SenderType);
         Assert.Equal("Printer jam", message.Content);
+        Assert.Equal(CreateTime.UtcDateTime, message.CreatedAt);
         Assert.Equal("<msg-new-001@example.test>", processed.MessageId);
         Assert.Equal(ticket.Id, processed.TicketId);
         Assert.Equal(result.Value.FirstTicketMessageId, message.Id);
@@ -177,7 +178,8 @@ public sealed class CreateTicketHandlerTests
                 var winnerMessage = new TicketMessage(
                     winnerTicket.Id,
                     MessageSenderType.Customer,
-                    "Body");
+                    "Body",
+                    createdAtUtc: CreateTime.UtcDateTime);
                 TicketsList.Add(winnerTicket);
                 TicketMessagesList.Add(winnerMessage);
                 ProcessedEmailMessagesList.Add(

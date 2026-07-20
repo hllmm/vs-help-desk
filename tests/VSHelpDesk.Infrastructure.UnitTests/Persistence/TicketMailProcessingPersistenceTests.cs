@@ -12,12 +12,18 @@ public sealed class TicketMailProcessingPersistenceTests
     {
         await using var context = CreateInMemoryContext();
         var now = new DateTime(2026, 7, 27, 9, 0, 0, DateTimeKind.Utc);
-        var ticket = new Ticket("VS-000001", "Printer offline", "Ada Customer", "ada@example.test");
+        var ticket = Ticket.Create(
+            "VS-000001",
+            "Printer offline",
+            "Ada Customer",
+            "ada@example.test",
+            now);
         var message = new TicketMessage(
             ticket.Id,
             MessageSenderType.Customer,
             "Hello, the office printer is offline.",
-            isHtml: false);
+            isHtml: false,
+            createdAtUtc: now);
         var processed = new ProcessedEmailMessage(
             "<msg-id-unique-001@example.test>",
             now,
@@ -77,10 +83,11 @@ public sealed class TicketMailProcessingPersistenceTests
 
         try
         {
-            context.Add(new Ticket(ticketNumber, "First", "Ada", "ada@example.test"));
+            var stamp = DateTime.UtcNow;
+            context.Add(Ticket.Create(ticketNumber, "First", "Ada", "ada@example.test", stamp));
             await context.SaveChangesAsync();
 
-            context.Add(new Ticket(ticketNumber, "Second", "Bob", "bob@example.test"));
+            context.Add(Ticket.Create(ticketNumber, "Second", "Bob", "bob@example.test", stamp));
             var exception = await Assert.ThrowsAsync<DbUpdateException>(
                 () => context.SaveChangesAsync());
 

@@ -40,7 +40,9 @@ public sealed class CreateTicketHandler(
             ticket.Id,
             MessageSenderType.Customer,
             command.Content.Trim(),
-            command.IsHtml);
+            isHtml: command.IsHtml,
+            userId: null,
+            createdAtUtc: now);
 
         ticket.RecordMessageActivity(now);
 
