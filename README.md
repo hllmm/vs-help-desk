@@ -19,17 +19,28 @@ cd frontend && npm install && npm run dev -- --host 127.0.0.1
 
 # Testler
 dotnet test
-cd frontend && npm run build
+cd frontend && npm run lint && npm test && npm run build
+# Production-style browser smoke (preview + Playwright):
+# cd frontend && env -u VITE_API_BASE_URL npm run build && npx playwright test
 ```
 
 | Servis | Adres |
 |--------|--------|
 | API | `http://localhost:5154` / `https://localhost:7269` (launchSettings) |
-| Portal | http://127.0.0.1:5173 (Vite; CORS: `Cors:AllowedOrigins`) |
+| Portal (dev) | http://127.0.0.1:5173 (Vite; CORS: `Cors:AllowedOrigins`) |
+| Portal (prod) | Same-origin with API via reverse proxy; relative `/api/...` when `VITE_API_BASE_URL` is unset |
 | PostgreSQL | `localhost:5432` — db: `VS_HelpDesk_DB`, user: `stajyer` |
 | Mailpit UI | http://localhost:8025 |
 | Mailpit SMTP | `localhost:1025` |
 | GreenMail (profile `imap-test`) | SMTP `localhost:3025`, IMAP `localhost:3143` |
+
+### Portal SPA
+
+- Local Vite development uses `.env.development` → `VITE_API_BASE_URL=http://localhost:5154`.
+- `VITE_API_BASE_URL` is an optional build-time override.
+- When absent, the production bundle calls relative `/api/...` URLs and expects a same-origin reverse proxy.
+- Routes: `/login`, `/tickets` (list). Ticket detail/reply is outside the current portal UI task.
+- Frontend scripts: `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` (see [frontend/README.md](frontend/README.md)).
 
 ## Mail / job yapılandırması (Hafta 2 hardening)
 
