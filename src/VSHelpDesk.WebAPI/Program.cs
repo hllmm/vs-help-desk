@@ -1,15 +1,19 @@
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application;
+using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
 using VSHelpDesk.WebAPI.Extensions;
 using VSHelpDesk.WebAPI.Filters;
 using VSHelpDesk.WebAPI.Options;
+using VSHelpDesk.WebAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserService, HttpCurrentUserService>();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);

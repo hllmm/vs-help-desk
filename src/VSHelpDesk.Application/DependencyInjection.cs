@@ -19,6 +19,7 @@ public static class DependencyInjection
         services.AddScoped<LoginHandler>();
         services.AddScoped<CreateTicketHandler>();
         services.AddScoped<AppendCustomerReplyHandler>();
+        services.AddScoped<SupportReplyToTicketHandler>();
         services.AddScoped<ProcessIncomingEmailsHandler>();
         services.AddScoped<GetTicketListHandler>();
         services.AddScoped<GetTicketDetailsHandler>();
