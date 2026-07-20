@@ -185,6 +185,37 @@ public sealed class SupportReplyToTicketHandlerTests
     }
 
     [Fact]
+    public async Task StateSaveConflict_WhenConcurrentResolve_ReturnsTicketStateConflictWithoutDomainException()
+    {
+        // Save 1 = message; save 2 = waiting-state (conflict). Reload snapshot is Resolved
+        // (concurrent manual/auto resolve won), so waiting mutation must not throw DomainException.
+        var ticket = CreateCustomerRepliedTicket("VS-000310");
+        var db = new FakeDb(
+            ticket,
+            conflictOnSaveCalls: [2],
+            concurrentResolveAfterMessageSave: true);
+        var sender = new RecordingSender();
+        var handler = CreateHandler(db, sender);
+
+        var result = await handler.HandleAsync(
+            new SupportReplyToTicketCommand(ticket.Id, "Reply already emailed."),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Value!.EmailDelivered);
+        Assert.False(result.Value.TicketStateUpdated);
+        Assert.Equal(SupportReplyCodes.TicketStateConflict, result.Value.NoticeCode);
+        Assert.Equal(nameof(TicketStatus.Resolved), result.Value.Status);
+        Assert.Single(db.Messages);
+        Assert.False(db.Messages[0].IsHtml);
+        Assert.Equal(SupportUserId, db.Messages[0].UserId);
+        Assert.Single(sender.Sent);
+        Assert.Equal(2, db.SaveCallCount);
+        Assert.Equal(1, db.ClearTrackedCallCount);
+        Assert.Equal(TicketStatus.Resolved, db.PersistedStatus);
+    }
+
+    [Fact]
     public async Task CancellationAfterMessageSave_PropagatesInsteadOfClaimingSmtpFailure()
     {
         var ticket = CreateCustomerRepliedTicket("VS-000308");
@@ -339,10 +370,16 @@ public sealed class SupportReplyToTicketHandlerTests
         private DateTime persistedUpdatedAt;
         private DateTime persistedLastActivityAt;
 
-        public FakeDb(Ticket ticket, IEnumerable<int>? conflictOnSaveCalls = null)
+        private readonly bool concurrentResolveAfterMessageSave;
+
+        public FakeDb(
+            Ticket ticket,
+            IEnumerable<int>? conflictOnSaveCalls = null,
+            bool concurrentResolveAfterMessageSave = false)
         {
             queryTicket = ticket;
             this.conflictOnSaveCalls = conflictOnSaveCalls?.ToHashSet() ?? [];
+            this.concurrentResolveAfterMessageSave = concurrentResolveAfterMessageSave;
             CapturePersistedSnapshot(ticket);
         }
 
@@ -380,6 +417,15 @@ public sealed class SupportReplyToTicketHandlerTests
 
             pending.Clear();
             CapturePersistedSnapshot(queryTicket);
+
+            // After the message commit succeeds, a concurrent resolve can win the DB race
+            // before our waiting-state save — reload must see Resolved.
+            if (concurrentResolveAfterMessageSave && SaveCallCount == 1)
+            {
+                persistedStatus = TicketStatus.Resolved;
+                persistedWaitingSince = null;
+            }
+
             return Task.FromResult(1);
         }
 

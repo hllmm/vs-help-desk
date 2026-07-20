@@ -6,6 +6,7 @@ using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
+using VSHelpDesk.Domain.Exceptions;
 
 namespace VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 
@@ -123,6 +124,11 @@ public sealed class SupportReplyToTicketHandler(
 
         try
         {
+            if (!CanMarkAsWaitingCustomerReply(ticket.Status))
+            {
+                return LogWaitingConflict(ticket.Id, messageId, ticket.Status);
+            }
+
             ticket.MarkAsWaitingCustomerReply(now);
             await applicationDbContext.SaveChangesAsync(cancellationToken);
             return (true, TicketStatus.WaitingCustomerReply);
@@ -131,12 +137,24 @@ public sealed class SupportReplyToTicketHandler(
         {
             applicationDbContext.ClearTrackedChanges();
         }
+        catch (DomainException)
+        {
+            // Defensive: concurrent close/reopen left an illegal transition on the tracked entity.
+            return LogWaitingConflict(ticket.Id, messageId, statusAfterMessageCommit);
+        }
 
         var reloaded = applicationDbContext.Tickets
             .FirstOrDefault(candidate => candidate.Id == ticket.Id);
         if (reloaded is null)
         {
             throw new NotFoundException($"Ticket '{ticket.Id}' was not found.");
+        }
+
+        // Concurrent resolve (or other illegal transition) after SMTP: message already saved and
+        // emailed — return ticket-state-conflict, never DomainException → HTTP 400.
+        if (!CanMarkAsWaitingCustomerReply(reloaded.Status))
+        {
+            return LogWaitingConflict(ticket.Id, messageId, reloaded.Status);
         }
 
         try
@@ -155,12 +173,41 @@ public sealed class SupportReplyToTicketHandler(
                 .FirstOrDefault()
                 ?? statusAfterMessageCommit;
 
-            logger.LogWarning(
-                "Support reply waiting-state conflict after SMTP ticketId={TicketId} messageId={MessageId}",
-                ticket.Id,
-                messageId);
-
-            return (false, confirmedStatus);
+            return LogWaitingConflict(ticket.Id, messageId, confirmedStatus);
         }
+        catch (DomainException)
+        {
+            applicationDbContext.ClearTrackedChanges();
+
+            var confirmedStatus = applicationDbContext.Tickets
+                .Where(candidate => candidate.Id == ticket.Id)
+                .Select(candidate => (TicketStatus?)candidate.Status)
+                .FirstOrDefault()
+                ?? statusAfterMessageCommit;
+
+            return LogWaitingConflict(ticket.Id, messageId, confirmedStatus);
+        }
+    }
+
+    /// <summary>
+    /// Same allowed sources as <see cref="Ticket.MarkAsWaitingCustomerReply"/>.
+    /// </summary>
+    private static bool CanMarkAsWaitingCustomerReply(TicketStatus status) =>
+        status is TicketStatus.New
+            or TicketStatus.CustomerReplied
+            or TicketStatus.WaitingCustomerReply;
+
+    private (bool Updated, TicketStatus ConfirmedStatus) LogWaitingConflict(
+        Guid ticketId,
+        Guid messageId,
+        TicketStatus confirmedStatus)
+    {
+        logger.LogWarning(
+            "Support reply waiting-state conflict after SMTP ticketId={TicketId} messageId={MessageId} status={Status}",
+            ticketId,
+            messageId,
+            confirmedStatus);
+
+        return (false, confirmedStatus);
     }
 }
