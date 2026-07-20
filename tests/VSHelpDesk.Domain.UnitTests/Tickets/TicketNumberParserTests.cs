@@ -27,4 +27,18 @@ public sealed class TicketNumberParserTests
         Assert.True(found);
         Assert.Equal(expected, number);
     }
+
+    [Theory]
+    [InlineData("VS-1abc", null)]
+    [InlineData("VS-000001x", null)]
+    [InlineData("VS-0 then VS-42", "VS-000042")]
+    [InlineData("VS-0 and VS-1abc then VS-7", "VS-000007")]
+    public void TryFindInText_RejectsAlphanumericSuffix_AndContinuesAfterInvalid(
+        string subject,
+        string? expected)
+    {
+        var found = TicketNumberParser.TryFindInText(subject, out var number);
+        Assert.Equal(expected is not null, found);
+        Assert.Equal(expected ?? string.Empty, number);
+    }
 }

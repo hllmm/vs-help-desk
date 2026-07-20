@@ -126,6 +126,9 @@ public sealed class TicketTests
         Assert.False(TicketNumberFormat.IsCanonical("vs-000001"));
         Assert.False(TicketNumberFormat.IsCanonical("VS-1"));
         Assert.Throws<ArgumentOutOfRangeException>(() => TicketNumberFormat.Format(0));
+        Assert.Equal("VS-999999", TicketNumberFormat.Format(999_999));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TicketNumberFormat.Format(1_000_000));
     }
 
     [Fact]

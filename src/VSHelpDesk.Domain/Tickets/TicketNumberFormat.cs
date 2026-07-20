@@ -8,29 +8,23 @@ public static partial class TicketNumberFormat
 {
     public const string Prefix = "VS-";
     public const int SequenceWidth = 6;
+    public const long MaxSequenceValue = 999_999;
 
     [GeneratedRegex(@"^VS-(\d{6})$", RegexOptions.CultureInvariant)]
     private static partial Regex CanonicalPattern();
 
     public static string Format(long sequenceValue)
     {
-        if (sequenceValue <= 0)
+        if (sequenceValue is <= 0 or > MaxSequenceValue)
         {
-            throw new ArgumentOutOfRangeException(nameof(sequenceValue), "Sequence value must be positive.");
+            throw new ArgumentOutOfRangeException(
+                nameof(sequenceValue),
+                $"Sequence value must be between 1 and {MaxSequenceValue}.");
         }
 
-        return string.Create(
-            Prefix.Length + SequenceWidth,
-            sequenceValue,
-            static (span, value) =>
-            {
-                Prefix.AsSpan().CopyTo(span);
-                value.TryFormat(
-                    span[Prefix.Length..],
-                    out _,
-                    "D6",
-                    CultureInfo.InvariantCulture);
-            });
+        return Prefix + sequenceValue.ToString(
+            $"D{SequenceWidth}",
+            CultureInfo.InvariantCulture);
     }
 
     public static bool IsCanonical(string ticketNumber) =>
