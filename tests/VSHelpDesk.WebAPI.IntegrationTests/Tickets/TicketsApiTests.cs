@@ -163,27 +163,28 @@ public sealed class TicketsApiTests : IClassFixture<WebApplicationFactory<Progra
                 await db.SaveChangesAsync();
 
                 var attachmentSame = stamp.AddMinutes(6);
+                var storageKey = Guid.NewGuid().ToString("N");
                 var attachmentEarly = new TicketAttachment(
                     messageEarly.Id,
                     "early.txt",
-                    "stored-early.txt",
-                    "/tmp/vshd-seed/early.txt",
+                    $"stored-early-{storageKey}.txt",
+                    $"/tmp/vshd-seed/early-{storageKey}.txt",
                     "text/plain",
                     11,
                     stamp.AddMinutes(2));
                 var attachmentTieA = new TicketAttachment(
                     messageTieA.Id,
                     "tie-a.pdf",
-                    "stored-tie-a.pdf",
-                    "/tmp/vshd-seed/tie-a.pdf",
+                    $"stored-tie-a-{storageKey}.pdf",
+                    $"/tmp/vshd-seed/tie-a-{storageKey}.pdf",
                     "application/pdf",
                     22,
                     attachmentSame);
                 var attachmentTieB = new TicketAttachment(
                     messageTieB.Id,
                     "tie-b.txt",
-                    "stored-tie-b.txt",
-                    "/tmp/vshd-seed/tie-b.txt",
+                    $"stored-tie-b-{storageKey}.txt",
+                    $"/tmp/vshd-seed/tie-b-{storageKey}.txt",
                     "text/plain",
                     33,
                     attachmentSame);
