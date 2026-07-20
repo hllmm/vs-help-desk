@@ -4,5 +4,8 @@ namespace: vshelpdesk
 resources:
   - namespace.yaml
   - configmap.yaml
+  - postgres-service.yaml
+  - postgres-statefulset.yaml
 commonLabels:
   app.kubernetes.io/part-of: vs-help-desk
+
