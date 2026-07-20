@@ -25,6 +25,11 @@ public sealed class NotConfiguredImapEmailReceiver(
             "Use Email:ReceiverMode=Fake for Development/tests, or implement MailKit IMAP later.");
     }
 
-    public Task MarkAsProcessedAsync(string messageId, CancellationToken cancellationToken = default) =>
-        Task.CompletedTask;
+    public Task MarkAsProcessedAsync(
+        EmailReceiptHandle receiptHandle,
+        CancellationToken cancellationToken = default)
+    {
+        _ = receiptHandle;
+        return Task.CompletedTask;
+    }
 }

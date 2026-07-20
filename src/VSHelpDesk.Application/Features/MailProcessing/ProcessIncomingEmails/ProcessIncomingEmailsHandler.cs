@@ -83,25 +83,19 @@ public sealed class ProcessIncomingEmailsHandler(
 
         foreach (var mail in unread)
         {
-            if (string.IsNullOrWhiteSpace(mail.MessageId))
-            {
-                skippedInvalid++;
-                logger.LogWarning(
-                    "ProcessIncomingEmails skipped poison message without MessageId from={FromAddress}",
-                    mail.FromAddress);
-                continue;
-            }
-
-            var messageId = mail.MessageId.Trim();
-            messageIds.Add(messageId);
+            // Task 3 boundary: stable identity from Message-ID or receipt hash.
+            // Full typed normalization enters the EF path in Task 7.
+            var identity = InboundEmailIdentityFactory.Create(mail);
+            var idempotencyKey = identity.IdempotencyKey;
+            messageIds.Add(idempotencyKey);
 
             if (string.IsNullOrWhiteSpace(mail.FromAddress))
             {
                 skippedInvalid++;
                 logger.LogWarning(
-                    "ProcessIncomingEmails skipped poison message without From messageId={MessageId}",
-                    messageId);
-                await QuarantineAsync(messageId, cancellationToken);
+                    "ProcessIncomingEmails skipped poison message without From idempotencyKey={IdempotencyKey}",
+                    idempotencyKey);
+                await QuarantineAsync(identity, mail.ReceiptHandle, cancellationToken);
                 continue;
             }
 
@@ -120,8 +114,8 @@ public sealed class ProcessIncomingEmailsHandler(
                         StringComparison.OrdinalIgnoreCase))
                 {
                     logger.LogWarning(
-                        "ProcessIncomingEmails subject matched ticket but From mismatch messageId={MessageId} ticketNumber={TicketNumber} from={FromAddress} expected={CustomerEmail}; creating new ticket",
-                        messageId,
+                        "ProcessIncomingEmails subject matched ticket but From mismatch idempotencyKey={IdempotencyKey} ticketNumber={TicketNumber} from={FromAddress} expected={CustomerEmail}; creating new ticket",
+                        idempotencyKey,
                         subjectTicketNumber,
                         mail.FromAddress,
                         ticket.CustomerEmail);
@@ -131,7 +125,7 @@ public sealed class ProcessIncomingEmailsHandler(
                 {
                     var replyResult = await appendCustomerReplyHandler.HandleAsync(
                         new AppendCustomerReplyCommand(
-                            MessageId: messageId,
+                            MessageId: idempotencyKey,
                             TicketNumber: subjectTicketNumber,
                             Content: body,
                             IsHtml: false,
@@ -141,15 +135,15 @@ public sealed class ProcessIncomingEmailsHandler(
                     if (replyResult.IsFailure)
                     {
                         logger.LogError(
-                            "ProcessIncomingEmails reply failed messageId={MessageId} ticketNumber={TicketNumber} error={Error}",
-                            messageId,
+                            "ProcessIncomingEmails reply failed idempotencyKey={IdempotencyKey} ticketNumber={TicketNumber} error={Error}",
+                            idempotencyKey,
                             subjectTicketNumber,
                             replyResult.Error);
                         // Permanent validation → quarantine so the mail is not retried forever.
                         if (IsPermanentReplyFailure(replyResult.Error))
                         {
                             skippedInvalid++;
-                            await QuarantineAsync(messageId, cancellationToken);
+                            await QuarantineAsync(identity, mail.ReceiptHandle, cancellationToken);
                         }
 
                         continue;
@@ -160,8 +154,8 @@ public sealed class ProcessIncomingEmailsHandler(
                     {
                         alreadyProcessed++;
                         logger.LogInformation(
-                            "ProcessIncomingEmails reply already processed messageId={MessageId} ticketNumber={TicketNumber}",
-                            messageId,
+                            "ProcessIncomingEmails reply already processed idempotencyKey={IdempotencyKey} ticketNumber={TicketNumber}",
+                            idempotencyKey,
                             reply.TicketNumber);
                     }
                     else
@@ -173,22 +167,22 @@ public sealed class ProcessIncomingEmailsHandler(
                         }
 
                         logger.LogInformation(
-                            "ProcessIncomingEmails customer reply messageId={MessageId} ticketNumber={TicketNumber} statusBefore={StatusBefore} statusAfter={StatusAfter} reopened={Reopened}",
-                            messageId,
+                            "ProcessIncomingEmails customer reply idempotencyKey={IdempotencyKey} ticketNumber={TicketNumber} statusBefore={StatusBefore} statusAfter={StatusAfter} reopened={Reopened}",
+                            idempotencyKey,
                             reply.TicketNumber,
                             reply.StatusBefore,
                             reply.StatusAfter,
                             reply.WasReopened);
                     }
 
-                    await SafeMarkProcessedAsync(messageId, cancellationToken);
+                    await SafeMarkProcessedAsync(mail.ReceiptHandle, cancellationToken);
                     continue;
                 }
             }
 
             var createResult = await createTicketHandler.HandleAsync(
                 new CreateTicketCommand(
-                    MessageId: messageId,
+                    MessageId: idempotencyKey,
                     Subject: string.IsNullOrWhiteSpace(mail.Subject) ? "(no subject)" : mail.Subject,
                     CustomerName: string.IsNullOrWhiteSpace(mail.FromDisplayName)
                         ? mail.FromAddress
@@ -201,11 +195,11 @@ public sealed class ProcessIncomingEmailsHandler(
             if (createResult.IsFailure)
             {
                 logger.LogError(
-                    "ProcessIncomingEmails create failed messageId={MessageId} error={Error}",
-                    messageId,
+                    "ProcessIncomingEmails create failed idempotencyKey={IdempotencyKey} error={Error}",
+                    idempotencyKey,
                     createResult.Error);
                 skippedInvalid++;
-                await QuarantineAsync(messageId, cancellationToken);
+                await QuarantineAsync(identity, mail.ReceiptHandle, cancellationToken);
                 continue;
             }
 
@@ -214,18 +208,18 @@ public sealed class ProcessIncomingEmailsHandler(
             {
                 alreadyProcessed++;
                 logger.LogInformation(
-                    "ProcessIncomingEmails already processed messageId={MessageId} ticketNumber={TicketNumber}",
-                    messageId,
+                    "ProcessIncomingEmails already processed idempotencyKey={IdempotencyKey} ticketNumber={TicketNumber}",
+                    idempotencyKey,
                     created.TicketNumber);
-                await SafeMarkProcessedAsync(messageId, cancellationToken);
+                await SafeMarkProcessedAsync(mail.ReceiptHandle, cancellationToken);
                 continue;
             }
 
             createdTickets++;
             createdTicketNumbers.Add(created.TicketNumber);
             logger.LogInformation(
-                "ProcessIncomingEmails created ticket messageId={MessageId} ticketNumber={TicketNumber} ticketId={TicketId}",
-                messageId,
+                "ProcessIncomingEmails created ticket idempotencyKey={IdempotencyKey} ticketNumber={TicketNumber} ticketId={TicketId}",
+                idempotencyKey,
                 created.TicketNumber,
                 created.TicketId);
 
@@ -260,7 +254,7 @@ public sealed class ProcessIncomingEmailsHandler(
             }
 
             await applicationDbContext.SaveChangesAsync(cancellationToken);
-            await SafeMarkProcessedAsync(messageId, cancellationToken);
+            await SafeMarkProcessedAsync(mail.ReceiptHandle, cancellationToken);
         }
 
         logger.LogInformation(
@@ -292,17 +286,20 @@ public sealed class ProcessIncomingEmailsHandler(
     /// <summary>
     /// Permanent poison: record idempotency key without a ticket so re-fetch does not loop forever.
     /// </summary>
-    private async Task QuarantineAsync(string messageId, CancellationToken cancellationToken)
+    private async Task QuarantineAsync(
+        InboundEmailIdentity identity,
+        EmailReceiptHandle receiptHandle,
+        CancellationToken cancellationToken)
     {
         try
         {
             var already = applicationDbContext.ProcessedEmailMessages
-                .Any(row => row.IdempotencyKey == messageId);
+                .Any(row => row.IdempotencyKey == identity.IdempotencyKey);
             if (!already)
             {
                 applicationDbContext.Add(ProcessedEmailMessage.ForQuarantine(
-                    messageId,
-                    sourceMessageId: messageId,
+                    identity.IdempotencyKey,
+                    sourceMessageId: identity.SourceMessageId,
                     processedAtUtc: timeProvider.GetUtcNow().UtcDateTime));
                 await applicationDbContext.SaveChangesAsync(cancellationToken);
             }
@@ -312,11 +309,11 @@ public sealed class ProcessIncomingEmailsHandler(
             applicationDbContext.ClearTrackedChanges();
             logger.LogWarning(
                 ex,
-                "ProcessIncomingEmails quarantine save failed messageId={MessageId}",
-                messageId);
+                "ProcessIncomingEmails quarantine save failed idempotencyKey={IdempotencyKey}",
+                identity.IdempotencyKey);
         }
 
-        await SafeMarkProcessedAsync(messageId, cancellationToken);
+        await SafeMarkProcessedAsync(receiptHandle, cancellationToken);
     }
 
     private static bool IsPermanentReplyFailure(string? error) =>
@@ -325,26 +322,28 @@ public sealed class ProcessIncomingEmailsHandler(
          error.Contains("does not match", StringComparison.OrdinalIgnoreCase) ||
          error.Contains("required", StringComparison.OrdinalIgnoreCase));
 
-    private async Task SafeMarkProcessedAsync(string messageId, CancellationToken cancellationToken)
+    private async Task SafeMarkProcessedAsync(
+        EmailReceiptHandle receiptHandle,
+        CancellationToken cancellationToken)
     {
         try
         {
-            await emailReceiver.MarkAsProcessedAsync(messageId, cancellationToken);
+            await emailReceiver.MarkAsProcessedAsync(receiptHandle, cancellationToken);
         }
         catch (Exception ex)
         {
             logger.LogWarning(
                 ex,
-                "ProcessIncomingEmails MarkAsProcessed failed messageId={MessageId}",
-                messageId);
+                "ProcessIncomingEmails MarkAsProcessed failed receiptKind={ReceiptKind}",
+                receiptHandle.Kind);
         }
     }
 
     private static EmailMessage BuildAcknowledgement(IncomingEmail mail, string ticketNumber) =>
         new(
-            ToAddress: mail.FromAddress,
+            ToAddress: mail.FromAddress!,
             ToDisplayName: string.IsNullOrWhiteSpace(mail.FromDisplayName)
-                ? mail.FromAddress
+                ? mail.FromAddress!
                 : mail.FromDisplayName,
             Subject: $"[{ticketNumber}] We received your support request",
             Body:

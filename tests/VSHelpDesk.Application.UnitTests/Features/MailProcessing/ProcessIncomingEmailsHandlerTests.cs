@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
@@ -196,7 +197,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
         Assert.Single(context.TicketsList);
         Assert.Single(context.TicketMessagesList);
         Assert.Single(context.ProcessedEmailMessagesList);
-        Assert.Contains("<msg-ack-fail@test>", receiver.Marked);
+        Assert.Contains(receiver.Marked, handle => handle.Value == "fake\0<msg-ack-fail@test>");
     }
 
     [Fact]
@@ -214,7 +215,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
 
         Assert.Equal(1, result.Value!.CreatedTickets);
         Assert.Equal(0, result.Value.SkippedInvalid);
-        Assert.Equal("(empty body)", context.TicketMessagesList[0].Content);
+        Assert.Equal(InboundMailLimits.EmptyBodyPlaceholder, context.TicketMessagesList[0].Content);
         Assert.False(context.TicketMessagesList[0].IsHtml);
     }
 
@@ -303,8 +304,17 @@ public sealed class ProcessIncomingEmailsHandlerTests
         }
     }
 
-    private static IncomingEmail Mail(string id, string from, string subject, string body) =>
-        new(id, from, "Customer", subject, body, false, FixedNow.UtcDateTime, Array.Empty<IncomingEmailAttachment>());
+    private static IncomingEmail Mail(string? id, string from, string subject, string body) =>
+        new(
+            MessageId: id,
+            ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, $"fake\0{id ?? "null-id"}"),
+            FromAddress: from,
+            FromDisplayName: "Customer",
+            Subject: subject,
+            Body: body,
+            IsHtml: false,
+            ReceivedAt: FixedNow.UtcDateTime,
+            Attachments: Array.Empty<IncomingEmailAttachment>());
 
     private sealed class FixedSettings : IEmailBoundarySettings
     {
@@ -329,14 +339,16 @@ public sealed class ProcessIncomingEmailsHandlerTests
 
     private sealed class FakeReceiver(IReadOnlyList<IncomingEmail> messages) : IEmailReceiver
     {
-        public List<string> Marked { get; } = [];
+        public List<EmailReceiptHandle> Marked { get; } = [];
 
         public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(messages);
 
-        public Task MarkAsProcessedAsync(string messageId, CancellationToken cancellationToken = default)
+        public Task MarkAsProcessedAsync(
+            EmailReceiptHandle receiptHandle,
+            CancellationToken cancellationToken = default)
         {
-            Marked.Add(messageId);
+            Marked.Add(receiptHandle);
             return Task.CompletedTask;
         }
 

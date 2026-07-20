@@ -15,6 +15,7 @@ public sealed class FakeEmailReceiver(
     [
         new(
             MessageId: "<fake-unread-001@vshelpdesk.local>",
+            ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, "fake\0fake-unread-001"),
             FromAddress: "customer.one@example.test",
             FromDisplayName: "Customer One",
             Subject: "Printer offline in office A",
@@ -24,6 +25,7 @@ public sealed class FakeEmailReceiver(
             Attachments: Array.Empty<IncomingEmailAttachment>()),
         new(
             MessageId: "<fake-unread-002@vshelpdesk.local>",
+            ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, "fake\0fake-unread-002"),
             FromAddress: "customer.two@example.test",
             FromDisplayName: "Customer Two",
             Subject: "VPN access request",
@@ -39,7 +41,7 @@ public sealed class FakeEmailReceiver(
     {
         _ = emailOptions.Value;
         var batch = unread
-            .Where(message => !processedIds.Contains(message.MessageId))
+            .Where(message => !processedIds.Contains(message.ReceiptHandle.Value))
             .ToList();
 
         logger.LogInformation(
@@ -49,16 +51,20 @@ public sealed class FakeEmailReceiver(
         return Task.FromResult<IReadOnlyList<IncomingEmail>>(batch);
     }
 
-    public Task MarkAsProcessedAsync(string messageId, CancellationToken cancellationToken = default)
+    public Task MarkAsProcessedAsync(
+        EmailReceiptHandle receiptHandle,
+        CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrWhiteSpace(messageId))
+        ArgumentNullException.ThrowIfNull(receiptHandle);
+
+        if (!string.IsNullOrWhiteSpace(receiptHandle.Value))
         {
-            processedIds.Add(messageId.Trim());
+            processedIds.Add(receiptHandle.Value);
         }
 
         logger.LogInformation(
-            "Fake email receiver marked message processed messageId={MessageId}",
-            messageId);
+            "Fake email receiver marked message processed receiptKind={ReceiptKind}",
+            receiptHandle.Kind);
 
         return Task.CompletedTask;
     }
