@@ -74,6 +74,33 @@ public sealed class CsrfProtectionTests : IClassFixture<CustomWebApplicationFact
     }
 
     [Fact]
+    public async Task Logout_WithoutCookies_Returns204()
+    {
+        // Anonymous logout is a no-op cookie clear; CSRF is not required without vshd.auth.
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsync("/api/auth/logout", content: null);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Logout_WithAuthCookie_WithoutCsrfHeader_Returns403()
+    {
+        var (username, password) = GetSeedCredentials();
+        using var client = CookieAuthTestHelper.CreateCookieClient(factory);
+
+        using var loginResponse = await CookieAuthTestHelper.LoginAsync(client, username, password);
+        Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+        // Cookie jar sends vshd.auth + vshd.csrf; omit X-CSRF-Token.
+        using var response = await client.PostAsync("/api/auth/logout", content: null);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("CSRF", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task JobsEndpoint_WithoutCsrf_StillAcceptsApiKey()
     {
         using var scope = factory.Services.CreateScope();
