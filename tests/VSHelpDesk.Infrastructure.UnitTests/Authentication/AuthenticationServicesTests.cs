@@ -76,7 +76,27 @@ public sealed class AuthenticationServicesTests
         Assert.Equal(user.Id.ToString(), principal.Claims.Single(claim => claim.Type == JwtRegisteredClaimNames.Sub).Value);
         Assert.Equal(user.Username, principal.Claims.Single(claim => claim.Type == JwtRegisteredClaimNames.UniqueName).Value);
         Assert.Equal(user.FullName, principal.Claims.Single(claim => claim.Type == "full_name").Value);
+        Assert.Equal("Support", principal.Claims.Single(claim => claim.Type == "role").Value);
         Assert.Equal(TokenIssuedAt.AddMinutes(options.ExpirationMinutes).UtcDateTime, token.ValidTo);
+    }
+
+    [Fact]
+    public void JwtTokenService_CreateToken_EmitsAdminRoleClaim()
+    {
+        var options = new AuthOptions
+        {
+            Issuer = "VSHelpDesk",
+            Audience = "VSHelpDesk.Client",
+            SigningKey = "test-signing-key-with-at-least-32-bytes!",
+            ExpirationMinutes = 480
+        };
+        var admin = new User("Admin User", "admin.user", "admin@example.test", "password-hash", UserRole.Admin);
+        var tokenService = new JwtTokenService(Options.Create(options), new FixedTimeProvider(TokenIssuedAt));
+
+        var accessToken = tokenService.CreateToken(admin);
+        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
+
+        Assert.Contains(jwt.Claims, c => c.Type == "role" && c.Value == "Admin");
     }
 
     [Fact]

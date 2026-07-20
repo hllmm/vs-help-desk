@@ -36,7 +36,8 @@ public static class AuthenticationExtensions
                     ValidateAudience = true,
                     ValidAudience = authOptions.Audience,
                     ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromMinutes(1)
+                    ClockSkew = TimeSpan.FromMinutes(1),
+                    RoleClaimType = "role"
                 };
 
                 options.Events = new JwtBearerEvents
