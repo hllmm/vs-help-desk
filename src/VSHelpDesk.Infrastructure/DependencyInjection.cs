@@ -5,12 +5,14 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Abstractions.Parameters;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.Infrastructure.Email;
+using VSHelpDesk.Infrastructure.Parameters;
 using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
 using VSHelpDesk.Infrastructure.Processing;
@@ -37,6 +39,7 @@ public static class DependencyInjection
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IApplicationDbContext>(
             serviceProvider => serviceProvider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<IApplicationParameterReader, ApplicationParameterReader>();
         services.AddOptions<SeedUserOptions>()
             .Bind(configuration.GetSection(SeedUserOptions.SectionName));
         services.AddScoped<DevelopmentDataSeeder>();
