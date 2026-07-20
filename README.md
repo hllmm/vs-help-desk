@@ -10,17 +10,22 @@ Kaynak: **VS Help Desk — SRD & Sistem Tasarımı** (`VSHD-SRD-001` v1.0).
 # Altyapı (PostgreSQL + Mailpit)
 docker compose up -d
 
-# API
+# API (user-secrets: ConnectionStrings + SeedUser:Password)
 dotnet restore
 dotnet run --project src/VSHelpDesk.WebAPI
 
+# Portal SPA (ayrı terminal)
+cd frontend && npm install && npm run dev -- --host 127.0.0.1
+
 # Testler
 dotnet test
+cd frontend && npm run build
 ```
 
 | Servis | Adres |
 |--------|--------|
 | API | `http://localhost:5154` / `https://localhost:7269` (launchSettings) |
+| Portal | http://127.0.0.1:5173 (Vite; CORS: `Cors:AllowedOrigins`) |
 | PostgreSQL | `localhost:5432` — db: `VS_HelpDesk_DB`, user: `stajyer` |
 | Mailpit UI | http://localhost:8025 |
 | Mailpit SMTP | `localhost:1025` |

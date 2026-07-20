@@ -25,7 +25,28 @@ builder.Services.AddOptions<JobsOptions>()
     .ValidateOnStart();
 builder.Services.AddScoped<JobsApiKeyAuthorizationFilter>();
 
-// Hafta 3: CORS for React SPA (see Cors:AllowedOrigins in appsettings)
+// React SPA (Vite) — only configured development origins (see Cors:AllowedOrigins).
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? Array.Empty<string>();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        "Portal",
+        policy =>
+        {
+            if (corsOrigins.Length == 0)
+            {
+                // Fail closed when misconfigured: no browser origins allowed.
+                policy.SetIsOriginAllowed(_ => false);
+                return;
+            }
+
+            policy
+                .WithOrigins(corsOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        });
+});
 
 var app = builder.Build();
 
@@ -35,8 +56,14 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
 }
 
-app.UseHttpsRedirection();
+// Local SPA talks HTTP → API; avoid forcing HTTPS redirects that break CORS preflight.
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseExceptionHandling();
+app.UseCors("Portal");
 app.UseAuthentication();
 app.UseAuthorization();
 
