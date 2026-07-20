@@ -181,7 +181,7 @@ public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<P
     }
 
     [Fact]
-    public async Task Jobs_WithValidApiKey_Returns501NotImplemented()
+    public async Task Jobs_WithValidApiKey_ReturnsOkBoundaryResult()
     {
         using var scope = factory.Services.CreateScope();
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
@@ -193,7 +193,17 @@ public sealed class AuthJwtPipelineTests : IClassFixture<WebApplicationFactory<P
         request.Headers.Add("X-Jobs-Api-Key", apiKey);
         using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.NotImplemented, response.StatusCode);
+        // Day 8: handler runs (Fake fetch + optional SMTP probe). 200 if Mailpit up; 502 if SMTP down.
+        Assert.True(
+            response.StatusCode is HttpStatusCode.OK or HttpStatusCode.BadGateway,
+            $"Unexpected status {(int)response.StatusCode}");
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            var json = await response.Content.ReadAsStringAsync();
+            Assert.Contains("fetchedCount", json, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("messageIds", json, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Password", json, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private (string Username, string Password) GetSeedCredentials()
