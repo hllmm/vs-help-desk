@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Domain.Enums;
 
 namespace VSHelpDesk.Infrastructure.Persistence.Seed;
 
@@ -38,7 +39,8 @@ public sealed class DevelopmentDataSeeder(
             fullName,
             username,
             email,
-            passwordHasher.Hash(password)));
+            passwordHasher.Hash(password),
+            UserRole.Support));
         await applicationDbContext.SaveChangesAsync(cancellationToken);
     }
 

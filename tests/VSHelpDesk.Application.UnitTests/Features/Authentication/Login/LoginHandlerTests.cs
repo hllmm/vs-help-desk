@@ -2,6 +2,7 @@ using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Domain.Enums;
 
 namespace VSHelpDesk.Application.UnitTests.Features.Authentication.Login;
 
@@ -105,7 +106,7 @@ public sealed class LoginHandlerTests
         new(context, passwordHasher, tokenService, new FixedTimeProvider(LoginTime));
 
     private static User CreateUser(string username = "active.user") =>
-        new("Active User", username, $"{username}@example.test", "stored-password-hash");
+        new("Active User", username, $"{username}@example.test", "stored-password-hash", UserRole.Support);
 
     private sealed class FakeApplicationDbContext(params User[] users) : IApplicationDbContext
     {

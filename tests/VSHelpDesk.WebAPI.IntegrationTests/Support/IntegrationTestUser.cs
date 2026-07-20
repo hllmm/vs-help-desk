@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
 
 namespace VSHelpDesk.WebAPI.IntegrationTests.Support;
@@ -28,7 +29,8 @@ public sealed record IntegrationTestUser(
             fullName: "Inactive Integration User",
             username: username,
             email: email,
-            passwordHash: passwordHash);
+            passwordHash: passwordHash,
+            role: UserRole.Support);
         user.Deactivate();
 
         db.Users.Add(user);

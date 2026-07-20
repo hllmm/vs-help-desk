@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Authentication;
 
@@ -43,7 +44,7 @@ public sealed class AuthenticationServicesTests
             SigningKey = "test-signing-key-with-at-least-32-bytes!",
             ExpirationMinutes = 480
         };
-        var user = new User("Active User", "active.user", "active.user@example.test", "password-hash");
+        var user = new User("Active User", "active.user", "active.user@example.test", "password-hash", UserRole.Support);
         var tokenService = new JwtTokenService(Options.Create(options), new FixedTimeProvider(TokenIssuedAt));
 
         var accessToken = tokenService.CreateToken(user);

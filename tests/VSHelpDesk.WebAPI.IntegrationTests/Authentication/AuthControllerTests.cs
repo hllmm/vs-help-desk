@@ -8,6 +8,7 @@ using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.WebAPI.Authentication;
 using VSHelpDesk.WebAPI.Contracts.Authentication;
@@ -151,7 +152,7 @@ public sealed class AuthControllerTests
     }
 
     private static User CreateUser(string username = "active.user") =>
-        new("Active User", username, $"{username}@example.test", "stored-password-hash");
+        new("Active User", username, $"{username}@example.test", "stored-password-hash", UserRole.Support);
 
     private sealed class FakeApplicationDbContext(params User[] users) : IApplicationDbContext
     {
