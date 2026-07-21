@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using VSHelpDesk.Application.Features.Parameters.GetParameterAudit;
 using VSHelpDesk.Application.Features.Parameters.GetParameters;
 using VSHelpDesk.Application.Features.Parameters.UpdateParameter;
 using VSHelpDesk.WebAPI.Contracts.Parameters;
@@ -14,6 +15,7 @@ namespace VSHelpDesk.WebAPI.Controllers;
 [Route("api/parameters")]
 public sealed class ParametersController(
     GetParametersHandler getParametersHandler,
+    GetParameterAuditHandler getParameterAuditHandler,
     UpdateParameterHandler updateParameterHandler) : ControllerBase
 {
     /// <summary>GET api/parameters — UC-010 list allowlisted parameters.</summary>
@@ -21,6 +23,19 @@ public sealed class ParametersController(
     public async Task<IActionResult> GetAll(CancellationToken cancellationToken)
     {
         var items = await getParametersHandler.HandleAsync(cancellationToken);
+        return Ok(items);
+    }
+
+    /// <summary>GET api/parameters/audit — recent parameter change history.</summary>
+    [HttpGet("audit")]
+    public async Task<IActionResult> GetAudit(
+        [FromQuery] string? key,
+        [FromQuery] int take = GetParameterAuditHandler.DefaultTake,
+        CancellationToken cancellationToken = default)
+    {
+        var items = await getParameterAuditHandler.HandleAsync(
+            new GetParameterAuditQuery(key, take),
+            cancellationToken);
         return Ok(items);
     }
 

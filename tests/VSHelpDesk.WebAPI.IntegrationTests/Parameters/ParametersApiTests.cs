@@ -221,6 +221,82 @@ public sealed class ParametersApiTests : IClassFixture<CustomWebApplicationFacto
     }
 
     [Fact]
+    public async Task GetParameterAudit_Unauthorized_WithoutToken()
+    {
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/api/parameters/audit");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetParameterAudit_Support_Returns403()
+    {
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var response = await client.GetAsync("/api/parameters/audit");
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task GetParameterAudit_Admin_ReturnsRowsWithUsernameAfterPut()
+    {
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsAdminAsync(factory);
+        using (client)
+        {
+            CookieAuthTestHelper.UseDefaultCsrfHeader(client, csrf);
+
+            using var beforeResponse = await client.GetAsync("/api/parameters");
+            beforeResponse.EnsureSuccessStatusCode();
+            using var beforeDoc = JsonDocument.Parse(await beforeResponse.Content.ReadAsStringAsync());
+            var previousValue = beforeDoc.RootElement.EnumerateArray()
+                .Single(element =>
+                    element.GetProperty("key").GetString()
+                    == ApplicationParameterCatalog.AutoResolveInactiveDaysKey)
+                .GetProperty("value")
+                .GetString();
+            Assert.False(string.IsNullOrWhiteSpace(previousValue));
+
+            var updatedValue = previousValue == "6" ? "5" : "6";
+            try
+            {
+                using var putResponse = await client.PutAsJsonAsync(
+                    $"/api/parameters/{ApplicationParameterCatalog.AutoResolveInactiveDaysKey}",
+                    new { value = updatedValue });
+                Assert.Equal(HttpStatusCode.OK, putResponse.StatusCode);
+
+                using var auditResponse = await client.GetAsync(
+                    $"/api/parameters/audit?take=20&key={Uri.EscapeDataString(ApplicationParameterCatalog.AutoResolveInactiveDaysKey)}");
+                Assert.Equal(HttpStatusCode.OK, auditResponse.StatusCode);
+
+                using var auditDoc = JsonDocument.Parse(await auditResponse.Content.ReadAsStringAsync());
+                Assert.Equal(JsonValueKind.Array, auditDoc.RootElement.ValueKind);
+
+                var match = auditDoc.RootElement.EnumerateArray()
+                    .FirstOrDefault(element =>
+                        element.GetProperty("newValue").GetString() == updatedValue
+                        && element.GetProperty("oldValue").GetString() == previousValue);
+
+                Assert.NotEqual(default, match);
+                Assert.Equal(
+                    ApplicationParameterCatalog.AutoResolveInactiveDaysKey,
+                    match.GetProperty("parameterKey").GetString());
+                Assert.Equal("admin", match.GetProperty("changedByUsername").GetString());
+                Assert.True(match.TryGetProperty("changedByUserId", out _));
+                Assert.True(match.TryGetProperty("changedAt", out _));
+            }
+            finally
+            {
+                using var restoreResponse = await client.PutAsJsonAsync(
+                    $"/api/parameters/{ApplicationParameterCatalog.AutoResolveInactiveDaysKey}",
+                    new { value = previousValue });
+                restoreResponse.EnsureSuccessStatusCode();
+            }
+        }
+    }
+
+    [Fact]
     public async Task PutParameter_Admin_WritesAuditRowWithOldNewAndActor()
     {
         var (client, csrf, adminId) = await CookieAuthTestHelper.LoginAsAdminAsync(factory);

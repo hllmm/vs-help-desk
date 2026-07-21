@@ -59,11 +59,13 @@ builder.Services.AddRateLimiter(options =>
             }
 
             // IP-based fixed window; username refinement would require middleware body buffer.
+            // Development uses a higher ceiling so WebApplicationFactory suites can log in repeatedly.
+            var permitLimit = builder.Environment.IsDevelopment() ? 1_000 : 10;
             return RateLimitPartition.GetFixedWindowLimiter(
                 partitionKey: $"login:{ip}",
                 factory: _ => new FixedWindowRateLimiterOptions
                 {
-                    PermitLimit = 10,
+                    PermitLimit = permitLimit,
                     Window = TimeSpan.FromMinutes(1),
                     QueueLimit = 0,
                     AutoReplenishment = true

@@ -6,6 +6,7 @@ using VSHelpDesk.Application.Features.Attachments.UploadAttachment;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
+using VSHelpDesk.Application.Features.Parameters.GetParameterAudit;
 using VSHelpDesk.Application.Features.Parameters.GetParameters;
 using VSHelpDesk.Application.Features.Parameters.UpdateParameter;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
@@ -45,6 +46,7 @@ public static class DependencyInjection
         services.AddScoped<UploadAttachmentHandler>();
         services.AddScoped<GetAttachmentHandler>();
         services.AddScoped<GetParametersHandler>();
+        services.AddScoped<GetParameterAuditHandler>();
         services.AddScoped<UpdateParameterHandler>();
         services.AddScoped<GetUsersHandler>();
         services.AddScoped<CreateUserHandler>();

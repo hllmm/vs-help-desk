@@ -99,6 +99,17 @@ export type Parameter = {
   updatedAt: string
 }
 
+/** Parameter change audit row. Mirrors GET /api/parameters/audit. */
+export type ParameterChangeLog = {
+  id: string
+  parameterKey: string
+  oldValue: string
+  newValue: string
+  changedByUserId: string
+  changedByUsername: string | null
+  changedAt: string
+}
+
 /** GET /api/users list item — no password hash. */
 export type UserListItem = {
   id: string
