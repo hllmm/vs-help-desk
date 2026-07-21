@@ -216,7 +216,8 @@ public sealed class ImapEmailReceiver(
             attachments.Add(new IncomingEmailAttachment(
                 FileName: fileName,
                 ContentType: contentType,
-                FileSize: fileSize < 0 ? 0 : fileSize));
+                FileSize: fileSize < 0 ? 0 : fileSize,
+                Content: Array.Empty<byte>()));
         }
 
         return attachments;

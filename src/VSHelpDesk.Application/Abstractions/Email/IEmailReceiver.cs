@@ -37,4 +37,5 @@ public sealed record IncomingEmail(
 public sealed record IncomingEmailAttachment(
     string FileName,
     string ContentType,
-    long FileSize);
+    long FileSize,
+    byte[] Content);
