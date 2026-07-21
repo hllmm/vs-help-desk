@@ -84,6 +84,8 @@ public sealed class AppendCustomerReplyHandler(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var content = InboundMailLimits.NormalizeBody(command.Content);
 
+        // BR-004 / BR-013: append the customer reply to the matched conversation;
+        // never replace or overwrite an earlier message.
         var message = new TicketMessage(
             ticket.Id,
             MessageSenderType.Customer,

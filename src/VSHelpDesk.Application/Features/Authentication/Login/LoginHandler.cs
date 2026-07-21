@@ -17,6 +17,7 @@ public sealed class LoginHandler(
         var user = applicationDbContext.Users.FirstOrDefault(candidate => candidate.Username == command.Username);
         var passwordIsValid = passwordHasher.Verify(command.Password, user?.PasswordHash);
 
+        // BR-015: inactive users receive the same safe response as invalid credentials.
         if (user is null || !user.IsActive || !passwordIsValid)
         {
             return Result.Failure<LoginResult>(InvalidCredentialsError);
@@ -34,4 +35,3 @@ public sealed class LoginHandler(
             user.Role.ToString()));
     }
 }
-

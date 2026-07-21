@@ -9,6 +9,7 @@ using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace VSHelpDesk.Application.UnitTests.Features.MailProcessing;
@@ -81,7 +82,12 @@ public sealed class InboundEmailItemProcessorTests
             FixedNow.UtcDateTime);
         existing.MarkAsWaitingCustomerReply(FixedNow.UtcDateTime.AddMinutes(-30));
         context.TicketsList.Add(existing);
-        var processor = CreateProcessor(context, new RecordingSender(), "VS-000403");
+        var logger = new RecordingLogger<InboundEmailItemProcessor>();
+        var processor = CreateProcessor(
+            context,
+            new RecordingSender(),
+            "VS-000403",
+            logger);
         var mail = Mail(
             "<msg-reply@test>",
             "prior@example.test",
@@ -96,6 +102,40 @@ public sealed class InboundEmailItemProcessorTests
         Assert.False(result.AcknowledgementSent);
         Assert.Single(context.TicketMessagesList);
         Assert.Equal(TicketStatus.CustomerReplied, existing.Status);
+        var log = Assert.Single(logger.InformationMessages);
+        Assert.Contains(existing.Id.ToString(), log, StringComparison.Ordinal);
+        Assert.Contains("WaitingCustomerReply", log, StringComparison.Ordinal);
+        Assert.Contains("CustomerReplied", log, StringComparison.Ordinal);
+        Assert.Contains("reopened=False", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("prior@example.test", log, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Still broken", log, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreatedTicket_WritesSafeSuccessLogAfterPersistence()
+    {
+        var context = new FakeDb();
+        var logger = new RecordingLogger<InboundEmailItemProcessor>();
+        var processor = CreateProcessor(
+            context,
+            new RecordingSender(),
+            "VS-000412",
+            logger);
+        var mail = Mail(
+            "<log-created@test>",
+            "private@example.test",
+            "Private subject",
+            "Private body");
+
+        var result = await processor.ProcessAsync(mail, CancellationToken.None);
+
+        Assert.Equal(InboundEmailItemOutcome.CreatedTicket, result.Outcome);
+        var log = Assert.Single(logger.InformationMessages);
+        Assert.Contains(result.TicketNumber!, log, StringComparison.Ordinal);
+        Assert.Contains("status=New", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("private@example.test", log, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Private subject", log, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Private body", log, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -323,11 +363,12 @@ public sealed class InboundEmailItemProcessorTests
     private static InboundEmailItemProcessor CreateProcessor(
         FakeDb context,
         IEmailSender sender,
-        params string[] numbers)
+        string number,
+        ILogger<InboundEmailItemProcessor>? logger = null)
     {
         var time = new FixedTimeProvider(FixedNow);
         var classifier = new NeverConflictClassifier();
-        var create = new CreateTicketHandler(context, new SequenceNumbers(numbers), time, classifier);
+        var create = new CreateTicketHandler(context, new SequenceNumbers(number), time, classifier);
         var reply = new AppendCustomerReplyHandler(context, time, classifier);
         var dispatcher = new AcknowledgementDispatcher(
             context,
@@ -348,7 +389,7 @@ public sealed class InboundEmailItemProcessorTests
             writer,
             time,
             classifier,
-            NullLogger<InboundEmailItemProcessor>.Instance);
+            logger ?? NullLogger<InboundEmailItemProcessor>.Instance);
     }
 
     private static IncomingEmail Mail(
@@ -388,6 +429,27 @@ public sealed class InboundEmailItemProcessorTests
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<string> InformationMessages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Information)
+            {
+                InformationMessages.Add(formatter(state, exception));
+            }
+        }
     }
 
     private sealed class SequenceNumbers(params string[] numbers) : ITicketNumberGenerator

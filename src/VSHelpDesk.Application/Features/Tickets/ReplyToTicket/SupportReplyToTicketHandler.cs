@@ -129,9 +129,14 @@ public sealed class SupportReplyToTicketHandler(
                 return LogWaitingConflict(ticket.Id, messageId, ticket.Status);
             }
 
+            var oldStatus = ticket.Status;
             ticket.MarkAsWaitingCustomerReply(now);
             await applicationDbContext.SaveChangesAsync(cancellationToken);
-            return (true, TicketStatus.WaitingCustomerReply);
+            return LogWaitingSuccess(
+                ticket.Id,
+                messageId,
+                oldStatus,
+                TicketStatus.WaitingCustomerReply);
         }
         catch (OptimisticConcurrencyException)
         {
@@ -159,9 +164,14 @@ public sealed class SupportReplyToTicketHandler(
 
         try
         {
+            var oldStatus = reloaded.Status;
             reloaded.MarkAsWaitingCustomerReply(now);
             await applicationDbContext.SaveChangesAsync(cancellationToken);
-            return (true, reloaded.Status);
+            return LogWaitingSuccess(
+                reloaded.Id,
+                messageId,
+                oldStatus,
+                reloaded.Status);
         }
         catch (OptimisticConcurrencyException)
         {
@@ -209,5 +219,21 @@ public sealed class SupportReplyToTicketHandler(
             confirmedStatus);
 
         return (false, confirmedStatus);
+    }
+
+    private (bool Updated, TicketStatus ConfirmedStatus) LogWaitingSuccess(
+        Guid ticketId,
+        Guid messageId,
+        TicketStatus oldStatus,
+        TicketStatus newStatus)
+    {
+        logger.LogInformation(
+            "Support reply state updated ticketId={TicketId} messageId={MessageId} oldStatus={OldStatus} newStatus={NewStatus}",
+            ticketId,
+            messageId,
+            oldStatus,
+            newStatus);
+
+        return (true, newStatus);
     }
 }

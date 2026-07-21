@@ -166,6 +166,12 @@ public sealed class InboundEmailItemProcessor(
                 FailureCode: null);
         }
 
+        logger.LogInformation(
+            "Inbound ticket created ticketId={TicketId} ticketNumber={TicketNumber} status={Status}",
+            created.TicketId,
+            created.TicketNumber,
+            "New");
+
         await PersistAttachmentsAsync(
             created.FirstTicketMessageId,
             normalized.Attachments,
@@ -218,6 +224,15 @@ public sealed class InboundEmailItemProcessor(
                 AcknowledgementFailed: false,
                 FailureCode: null);
         }
+
+        logger.LogInformation(
+            "Inbound customer reply appended ticketId={TicketId} ticketNumber={TicketNumber} messageId={MessageId} oldStatus={OldStatus} newStatus={NewStatus} reopened={Reopened}",
+            reply.TicketId,
+            reply.TicketNumber,
+            reply.MessageId,
+            reply.StatusBefore,
+            reply.StatusAfter,
+            reply.WasReopened);
 
         await PersistAttachmentsAsync(
             reply.MessageId,

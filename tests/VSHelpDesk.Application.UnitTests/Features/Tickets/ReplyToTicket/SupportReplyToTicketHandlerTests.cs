@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Email;
@@ -21,7 +22,8 @@ public sealed class SupportReplyToTicketHandlerTests
         var ticket = CreateCustomerRepliedTicket("VS-000301");
         var db = new FakeDb(ticket);
         var sender = new RecordingSender();
-        var handler = CreateHandler(db, sender);
+        var logger = new RecordingLogger<SupportReplyToTicketHandler>();
+        var handler = CreateHandler(db, sender, logger);
         var content = new string('x', SupportReplyLimits.MaxContentLength);
 
         var result = await handler.HandleAsync(
@@ -42,6 +44,12 @@ public sealed class SupportReplyToTicketHandlerTests
         Assert.Single(sender.Sent);
         Assert.False(sender.Sent[0].IsHtml);
         Assert.Equal(content, sender.Sent[0].Body);
+        var log = Assert.Single(logger.InformationMessages);
+        Assert.Contains(ticket.Id.ToString(), log, StringComparison.Ordinal);
+        Assert.Contains("CustomerReplied", log, StringComparison.Ordinal);
+        Assert.Contains("WaitingCustomerReply", log, StringComparison.Ordinal);
+        Assert.DoesNotContain("ada@example.test", log, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(content, log, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -311,13 +319,16 @@ public sealed class SupportReplyToTicketHandlerTests
         }
     }
 
-    private static SupportReplyToTicketHandler CreateHandler(FakeDb db, IEmailSender sender) =>
+    private static SupportReplyToTicketHandler CreateHandler(
+        FakeDb db,
+        IEmailSender sender,
+        ILogger<SupportReplyToTicketHandler>? logger = null) =>
         new(
             db,
             sender,
             new FixedCurrentUser(),
             new FixedTimeProvider(FixedNow),
-            NullLogger<SupportReplyToTicketHandler>.Instance);
+            logger ?? NullLogger<SupportReplyToTicketHandler>.Instance);
 
     private sealed class FixedCurrentUser : ICurrentUserService
     {
@@ -328,6 +339,27 @@ public sealed class SupportReplyToTicketHandlerTests
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class RecordingLogger<T> : ILogger<T>
+    {
+        public List<string> InformationMessages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Information)
+            {
+                InformationMessages.Add(formatter(state, exception));
+            }
+        }
     }
 
     private sealed class RecordingSender : IEmailSender

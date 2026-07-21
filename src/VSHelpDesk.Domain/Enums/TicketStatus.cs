@@ -1,5 +1,6 @@
 namespace VSHelpDesk.Domain.Enums;
 
+/// <summary>BR-018 — the complete supported ticket status set.</summary>
 public enum TicketStatus
 {
     New = 1,
