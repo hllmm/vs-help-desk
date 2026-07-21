@@ -35,7 +35,7 @@ public sealed class EmailOptions
 
     public string ImapFolder { get; init; } = "INBOX";
 
-    public string SupportMailboxAddress { get; init; } = "support@vshelpdesk.local";
+    public string SupportMailboxAddress { get; init; } = string.Empty;
 
     public string SupportMailboxDisplayName { get; init; } = "VS Help Desk";
 }

@@ -19,6 +19,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseEnvironment("Development");
         builder.UseSetting("Auth:SigningKey", TestSigningKey);
         builder.UseSetting("Jobs:ApiKey", TestJobsApiKey);
+        builder.UseSetting("Email:SupportMailboxAddress", "support@example.test");
         builder.UseSetting("SeedUser:Enabled", "true");
         builder.UseSetting("SeedUser:Password", TestSeedPassword);
         builder.UseSetting("SeedUser:Username", "support");

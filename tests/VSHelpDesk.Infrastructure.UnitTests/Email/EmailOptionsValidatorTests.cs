@@ -7,6 +7,14 @@ namespace VSHelpDesk.Infrastructure.UnitTests.Email;
 
 public sealed class EmailOptionsValidatorTests
 {
+    [Fact]
+    public void Defaults_DoNotContainRuntimeMailboxIdentity()
+    {
+        var options = new EmailOptions();
+
+        Assert.Equal(string.Empty, options.SupportMailboxAddress);
+    }
+
     [Theory]
     [InlineData("Production")]
     [InlineData("Staging")]
