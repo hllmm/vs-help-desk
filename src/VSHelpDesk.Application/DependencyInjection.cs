@@ -10,6 +10,8 @@ using VSHelpDesk.Application.Features.Parameters.GetParameterAudit;
 using VSHelpDesk.Application.Features.Parameters.GetParameters;
 using VSHelpDesk.Application.Features.Parameters.UpdateParameter;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
+using VSHelpDesk.Application.Features.Tickets.AssignTicket;
+using VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
@@ -32,6 +34,8 @@ public static class DependencyInjection
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<LoginHandler>();
         services.AddScoped<CreateTicketHandler>();
+        services.AddScoped<AssignTicketHandler>();
+        services.AddScoped<GetAssignableUsersHandler>();
         services.AddScoped<AppendCustomerReplyHandler>();
         services.AddScoped<SupportReplyToTicketHandler>();
         services.AddScoped<ResolveTicketHandler>();
