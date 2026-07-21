@@ -23,21 +23,29 @@ Admin ops + inbound attachments: Admin **Kullanıcılar** UI/API, last-Admin gua
 ## Hızlı başlangıç (sırayla)
 
 ```bash
-# 1) Altyapı (PostgreSQL + Mailpit) — veriyi silmez; down -v kullanma
+# 1) Yerel secret dosyasını oluştur, değerleri kendin doldur ve altyapıyı başlat
+cp .env.example .env
 docker compose up -d postgres mailpit
 
-# 2) Connection string (şifreyi notlara yazma; örnek placeholder)
-export ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=VS_HelpDesk_DB;Username=stajyer;Password=..."
+# 2) Secret ve ilk Admin bootstrap değerlerini user-secrets'e yaz
+# Aşağıdaki <...> alanlarını operatör değerleriyle değiştir.
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=VS_HelpDesk_DB;Username=stajyer;Password=<db-password>" --project src/VSHelpDesk.WebAPI
+dotnet user-secrets set "Auth:SigningKey" "<random-32-byte-key>" --project src/VSHelpDesk.WebAPI
+dotnet user-secrets set "Jobs:ApiKey" "<random-16-character-key>" --project src/VSHelpDesk.WebAPI
+dotnet user-secrets set "Email:SupportMailboxAddress" "<support-mailbox>" --project src/VSHelpDesk.WebAPI
+dotnet user-secrets set "SeedAdmin:Enabled" "true" --project src/VSHelpDesk.WebAPI
+dotnet user-secrets set "SeedAdmin:FullName" "<admin-full-name>" --project src/VSHelpDesk.WebAPI
+dotnet user-secrets set "SeedAdmin:Username" "<admin-username>" --project src/VSHelpDesk.WebAPI
+dotnet user-secrets set "SeedAdmin:Email" "<admin-email>" --project src/VSHelpDesk.WebAPI
+dotnet user-secrets set "SeedAdmin:Password" "<admin-password>" --project src/VSHelpDesk.WebAPI
 
-# 3) Migration + seed logins (SeedUser:Password + SeedAdmin:Password)
+# 3) Migration
 dotnet tool restore
-dotnet user-secrets set "SeedUser:Password" "..." --project src/VSHelpDesk.WebAPI
-dotnet user-secrets set "SeedAdmin:Password" "..." --project src/VSHelpDesk.WebAPI
 dotnet ef database update \
   --project src/VSHelpDesk.Infrastructure \
   --startup-project src/VSHelpDesk.WebAPI
 
-# 4) API (Auth:SigningKey, Jobs:ApiKey, SeedUser:Password, SeedAdmin:Password)
+# 4) API — ilk Development açılışı yalnız yapılandırdığın Admin'i oluşturur
 dotnet restore VSHelpDesk.slnx
 dotnet run --project src/VSHelpDesk.WebAPI
 
@@ -45,18 +53,11 @@ dotnet run --project src/VSHelpDesk.WebAPI
 cd frontend && npm install && npm run dev -- --host 127.0.0.1
 ```
 
-Development **dual seed** accounts (passwords only from user-secrets / env — never commit):
+Repo hazır kullanıcı veya parola içermez. İlk girişten sonra bootstrap seed'ini kapat:
 
-| Username | Role | Password source |
-|----------|------|-----------------|
-| `support` | Support | `SeedUser:Password` |
-| `admin` | Admin | `SeedAdmin:Password` |
+`dotnet user-secrets set "SeedAdmin:Enabled" "false" --project src/VSHelpDesk.WebAPI`
 
-```bash
-dotnet user-secrets set "SeedAdmin:Password" "..." --project src/VSHelpDesk.WebAPI
-```
-
-Production bootstrap: first Admin is still one-time seed/SQL when enabled; after that Admins manage users in the portal (**Kullanıcılar**). At least one **active** Admin is always required (`last-admin-required` on demote/deactivate of the last Admin).
+Sonraki Support/Admin hesapları portalın **Kullanıcılar** ekranından yönetilir. Production ilk Admin'i kontrollü ops/bootstrap süreciyle oluşturur; Development seed'i Production'da çalışmaz. En az bir **aktif** Admin her zaman zorunludur (`last-admin-required`).
 
 | Servis | Adres |
 |--------|--------|
@@ -142,7 +143,7 @@ Demo akışı ve bilinen kısıtlar: [docs/demo-runbook.md](docs/demo-runbook.md
 
 | `Email:ReceiverMode` | Ortam | Not |
 |----------------------|--------|-----|
-| `Fake` | yalnızca **Development** veya **Testing** | Deterministik örnekler; Production/Staging startup fail |
+| `Fake` | yalnızca **Development** veya **Testing** | Varsayılan inbox boş; Production/Staging startup fail |
 | `Imap` | her ortam | `Email:Imap*` zorunlu |
 
 Transport güvenlik modları (`Email:SmtpSecurityMode`, `Email:ImapSecurityMode`): **`None`**, **`StartTls`**, **`SslOnConnect`**. `None` yalnızca Development/Testing’te izinlidir.
@@ -157,23 +158,23 @@ export ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=V
 export Auth__SigningKey="..."          # ≥32 UTF-8 byte
 export Jobs__ApiKey="..."              # ≥16 karakter
 
-# Fake + Mailpit (Development varsayılanı appsettings.Development.json)
+# Boş Fake inbox + Mailpit (Development varsayılanı)
 # Email__ReceiverMode=Fake
 # Email__SmtpHost=localhost Email__SmtpPort=1025 Email__SmtpSecurityMode=None
 
-# Gerçek IMAP (GreenMail veya operasyonel kutu)
+# Gerçek IMAP (değerleri operatör sağlar)
 export Email__ReceiverMode=Imap
-export Email__ImapHost=localhost
-export Email__ImapPort=3143
-export Email__ImapSecurityMode=None
-export Email__ImapUsername=support@vshelpdesk.test
-export Email__ImapPassword=test
-export Email__ImapAccountId=greenmail-support
+export Email__ImapHost="<imap-host>"
+export Email__ImapPort=993
+export Email__ImapSecurityMode=SslOnConnect
+export Email__ImapUsername="<imap-username>"
+export Email__ImapPassword="<imap-password>"
+export Email__ImapAccountId="<imap-account-id>"
 export Email__ImapFolder=INBOX
-export Email__SmtpHost=localhost
-export Email__SmtpPort=3025
-export Email__SmtpSecurityMode=None
-export Email__SupportMailboxAddress=support@vshelpdesk.test
+export Email__SmtpHost="<smtp-host>"
+export Email__SmtpPort=587
+export Email__SmtpSecurityMode=StartTls
+export Email__SupportMailboxAddress="<support-mailbox>"
 ```
 
 ### Kimlik: receipt handle vs Message-ID

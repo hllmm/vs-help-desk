@@ -9,17 +9,15 @@ POST {{VSHelpDesk.WebAPI_HostAddress}}/api/auth/login
 Content-Type: application/json
 
 {
-  "username": "support",
-  "password": "<from-user-secrets SeedUser:Password>"
+  "username": "<configured-username>",
+  "password": "<configured-password>"
 }
 
 ### Current user (Hafta 1)
 GET {{VSHelpDesk.WebAPI_HostAddress}}/api/auth/me
-Authorization: Bearer {{token}}
 
 ### Tickets list (Hafta 3)
 GET {{VSHelpDesk.WebAPI_HostAddress}}/api/tickets
-Authorization: Bearer {{token}}
 
 ### Process incoming emails job (Hafta 2)
 POST {{VSHelpDesk.WebAPI_HostAddress}}/api/jobs/process-incoming-emails

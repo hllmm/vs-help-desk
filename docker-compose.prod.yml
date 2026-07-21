@@ -35,6 +35,7 @@ services:
       Auth__SigningKey: ${AUTH_SIGNING_KEY:?Set AUTH_SIGNING_KEY (>=32 bytes)}
       Jobs__ApiKey: ${JOBS_API_KEY:?Set JOBS_API_KEY (>=16 chars)}
       SeedUser__Enabled: "false"
+      SeedAdmin__Enabled: "false"
       FileStorage__RootPath: /var/vshelpdesk/attachments
       Email__ReceiverMode: ${EMAIL_RECEIVER_MODE:-Imap}
       Email__SmtpHost: ${EMAIL_SMTP_HOST:-}
