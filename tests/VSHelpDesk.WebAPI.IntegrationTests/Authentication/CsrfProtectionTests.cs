@@ -26,7 +26,8 @@ public sealed class CsrfProtectionTests : IClassFixture<CustomWebApplicationFact
     [Fact]
     public async Task MutatingRequest_WithAuthCookie_WithoutCsrfHeader_Returns403()
     {
-        var (username, password) = GetSeedCredentials();
+        // Parameters require Admin; CSRF is evaluated before role authorization.
+        var (username, password) = GetAdminSeedCredentials();
         using var client = CookieAuthTestHelper.CreateCookieClient(factory);
 
         using var loginResponse = await CookieAuthTestHelper.LoginAsync(client, username, password);
@@ -47,7 +48,8 @@ public sealed class CsrfProtectionTests : IClassFixture<CustomWebApplicationFact
     [Fact]
     public async Task MutatingRequest_WithMatchingCsrf_SucceedsPastCsrfGate()
     {
-        var (username, password) = GetSeedCredentials();
+        // Parameters require Admin; use admin seed so role auth does not mask CSRF success.
+        var (username, password) = GetAdminSeedCredentials();
         using var client = CookieAuthTestHelper.CreateCookieClient(factory);
 
         using var loginResponse = await CookieAuthTestHelper.LoginAsync(client, username, password);
@@ -132,4 +134,7 @@ public sealed class CsrfProtectionTests : IClassFixture<CustomWebApplicationFact
         Assert.False(string.IsNullOrWhiteSpace(password), "SeedUser:Password must be configured.");
         return (username!, password!);
     }
+
+    private (string Username, string Password) GetAdminSeedCredentials()
+        => CookieAuthTestHelper.GetAdminSeedCredentials(factory);
 }

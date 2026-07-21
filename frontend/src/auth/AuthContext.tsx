@@ -33,11 +33,13 @@ function toStoredUser(user: {
   userId: string
   fullName: string
   username: string
+  role: StoredUser['role']
 }): StoredUser {
   return {
     userId: String(user.userId),
     fullName: user.fullName,
     username: user.username,
+    role: user.role,
   }
 }
 

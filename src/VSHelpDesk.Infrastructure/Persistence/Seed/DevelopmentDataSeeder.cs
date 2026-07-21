@@ -3,33 +3,58 @@ using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Domain.Enums;
 
 namespace VSHelpDesk.Infrastructure.Persistence.Seed;
 
 public sealed class DevelopmentDataSeeder(
     IApplicationDbContext applicationDbContext,
     IPasswordHasher passwordHasher,
-    IOptions<SeedUserOptions> seedUserOptions)
+    IOptions<SeedUserOptions> seedUserOptions,
+    IOptions<SeedAdminOptions> seedAdminOptions)
 {
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        var options = seedUserOptions.Value;
-        if (!options.Enabled)
+        var userOptions = seedUserOptions.Value;
+        if (userOptions.Enabled)
         {
-            return;
+            await EnsureUserAsync(
+                Require(userOptions.FullName, "SeedUser:FullName"),
+                Require(userOptions.Username, "SeedUser:Username"),
+                Require(userOptions.Email, "SeedUser:Email"),
+                Require(userOptions.Password, "SeedUser:Password"),
+                UserRole.Support,
+                cancellationToken);
         }
 
-        var fullName = Require(options.FullName, "SeedUser:FullName");
-        var username = Require(options.Username, "SeedUser:Username");
-        var email = Require(options.Email, "SeedUser:Email");
-        var password = Require(options.Password, "SeedUser:Password");
+        var adminOptions = seedAdminOptions.Value;
+        if (adminOptions.Enabled)
+        {
+            await EnsureUserAsync(
+                Require(adminOptions.FullName, "SeedAdmin:FullName"),
+                Require(adminOptions.Username, "SeedAdmin:Username"),
+                Require(adminOptions.Email, "SeedAdmin:Email"),
+                Require(adminOptions.Password, "SeedAdmin:Password"),
+                UserRole.Admin,
+                cancellationToken);
+        }
+    }
 
+    private async Task EnsureUserAsync(
+        string fullName,
+        string username,
+        string email,
+        string password,
+        UserRole role,
+        CancellationToken cancellationToken)
+    {
         var existing = await applicationDbContext.Users
-            .FirstOrDefaultAsync(user => user.Username == username, cancellationToken);
+            .FirstOrDefaultAsync(u => u.Username == username, cancellationToken);
         if (existing is not null)
         {
             // Keep local/CI seed password in sync with configuration (user may already exist).
             existing.ReplacePasswordHash(passwordHasher.Hash(password));
+            existing.AssignRole(role); // deterministic local roles
             await applicationDbContext.SaveChangesAsync(cancellationToken);
             return;
         }
@@ -38,7 +63,8 @@ public sealed class DevelopmentDataSeeder(
             fullName,
             username,
             email,
-            passwordHasher.Hash(password)));
+            passwordHasher.Hash(password),
+            role));
         await applicationDbContext.SaveChangesAsync(cancellationToken);
     }
 

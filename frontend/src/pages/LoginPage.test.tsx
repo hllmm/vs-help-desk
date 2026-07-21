@@ -50,6 +50,7 @@ describe('LoginPage', () => {
           userId: 'user-1',
           fullName: 'Destek Kullanıcısı',
           username: 'support',
+          role: 'Support',
         })
       }
       if (url.includes('/api/tickets')) {

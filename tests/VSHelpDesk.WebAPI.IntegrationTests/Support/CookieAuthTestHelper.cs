@@ -121,6 +121,86 @@ public static class CookieAuthTestHelper
         return (authJwt, csrf, userId);
     }
 
+    /// <summary>
+    /// Logs in as the configured seed admin user with a cookie-aware client.
+    /// Auth is carried by the HttpOnly cookie jar; mutating requests need CSRF
+    /// via <see cref="AddCsrf"/> or <see cref="UseDefaultCsrfHeader"/>.
+    /// </summary>
+    public static async Task<(HttpClient Client, string Csrf, Guid UserId)> LoginAsAdminAsync(
+        WebApplicationFactory<Program> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+
+        var (username, password) = GetAdminSeedCredentials(factory);
+
+        var client = CreateCookieClient(factory);
+        HttpResponseMessage loginResponse;
+        try
+        {
+            loginResponse = await LoginAsync(client, username, password);
+        }
+        catch
+        {
+            client.Dispose();
+            throw;
+        }
+
+        using (loginResponse)
+        {
+            if (!loginResponse.IsSuccessStatusCode)
+            {
+                client.Dispose();
+                var body = await loginResponse.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(
+                    $"Seed admin login failed with {(int)loginResponse.StatusCode}: {body}");
+            }
+
+            var setCookies = GetSetCookieHeaders(loginResponse);
+            var csrf = GetCookieValue(setCookies, CsrfCookieName);
+            var authJwt = GetCookieValue(setCookies, AuthCookieName);
+            if (string.IsNullOrWhiteSpace(csrf))
+            {
+                client.Dispose();
+                throw new InvalidOperationException(
+                    $"Expected Set-Cookie {CsrfCookieName} after successful admin login.");
+            }
+
+            if (string.IsNullOrWhiteSpace(authJwt))
+            {
+                client.Dispose();
+                throw new InvalidOperationException(
+                    $"Expected Set-Cookie {AuthCookieName} after successful admin login.");
+            }
+
+            using var doc = JsonDocument.Parse(await loginResponse.Content.ReadAsStringAsync());
+            var userId = doc.RootElement.GetProperty("userId").GetGuid();
+            if (userId == Guid.Empty)
+            {
+                client.Dispose();
+                throw new InvalidOperationException("Admin login body userId was empty.");
+            }
+
+            return (client, csrf, userId);
+        }
+    }
+
+    public static (string Username, string Password) GetAdminSeedCredentials(
+        WebApplicationFactory<Program> factory)
+    {
+        ArgumentNullException.ThrowIfNull(factory);
+        using var scope = factory.Services.CreateScope();
+        var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
+        var username = configuration["SeedAdmin:Username"] ?? "admin";
+        var password = configuration["SeedAdmin:Password"];
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException(
+                "SeedAdmin:Password required for admin integration login.");
+        }
+
+        return (username, password);
+    }
+
     public static void AddCsrf(HttpRequestMessage request, string csrf)
     {
         ArgumentNullException.ThrowIfNull(request);

@@ -27,14 +27,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
               >
                 Talepler
               </NavLink>
-              <NavLink
-                to="/parameters"
-                className={({ isActive }) =>
-                  isActive ? 'app-nav__link app-nav__link--active' : 'app-nav__link'
-                }
-              >
-                Parametreler
-              </NavLink>
+              {user?.role === 'Admin' ? (
+                <NavLink
+                  to="/parameters"
+                  className={({ isActive }) =>
+                    isActive
+                      ? 'app-nav__link app-nav__link--active'
+                      : 'app-nav__link'
+                  }
+                >
+                  Parametreler
+                </NavLink>
+              ) : null}
             </nav>
           ) : null}
         </div>

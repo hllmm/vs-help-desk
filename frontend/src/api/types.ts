@@ -5,11 +5,14 @@ export type LoginRequest = {
   password: string
 }
 
+export type UserRole = 'Support' | 'Admin'
+
 /** UC-001 login body — JWT is HttpOnly cookie; no accessToken. */
 export type LoginResponse = {
   userId: string
   fullName: string
   username: string
+  role: UserRole
 }
 
 /** GET /api/auth/me — mirrors CurrentUserResponse. */
@@ -17,6 +20,7 @@ export type CurrentUser = {
   userId: string
   fullName: string
   username: string
+  role: UserRole
 }
 
 export type TicketListItem = {

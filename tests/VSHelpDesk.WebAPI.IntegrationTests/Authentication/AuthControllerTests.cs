@@ -8,6 +8,7 @@ using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.WebAPI.Authentication;
 using VSHelpDesk.WebAPI.Contracts.Authentication;
@@ -36,6 +37,7 @@ public sealed class AuthControllerTests
         Assert.Equal(user.Id, body.UserId);
         Assert.Equal(user.FullName, body.FullName);
         Assert.Equal(user.Username, body.Username);
+        Assert.Equal(UserRole.Support.ToString(), body.Role);
 
         var json = JsonSerializer.Serialize(body);
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
@@ -94,7 +96,8 @@ public sealed class AuthControllerTests
                     [
                         new Claim("sub", userId.ToString()),
                         new Claim("unique_name", "support"),
-                        new Claim("full_name", "Local Support User")
+                        new Claim("full_name", "Local Support User"),
+                        new Claim("role", UserRole.Support.ToString())
                     ],
                     authenticationType: "Bearer"))
             }
@@ -108,6 +111,7 @@ public sealed class AuthControllerTests
         Assert.Equal(userId, body.UserId);
         Assert.Equal("support", body.Username);
         Assert.Equal("Local Support User", body.FullName);
+        Assert.Equal(UserRole.Support.ToString(), body.Role);
     }
 
     [Fact]
@@ -151,7 +155,7 @@ public sealed class AuthControllerTests
     }
 
     private static User CreateUser(string username = "active.user") =>
-        new("Active User", username, $"{username}@example.test", "stored-password-hash");
+        new("Active User", username, $"{username}@example.test", "stored-password-hash", UserRole.Support);
 
     private sealed class FakeApplicationDbContext(params User[] users) : IApplicationDbContext
     {

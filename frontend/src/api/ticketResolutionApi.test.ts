@@ -73,6 +73,7 @@ describe('ticket resolution API', () => {
         userId: '1',
         fullName: 'Test',
         username: 'test',
+        role: 'Support',
       }),
     )
     const assign = vi.fn()

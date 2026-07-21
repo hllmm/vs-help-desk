@@ -10,10 +10,13 @@ const USER_KEY = 'vshd.user'
 /** Legacy key from Bearer era — always cleared. */
 const LEGACY_TOKEN_KEY = 'vshd.accessToken'
 
+import type { UserRole } from '../api/types'
+
 export type StoredUser = {
   userId: string
   fullName: string
   username: string
+  role: UserRole
 }
 
 export function getStoredUser(): StoredUser | null {

@@ -28,7 +28,8 @@ public sealed class JwtTokenService : ITokenService
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
-            new Claim("full_name", user.FullName)
+            new Claim("full_name", user.FullName),
+            new Claim("role", user.Role.ToString())
         };
         var token = new JwtSecurityToken(
             authOptions.Issuer,

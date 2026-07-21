@@ -83,6 +83,7 @@ const SEED_USER = {
   userId: '11111111-1111-1111-1111-111111111111',
   fullName: 'Ada Destek',
   username: 'ada.destek',
+  role: 'Support',
 }
 
 const LOGOUT_API = 'http://127.0.0.1:4173/api/auth/logout'

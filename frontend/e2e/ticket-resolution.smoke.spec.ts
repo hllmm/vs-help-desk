@@ -73,6 +73,7 @@ const SEED_USER = {
   userId: CLOSER_USER_ID,
   fullName: 'Ada Destek',
   username: 'ada.destek',
+  role: 'Support',
 }
 
 const ME_API = `${ORIGIN}/api/auth/me`

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Features.Authentication.Login;
+using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.WebAPI.Authentication;
 using VSHelpDesk.WebAPI.Contracts.Authentication;
@@ -50,7 +51,8 @@ public sealed class AuthController(
         return Ok(new LoginResponse(
             login.UserId,
             login.FullName,
-            login.Username));
+            login.Username,
+            login.Role));
     }
 
     /// <summary>POST api/auth/logout — clears auth + CSRF cookies</summary>
@@ -73,12 +75,14 @@ public sealed class AuthController(
             ?? User.FindFirstValue(ClaimTypes.Name)
             ?? string.Empty;
         var fullName = User.FindFirstValue("full_name") ?? string.Empty;
+        var role = User.FindFirstValue("role") ?? UserRole.Support.ToString();
 
         if (!Guid.TryParse(userIdValue, out var userId))
         {
             return Unauthorized(new { message = "Unauthorized." });
         }
 
-        return Ok(new CurrentUserResponse(userId, username, fullName));
+        return Ok(new CurrentUserResponse(userId, username, fullName, role));
     }
 }
+

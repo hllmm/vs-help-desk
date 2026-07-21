@@ -1,3 +1,5 @@
+using VSHelpDesk.Domain.Enums;
+
 namespace VSHelpDesk.Domain.Entities;
 
 public sealed class User
@@ -11,6 +13,8 @@ public sealed class User
     public string Email { get; private set; } = string.Empty;
 
     public string PasswordHash { get; private set; } = string.Empty;
+
+    public UserRole Role { get; private set; }
 
     public bool IsActive { get; private set; } = true;
 
@@ -26,13 +30,17 @@ public sealed class User
         string fullName,
         string username,
         string email,
-        string passwordHash)
+        string passwordHash,
+        UserRole role)
     {
         FullName = fullName;
         Username = username;
         Email = email;
         PasswordHash = passwordHash;
+        Role = role;
     }
+
+    public void AssignRole(UserRole role) => Role = role;
 
     public void RecordLogin(DateTime loginDate)
     {
