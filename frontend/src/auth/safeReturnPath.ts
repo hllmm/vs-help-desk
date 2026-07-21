@@ -2,6 +2,12 @@
  * Post-login return path: only same-app relative paths.
  * Rejects protocol-relative and absolute URLs.
  */
+function containsAsciiControlCharacter(value: string): boolean {
+  return Array.from(value).some(
+    (character) => character.charCodeAt(0) <= 0x1f,
+  )
+}
+
 export function resolveSafeReturnPath(
   candidate: string | undefined | null,
   fallback = '/tickets',
@@ -17,8 +23,8 @@ export function resolveSafeReturnPath(
   if (path.startsWith('//') || path.includes('://')) {
     return fallback
   }
-  // Disallow backslash tricks and control characters
-  if (path.includes('\\') || /[\u0000-\u001f]/.test(path)) {
+  // Disallow backslash tricks and control characters.
+  if (path.includes('\\') || containsAsciiControlCharacter(path)) {
     return fallback
   }
 

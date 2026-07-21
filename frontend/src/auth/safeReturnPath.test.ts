@@ -18,4 +18,14 @@ describe('resolveSafeReturnPath', () => {
     expect(resolveSafeReturnPath(null)).toBe('/tickets')
     expect(resolveSafeReturnPath('')).toBe('/tickets')
   })
+
+  it('rejects backslashes and ASCII control characters', () => {
+    expect(resolveSafeReturnPath('/tickets\\outside')).toBe('/tickets')
+    expect(
+      resolveSafeReturnPath(`/tickets/${String.fromCharCode(0)}outside`),
+    ).toBe('/tickets')
+    expect(
+      resolveSafeReturnPath(`/tickets/${String.fromCharCode(31)}outside`),
+    ).toBe('/tickets')
+  })
 })
