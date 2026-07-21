@@ -70,6 +70,21 @@ export type TicketDetails = {
   attachments: TicketAttachmentMeta[]
 }
 
+/** Active internal user eligible for BR-011 ticket assignment. */
+export type AssignableUser = {
+  id: string
+  fullName: string
+  username: string
+}
+
+/** PUT /api/tickets/{id}/assignee response. */
+export type AssignTicketResult = {
+  ticketId: string
+  assignedUserId: string | null
+  updatedAt: string
+  changed: boolean
+}
+
 export type SupportReplyResult = {
   ticketId: string
   ticketNumber: string

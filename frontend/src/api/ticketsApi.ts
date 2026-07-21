@@ -1,5 +1,7 @@
 import { apiRequest } from './client'
 import type {
+  AssignableUser,
+  AssignTicketResult,
   ResolveTicketResult,
   SupportReplyResult,
   TicketDetails,
@@ -29,6 +31,29 @@ export function fetchTicketDetails(
   return apiRequest<TicketDetails>(
     `/api/tickets/${encodeURIComponent(ticketId)}`,
     { signal: options.signal },
+  )
+}
+
+export function fetchAssignableUsers(
+  options: FetchTicketsOptions = {},
+): Promise<AssignableUser[]> {
+  return apiRequest<AssignableUser[]>('/api/tickets/assignees', {
+    signal: options.signal,
+  })
+}
+
+export function assignTicket(
+  ticketId: string,
+  userId: string | null,
+  options: TicketMutationOptions = {},
+): Promise<AssignTicketResult> {
+  return apiRequest<AssignTicketResult>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/assignee`,
+    {
+      method: 'PUT',
+      body: { userId },
+      signal: options.signal,
+    },
   )
 }
 
