@@ -92,13 +92,14 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 - `VITE_API_BASE_URL` is an optional build-time override (avoid for cookie auth — cross-origin cookies need extra CORS/`SameSite` setup).
 - Production bundle: relative `/api/...` behind same-origin reverse proxy.
 - Auth: login sets HttpOnly `vshd.auth` + readable `vshd.csrf`; SPA uses `credentials: 'include'` and `X-CSRF-Token` on mutations; **no** JWT in sessionStorage/localStorage; bootstrap via `GET /api/auth/me`.
-- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply + resolve), `/users` (Admin user management), `/parameters` (UC-010 list/edit allowlisted keys + change history — **Admin** only; Support has no nav/route access for Admin pages).
+- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + assignment + reply + resolve), `/users` (Admin user management), `/parameters` (UC-010 list/edit allowlisted keys + change history — **Admin** only; Support has no nav/route access for Admin pages).
 - Detail messages render as literal text; attachments download via authenticated Blob + cookies (no token in URL). Portal upload and **inbound IMAP/Fake** attachments share the same storage path and download UX.
 
 - Support reply: `POST /api/tickets/{id}/replies` with `{ content }` only; max **65,536** characters; saved-vs-delivered outcomes include SMTP failure warning without status change.
+- Assignment (BR-011): `GET /api/tickets/assignees` returns active users with minimal fields; `PUT /api/tickets/{id}/assignee` accepts `{ "userId": "<guid>" }` or `{ "userId": null }`. Any authenticated Support/Admin user may assign; mutations require CSRF. Resolved tickets and inactive/unknown targets are rejected.
 - Manual resolve (detail): confirm dialog → `POST /api/tickets/{id}/resolve` (no body); server-confirmed **Çözüldü** state; reply composer hidden while resolved.
 - Frontend scripts: `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` (see [frontend/README.md](frontend/README.md)).
-- Browser evidence: `portal.smoke.spec.ts` (Week 2), `ticket-detail.smoke.spec.ts` (Week 3), `ticket-resolution.smoke.spec.ts` (Week 4) — four Playwright projects.
+- Browser evidence: `portal.smoke.spec.ts` (Week 2), `ticket-detail.smoke.spec.ts` (Week 3 + responsive assignment), `ticket-resolution.smoke.spec.ts` (Week 4) — four Playwright projects.
 
 ## Ticket çözümleme ve reopen (Hafta 4)
 
@@ -115,7 +116,8 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 | `GET /api/parameters/audit` | Cookie auth + **Admin**; recent parameter history (`key`, `take` query); Parametreler panelinde de görünür |
 | `GET/POST /api/users`, `PUT /api/users/{id}`, `POST /api/users/{id}/password` | Cookie auth + **Admin** (+ CSRF on mutations); list/create/update role-active/set password; password hash asla dönmez; son aktif Admin demote/deactivate → **400** `last-admin-required` |
 | Inbound ekler | `process-incoming-emails` → `ITicketAttachmentWriter` → `IFileStorage` + `TicketAttachment`; policy/size/type skip (mail/ticket düşmez) |
-| Atama | **Uygulanmadı** — public assign rotası yok |
+| `GET /api/tickets/assignees` | Cookie auth; yalnızca aktif kullanıcıların `id`, `fullName`, `username` alanları |
+| `PUT /api/tickets/{id}/assignee` | Cookie auth + CSRF; aktif kullanıcıya ata/yeniden ata, `userId: null` ile kaldır; aynı değer idempotent; Resolved → **400** `ticket-resolved`; eşzamanlı güncelleme → **409** `ticket-concurrency-conflict` |
 
 Zamanlayıcı kurulumu uygulama **dışındadır**. Örnek dış çağrı / cron (yer tutucu anahtar):
 
@@ -227,7 +229,7 @@ Bağımlılık yönü: **Domain ← Application ← Infrastructure ← WebAPI** 
 |-------|------------|----------------------|
 | **1** | Ortam, DB şeması, User + Login (UC-001) | Domain/User, Infrastructure/Persistence + Authentication, Features/Authentication, Controllers |
 | **2** | Ticket/Message, e-posta alma (UC-002), eşleştirme (BR-005) | Domain/Ticket*, Features/MailProcessing + Tickets/CreateTicket, Infrastructure/Email |
-| **3** | Portal list/detail/reply, ekler (UC-003…005, BR-012) | Features/Tickets/*, Features/Attachments, frontend/, Infrastructure/Storage |
+| **3** | Portal list/detail/reply, atama, ekler (UC-003…005, BR-011/012) | Features/Tickets/*, Features/Attachments, frontend/, Infrastructure/Storage |
 | **4** | Otomatik resolve, manuel resolve/reopen, test/demo (UC-007…009) | `ResolveTicket`, `ResolveInactiveTickets`, mail reopen (UC-009); korumalı Jobs endpoint; portal resolve UI |
 
 - **20 iş günlük şahsi takip planı:** [docs/gunluk-plan.md](docs/gunluk-plan.md)
