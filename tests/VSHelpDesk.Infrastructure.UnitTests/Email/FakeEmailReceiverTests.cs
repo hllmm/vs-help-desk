@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Email;
@@ -27,6 +28,26 @@ public sealed class FakeEmailReceiverTests
         Assert.DoesNotContain(
             second,
             message => message.ReceiptHandle.Value == first[0].ReceiptHandle.Value);
+    }
+
+    [Fact]
+    public async Task FetchUnread_IncludesSampleTextAttachmentOnFirstMessage()
+    {
+        var receiver = new FakeEmailReceiver(
+            Options.Create(new EmailOptions { ReceiverMode = "Fake" }),
+            NullLogger<FakeEmailReceiver>.Instance);
+
+        var unread = await receiver.FetchUnreadAsync();
+        var first = Assert.Single(unread, m => m.MessageId == "<fake-unread-001@vshelpdesk.local>");
+        var attachment = Assert.Single(first.Attachments);
+
+        Assert.Equal("note.txt", attachment.FileName);
+        Assert.Equal("text/plain", attachment.ContentType);
+        Assert.Equal(Encoding.UTF8.GetBytes("fake-attachment"), attachment.Content);
+        Assert.Equal(attachment.Content.Length, attachment.FileSize);
+
+        var second = Assert.Single(unread, m => m.MessageId == "<fake-unread-002@vshelpdesk.local>");
+        Assert.Empty(second.Attachments);
     }
 
     [Fact]

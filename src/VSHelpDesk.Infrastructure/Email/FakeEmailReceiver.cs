@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Email;
@@ -11,6 +12,8 @@ public sealed class FakeEmailReceiver(
     IOptions<EmailOptions> emailOptions,
     ILogger<FakeEmailReceiver> logger) : IEmailReceiver
 {
+    private static readonly byte[] NoteAttachmentBytes = Encoding.UTF8.GetBytes("fake-attachment");
+
     private readonly List<IncomingEmail> unread =
     [
         new(
@@ -22,7 +25,14 @@ public sealed class FakeEmailReceiver(
             Body: "Hello, our office printer stopped working this morning.",
             IsHtml: false,
             ReceivedAt: DateTime.UtcNow.AddMinutes(-15),
-            Attachments: Array.Empty<IncomingEmailAttachment>()),
+            Attachments:
+            [
+                new IncomingEmailAttachment(
+                    FileName: "note.txt",
+                    ContentType: "text/plain",
+                    FileSize: NoteAttachmentBytes.Length,
+                    Content: NoteAttachmentBytes)
+            ]),
         new(
             MessageId: "<fake-unread-002@vshelpdesk.local>",
             ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, "fake\0fake-unread-002"),

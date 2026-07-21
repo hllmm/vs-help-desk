@@ -1,9 +1,11 @@
+using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Infrastructure.Email;
+using VSHelpDesk.Infrastructure.Storage;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Email;
 
@@ -160,7 +162,76 @@ public sealed class ImapEmailReceiverTests
         Assert.DoesNotContain("mark-me@example.test", item.ReceiptHandle.Value, StringComparison.Ordinal);
     }
 
-    private static ImapEmailReceiver CreateReceiver(FakeImapMailboxClient client)
+    [Fact]
+    public async Task Receiver_MapsAttachmentBytes_WithinSizeCap()
+    {
+        var payload = Encoding.UTF8.GetBytes("hello-attachment");
+        var mime = BuildMessageWithAttachment(
+            fileName: "note.txt",
+            contentType: "text/plain",
+            content: payload);
+
+        var client = new FakeImapMailboxClient
+        {
+            Items = [new ImapMailboxItem(UidValidity: 1u, Uid: 1u, Message: mime)]
+        };
+
+        var receiver = CreateReceiver(client, maxFileSizeBytes: 1024);
+        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var attachment = Assert.Single(item.Attachments);
+
+        Assert.Equal("note.txt", attachment.FileName);
+        Assert.Equal("text/plain", attachment.ContentType);
+        Assert.Equal(payload.Length, attachment.FileSize);
+        Assert.Equal(payload, attachment.Content);
+    }
+
+    [Fact]
+    public async Task Receiver_OmitsAttachment_WhenKnownSizeExceedsCap()
+    {
+        var payload = Encoding.UTF8.GetBytes("too-large-payload-for-cap");
+        var mime = BuildMessageWithAttachment(
+            fileName: "big.txt",
+            contentType: "text/plain",
+            content: payload);
+
+        var client = new FakeImapMailboxClient
+        {
+            Items = [new ImapMailboxItem(UidValidity: 1u, Uid: 2u, Message: mime)]
+        };
+
+        var receiver = CreateReceiver(client, maxFileSizeBytes: 4);
+        var item = Assert.Single(await receiver.FetchUnreadAsync());
+
+        Assert.Empty(item.Attachments);
+    }
+
+    private static MimeMessage BuildMessageWithAttachment(
+        string fileName,
+        string contentType,
+        byte[] content)
+    {
+        var mime = new MimeMessage();
+        mime.From.Add(new MailboxAddress("Eve", "eve@example.test"));
+        mime.Subject = "With attachment";
+        mime.MessageId = "with-attachment@example.test";
+
+        var body = new TextPart("plain") { Text = "Body with attachment" };
+        var attachment = new MimePart(contentType)
+        {
+            Content = new MimeContent(new MemoryStream(content)),
+            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+            ContentTransferEncoding = ContentEncoding.Base64,
+            FileName = fileName
+        };
+
+        mime.Body = new Multipart("mixed") { body, attachment };
+        return mime;
+    }
+
+    private static ImapEmailReceiver CreateReceiver(
+        FakeImapMailboxClient client,
+        long maxFileSizeBytes = 10 * 1024 * 1024)
     {
         var options = Options.Create(new EmailOptions
         {
@@ -177,8 +248,15 @@ public sealed class ImapEmailReceiverTests
             SupportMailboxAddress = "support@vshelpdesk.test"
         });
 
+        var fileStorageOptions = Options.Create(new FileStorageOptions
+        {
+            RootPath = "storage",
+            MaxFileSizeBytes = maxFileSizeBytes
+        });
+
         return new ImapEmailReceiver(
             options,
+            fileStorageOptions,
             client,
             new HtmlToPlainTextConverter(),
             NullLogger<ImapEmailReceiver>.Instance);

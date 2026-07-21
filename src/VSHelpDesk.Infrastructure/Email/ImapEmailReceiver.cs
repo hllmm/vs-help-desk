@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Infrastructure.Storage;
 
 namespace VSHelpDesk.Infrastructure.Email;
 
@@ -10,10 +11,13 @@ namespace VSHelpDesk.Infrastructure.Email;
 /// </summary>
 public sealed class ImapEmailReceiver(
     IOptions<EmailOptions> emailOptions,
+    IOptions<FileStorageOptions> fileStorageOptions,
     IImapMailboxClient mailboxClient,
     HtmlToPlainTextConverter htmlConverter,
     ILogger<ImapEmailReceiver> logger) : IEmailReceiver
 {
+    private const int CopyBufferSize = 8192;
+
     public async Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
         CancellationToken cancellationToken = default)
     {
@@ -168,8 +172,9 @@ public sealed class ImapEmailReceiver(
         return atIndex > 0 && atIndex < value.Length - 1;
     }
 
-    private static IReadOnlyList<IncomingEmailAttachment> MapAttachments(MimeMessage message)
+    private IReadOnlyList<IncomingEmailAttachment> MapAttachments(MimeMessage message)
     {
+        var maxFileSizeBytes = fileStorageOptions.Value.MaxFileSizeBytes;
         var attachments = new List<IncomingEmailAttachment>();
 
         foreach (var attachment in message.Attachments)
@@ -196,28 +201,82 @@ public sealed class ImapEmailReceiver(
                 contentType = "application/octet-stream";
             }
 
-            var fileSize = part.ContentDisposition?.Size ?? 0L;
-            if (fileSize <= 0 && part.Content is not null)
+            var declaredSize = part.ContentDisposition?.Size ?? 0L;
+            if (declaredSize > maxFileSizeBytes)
             {
-                try
-                {
-                    using var stream = part.Content.Open();
-                    if (stream.CanSeek)
-                    {
-                        fileSize = stream.Length;
-                    }
-                }
-                catch
-                {
-                    fileSize = 0;
-                }
+                logger.LogWarning(
+                    "IMAP attachment omitted as oversized fileName={FileName} declaredSize={DeclaredSize} maxFileSizeBytes={MaxFileSizeBytes}",
+                    fileName,
+                    declaredSize,
+                    maxFileSizeBytes);
+                continue;
             }
 
-            attachments.Add(new IncomingEmailAttachment(
-                FileName: fileName,
-                ContentType: contentType,
-                FileSize: fileSize < 0 ? 0 : fileSize,
-                Content: Array.Empty<byte>()));
+            if (part.Content is null)
+            {
+                attachments.Add(new IncomingEmailAttachment(
+                    FileName: fileName,
+                    ContentType: contentType,
+                    FileSize: 0,
+                    Content: Array.Empty<byte>()));
+                continue;
+            }
+
+            try
+            {
+                using var stream = part.Content.Open();
+                if (stream.CanSeek && stream.Length > maxFileSizeBytes)
+                {
+                    logger.LogWarning(
+                        "IMAP attachment omitted as oversized fileName={FileName} streamLength={StreamLength} maxFileSizeBytes={MaxFileSizeBytes}",
+                        fileName,
+                        stream.Length,
+                        maxFileSizeBytes);
+                    continue;
+                }
+
+                using var buffer = new MemoryStream();
+                var chunk = new byte[CopyBufferSize];
+                long total = 0;
+                int read;
+                var oversize = false;
+
+                while ((read = stream.Read(chunk, 0, chunk.Length)) > 0)
+                {
+                    total += read;
+                    // Hard stop at MaxFileSizeBytes + 1 so we never retain oversize bodies.
+                    if (total > maxFileSizeBytes)
+                    {
+                        oversize = true;
+                        break;
+                    }
+
+                    buffer.Write(chunk, 0, read);
+                }
+
+                if (oversize)
+                {
+                    logger.LogWarning(
+                        "IMAP attachment omitted as oversized during copy fileName={FileName} maxFileSizeBytes={MaxFileSizeBytes}",
+                        fileName,
+                        maxFileSizeBytes);
+                    continue;
+                }
+
+                var content = buffer.ToArray();
+                attachments.Add(new IncomingEmailAttachment(
+                    FileName: fileName,
+                    ContentType: contentType,
+                    FileSize: content.Length,
+                    Content: content));
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "IMAP attachment content load failed; omitting fileName={FileName}",
+                    fileName);
+            }
         }
 
         return attachments;

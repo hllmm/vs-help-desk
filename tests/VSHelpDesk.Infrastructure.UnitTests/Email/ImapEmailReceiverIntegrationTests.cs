@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using MimeKit;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Infrastructure.Email;
+using VSHelpDesk.Infrastructure.Storage;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Email;
 
@@ -39,8 +40,10 @@ public sealed class ImapEmailReceiverIntegrationTests
         await using var mailboxClient = new MailKitImapMailboxClient(
             options,
             NullLogger<MailKitImapMailboxClient>.Instance);
+        var fileStorageOptions = Options.Create(new FileStorageOptions());
         var receiver = new ImapEmailReceiver(
             options,
+            fileStorageOptions,
             mailboxClient,
             new HtmlToPlainTextConverter(),
             NullLogger<ImapEmailReceiver>.Instance);
