@@ -3,7 +3,10 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using VSHelpDesk.Application.Features.Parameters;
+using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.WebAPI.IntegrationTests.Support;
 
 namespace VSHelpDesk.WebAPI.IntegrationTests.Parameters;
@@ -216,4 +219,58 @@ public sealed class ParametersApiTests : IClassFixture<CustomWebApplicationFacto
             Assert.NotEqual(HttpStatusCode.NotImplemented, response.StatusCode);
         }
     }
+
+    [Fact]
+    public async Task PutParameter_Admin_WritesAuditRowWithOldNewAndActor()
+    {
+        var (client, csrf, adminId) = await CookieAuthTestHelper.LoginAsAdminAsync(factory);
+        using (client)
+        {
+            CookieAuthTestHelper.UseDefaultCsrfHeader(client, csrf);
+
+            using var beforeResponse = await client.GetAsync("/api/parameters");
+            beforeResponse.EnsureSuccessStatusCode();
+            using var beforeDoc = JsonDocument.Parse(await beforeResponse.Content.ReadAsStringAsync());
+            var previousValue = beforeDoc.RootElement.EnumerateArray()
+                .Single(element =>
+                    element.GetProperty("key").GetString()
+                    == ApplicationParameterCatalog.AutoResolveInactiveDaysKey)
+                .GetProperty("value")
+                .GetString();
+            Assert.False(string.IsNullOrWhiteSpace(previousValue));
+
+            // Distinct in-range value so old ≠ new even if prior suite left a non-default.
+            var updatedValue = previousValue == "8" ? "9" : "8";
+            try
+            {
+                using var putResponse = await client.PutAsJsonAsync(
+                    $"/api/parameters/{ApplicationParameterCatalog.AutoResolveInactiveDaysKey}",
+                    new { value = updatedValue });
+                Assert.Equal(HttpStatusCode.OK, putResponse.StatusCode);
+
+                await using var scope = factory.Services.CreateAsyncScope();
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var log = await db.ParameterChangeLogs
+                    .Where(row =>
+                        row.ParameterKey == ApplicationParameterCatalog.AutoResolveInactiveDaysKey
+                        && row.NewValue == updatedValue
+                        && row.ChangedByUserId == adminId)
+                    .OrderByDescending(row => row.ChangedAt)
+                    .FirstOrDefaultAsync();
+
+                Assert.NotNull(log);
+                Assert.Equal(previousValue, log.OldValue);
+                Assert.Equal(updatedValue, log.NewValue);
+                Assert.Equal(adminId, log.ChangedByUserId);
+            }
+            finally
+            {
+                using var restoreResponse = await client.PutAsJsonAsync(
+                    $"/api/parameters/{ApplicationParameterCatalog.AutoResolveInactiveDaysKey}",
+                    new { value = previousValue });
+                restoreResponse.EnsureSuccessStatusCode();
+            }
+        }
+    }
 }
+
