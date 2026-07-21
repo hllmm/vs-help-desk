@@ -430,7 +430,26 @@ async function installResolutionMocks(
 
   const detailUrl = `${TICKETS_API}/${TICKET_ID}`
   const resolveUrl = `${detailUrl}/resolve`
+  const assigneesUrl = `${TICKETS_API}/assignees`
   const attachmentUrl = `${ORIGIN}/api/attachments/${ATTACHMENT_ID}`
+
+  await page.route(assigneesUrl, async (route: Route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: SEED_USER.userId,
+          fullName: SEED_USER.fullName,
+          username: SEED_USER.username,
+        },
+      ]),
+    })
+  })
 
   await page.route(resolveUrl, async (route: Route) => {
     if (route.request().method() !== 'POST') {
