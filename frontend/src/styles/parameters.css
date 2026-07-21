@@ -3,6 +3,7 @@
   max-inline-size: 76rem;
   margin-inline: auto;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   animation: portal-enter 360ms ease-out both;
 }
@@ -28,6 +29,7 @@
 
 .parameters-table-view {
   display: block;
+  contain: inline-size paint;
   overflow-x: auto;
   background: var(--color-paper);
   border: 1px solid var(--color-line);
