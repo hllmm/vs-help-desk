@@ -15,9 +15,10 @@ Local intern DX remains Compose. K8s packaging reuses the same api/web images.
 
 Sonraki faz (multi-tenant): design roadmap in  
 `docs/superpowers/specs/2026-07-20-production-hardening-design.md`.  
-UC-010 parametre yönetimi (Faz 1): `GET/PUT /api/parameters` + portal **Parametreler**.  
+UC-010 parametre yönetimi (Faz 1): `GET/PUT /api/parameters` + portal **Parametreler** (Admin).  
 Cookie auth + CSRF (Faz 2): HttpOnly `vshd.auth` JWT cookie; login body has **no** `accessToken`.  
-Kubernetes packaging (Faz 3): Kustomize under `deploy/k8s/` — see deploy-kubernetes doc.
+Kubernetes packaging (Faz 3): Kustomize under `deploy/k8s/` — see deploy-kubernetes doc.  
+Admin ops + inbound attachments: Admin **Kullanıcılar** UI/API, last-Admin guard, parameter change audit, inbound mail attachments stored on process.
 
 ## Hızlı başlangıç (sırayla)
 
@@ -44,7 +45,7 @@ dotnet run --project src/VSHelpDesk.WebAPI
 cd frontend && npm install && npm run dev -- --host 127.0.0.1
 ```
 
-Development seed accounts (passwords only from user-secrets / env — never commit):
+Development **dual seed** accounts (passwords only from user-secrets / env — never commit):
 
 | Username | Role | Password source |
 |----------|------|-----------------|
@@ -54,6 +55,8 @@ Development seed accounts (passwords only from user-secrets / env — never comm
 ```bash
 dotnet user-secrets set "SeedAdmin:Password" "..." --project src/VSHelpDesk.WebAPI
 ```
+
+Production bootstrap: first Admin is still one-time seed/SQL when enabled; after that Admins manage users in the portal (**Kullanıcılar**). At least one **active** Admin is always required (`last-admin-required` on demote/deactivate of the last Admin).
 
 | Servis | Adres |
 |--------|--------|
@@ -89,8 +92,9 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 - `VITE_API_BASE_URL` is an optional build-time override (avoid for cookie auth — cross-origin cookies need extra CORS/`SameSite` setup).
 - Production bundle: relative `/api/...` behind same-origin reverse proxy.
 - Auth: login sets HttpOnly `vshd.auth` + readable `vshd.csrf`; SPA uses `credentials: 'include'` and `X-CSRF-Token` on mutations; **no** JWT in sessionStorage/localStorage; bootstrap via `GET /api/auth/me`.
-- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply + resolve), `/parameters` (UC-010 list/edit allowlisted keys — **Admin** only; Support has no nav/route access).
-- Detail messages render as literal text; attachments download via authenticated Blob + cookies (no token in URL).
+- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply + resolve), `/users` (Admin user management), `/parameters` (UC-010 list/edit allowlisted keys + change history — **Admin** only; Support has no nav/route access for Admin pages).
+- Detail messages render as literal text; attachments download via authenticated Blob + cookies (no token in URL). Portal upload and **inbound IMAP/Fake** attachments share the same storage path and download UX.
+
 - Support reply: `POST /api/tickets/{id}/replies` with `{ content }` only; max **65,536** characters; saved-vs-delivered outcomes include SMTP failure warning without status change.
 - Manual resolve (detail): confirm dialog → `POST /api/tickets/{id}/resolve` (no body); server-confirmed **Çözüldü** state; reply composer hidden while resolved.
 - Frontend scripts: `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` (see [frontend/README.md](frontend/README.md)).
@@ -107,7 +111,10 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 | `POST /api/jobs/resolve-inactive-tickets` | `X-Jobs-Api-Key` zorunlu; JWT/cookie yok; eşik `AutoResolve.InactiveDays` (varsayılan 3, 1–30); `Status == WaitingCustomerReply` ve `WaitingCustomerSince <= now - days` |
 | Otomatik kapanış | `ClosedByUserId` **null** (sistem); `ResolvedAt` set |
 | Reopen | Yalnızca müşteri e-postası; kanonik ticket numarası + müşteri kimliği + idempotency (Message-ID / receipt); subject değişmez; manuel reopen UI/API **yok** |
-| `GET/PUT /api/parameters` | Cookie auth + **Admin** role (+ CSRF on PUT); Support → **403**; allowlist katalog (şimdilik `AutoResolve.InactiveDays`); bilinmeyen key → 404; geçersiz değer → 400; SMTP sırları DB’de **yok** |
+| `GET/PUT /api/parameters` | Cookie auth + **Admin** role (+ CSRF on PUT); Support → **403**; allowlist katalog (şimdilik `AutoResolve.InactiveDays`); bilinmeyen key → 404; geçersiz değer → 400; SMTP sırları DB’de **yok**; başarılı PUT → `ParameterChangeLog` |
+| `GET /api/parameters/audit` | Cookie auth + **Admin**; recent parameter history (`key`, `take` query); Parametreler panelinde de görünür |
+| `GET/POST /api/users`, `PUT /api/users/{id}`, `POST /api/users/{id}/password` | Cookie auth + **Admin** (+ CSRF on mutations); list/create/update role-active/set password; password hash asla dönmez; son aktif Admin demote/deactivate → **400** `last-admin-required` |
+| Inbound ekler | `process-incoming-emails` → `ITicketAttachmentWriter` → `IFileStorage` + `TicketAttachment`; policy/size/type skip (mail/ticket düşmez) |
 | Atama | **Uygulanmadı** — public assign rotası yok |
 
 Zamanlayıcı kurulumu uygulama **dışındadır**. Örnek dış çağrı / cron (yer tutucu anahtar):
