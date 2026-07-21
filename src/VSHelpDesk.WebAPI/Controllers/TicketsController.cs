@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using VSHelpDesk.Application.Features.Tickets.AssignTicket;
+using VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
@@ -16,11 +18,22 @@ namespace VSHelpDesk.WebAPI.Controllers;
 [Authorize]
 [Route("api/tickets")]
 public sealed class TicketsController(
+    GetAssignableUsersHandler getAssignableUsersHandler,
+    AssignTicketHandler assignTicketHandler,
     GetTicketListHandler getTicketListHandler,
     GetTicketDetailsHandler getTicketDetailsHandler,
     SupportReplyToTicketHandler supportReplyToTicketHandler,
     ResolveTicketHandler resolveTicketHandler) : ControllerBase
 {
+    /// <summary>GET api/tickets/assignees — active users eligible for BR-011 assignment.</summary>
+    [HttpGet("assignees")]
+    public async Task<IActionResult> GetAssignableUsers(
+        CancellationToken cancellationToken)
+    {
+        var users = await getAssignableUsersHandler.HandleAsync(cancellationToken);
+        return Ok(users);
+    }
+
     /// <summary>GET api/tickets — UC-003</summary>
     [HttpGet]
     public async Task<IActionResult> GetList(
@@ -41,6 +54,24 @@ public sealed class TicketsController(
             new GetTicketDetailsQuery(id),
             cancellationToken);
         return Ok(details);
+    }
+
+    /// <summary>PUT api/tickets/{id}/assignee — assign, reassign or clear BR-011 owner.</summary>
+    [HttpPut("{id:guid}/assignee")]
+    public async Task<IActionResult> Assign(
+        Guid id,
+        [FromBody] AssignTicketRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { code = "request-required" });
+        }
+
+        var result = await assignTicketHandler.HandleAsync(
+            new AssignTicketCommand(id, request.UserId),
+            cancellationToken);
+        return Ok(result);
     }
 
     /// <summary>POST api/tickets/{id}/replies — UC-005</summary>

@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Features.Tickets.AssignTicket;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
@@ -839,27 +840,233 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task AssignPlaceholder_IsNotExposed()
+    public async Task GetAssignees_WithoutSession_Returns401()
     {
-        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/api/tickets/assignees");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAssignees_ReturnsOnlyActiveUsersWithMinimalIdentity()
+    {
+        var inactive = await IntegrationTestUser.CreateInactiveAsync(factory.Services);
+        try
+        {
+            var (client, _, supportUserId) =
+                await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
+            using (var response = await client.GetAsync("/api/tickets/assignees"))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                Assert.Equal(JsonValueKind.Array, doc.RootElement.ValueKind);
+                var rows = doc.RootElement.EnumerateArray().ToList();
+                Assert.Contains(rows, row => row.GetProperty("id").GetGuid() == supportUserId);
+                Assert.DoesNotContain(rows, row => row.GetProperty("id").GetGuid() == inactive.Id);
+                Assert.All(rows, row =>
+                {
+                    Assert.Equal(
+                        ["fullName", "id", "username"],
+                        row.EnumerateObject().Select(property => property.Name).Order().ToArray());
+                    Assert.False(string.IsNullOrWhiteSpace(row.GetProperty("fullName").GetString()));
+                    Assert.False(string.IsNullOrWhiteSpace(row.GetProperty("username").GetString()));
+                });
+            }
+        }
+        finally
+        {
+            await IntegrationTestUser.DeleteAsync(factory.Services, inactive.Id);
+        }
+    }
+
+    [Fact]
+    public async Task Assign_SupportUserCanAssignAndUnassignOpenTicket()
+    {
+        Guid ticketId;
+        DateTime originalActivity;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            originalActivity = DateTime.UtcNow.AddMinutes(-10);
+            var ticket = Ticket.Create(
+                UniqueSeedTicketNumber("VS-AS"),
+                "Assignment API",
+                "Ada",
+                "ada-assign@example.test",
+                originalActivity);
+            ticketId = ticket.Id;
+            db.Add(ticket);
+            await db.SaveChangesAsync();
+        }
+
+        var (client, csrf, supportUserId) =
+            await CookieAuthTestHelper.LoginAsSupportAsync(factory);
         using (client)
         {
-            using var request = new HttpRequestMessage(
-                HttpMethod.Post,
-                $"/api/tickets/{Guid.NewGuid()}/assign");
-            CookieAuthTestHelper.AddCsrf(request, csrf);
-            using var response = await client.SendAsync(request);
+            CookieAuthTestHelper.UseDefaultCsrfHeader(client, csrf);
 
-            Assert.True(
-                response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.MethodNotAllowed,
-                $"Expected 404 or 405, got {(int)response.StatusCode}.");
-            var body = await response.Content.ReadAsStringAsync();
-            Assert.DoesNotContain("501", body, StringComparison.Ordinal);
-            Assert.DoesNotContain("NotImplemented", body, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("Hafta", body, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("AssignTicket", body, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("BR-011", body, StringComparison.OrdinalIgnoreCase);
+            using var assignResponse = await client.PutAsJsonAsync(
+                $"/api/tickets/{ticketId}/assignee",
+                new { userId = (Guid?)supportUserId });
+            Assert.Equal(HttpStatusCode.OK, assignResponse.StatusCode);
+            using (var doc = JsonDocument.Parse(await assignResponse.Content.ReadAsStringAsync()))
+            {
+                Assert.Equal(ticketId, doc.RootElement.GetProperty("ticketId").GetGuid());
+                Assert.Equal(supportUserId, doc.RootElement.GetProperty("assignedUserId").GetGuid());
+                Assert.True(doc.RootElement.GetProperty("changed").GetBoolean());
+            }
+
+            using var unassignResponse = await client.PutAsJsonAsync(
+                $"/api/tickets/{ticketId}/assignee",
+                new { userId = (Guid?)null });
+            Assert.Equal(HttpStatusCode.OK, unassignResponse.StatusCode);
+            using (var doc = JsonDocument.Parse(await unassignResponse.Content.ReadAsStringAsync()))
+            {
+                Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("assignedUserId").ValueKind);
+                Assert.True(doc.RootElement.GetProperty("changed").GetBoolean());
+            }
         }
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var persisted = await db.Tickets.AsNoTracking().SingleAsync(ticket => ticket.Id == ticketId);
+            Assert.Null(persisted.AssignedUserId);
+            Assert.Equal(
+                DateTime.SpecifyKind(originalActivity, DateTimeKind.Utc),
+                DateTime.SpecifyKind(persisted.LastActivityAt, DateTimeKind.Utc),
+                TimeSpan.FromMilliseconds(1));
+        }
+    }
+
+    [Fact]
+    public async Task Assign_MissingCsrfIs403_AndUnknownTicketIs404()
+    {
+        var (client, csrf, supportUserId) =
+            await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var noCsrf = await client.PutAsJsonAsync(
+                $"/api/tickets/{Guid.NewGuid()}/assignee",
+                new { userId = (Guid?)supportUserId });
+            Assert.Equal(HttpStatusCode.Forbidden, noCsrf.StatusCode);
+
+            CookieAuthTestHelper.UseDefaultCsrfHeader(client, csrf);
+            using var missing = await client.PutAsJsonAsync(
+                $"/api/tickets/{Guid.NewGuid()}/assignee",
+                new { userId = (Guid?)supportUserId });
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task Assign_InactiveTargetAndResolvedTicketReturnStableCodes()
+    {
+        var inactive = await IntegrationTestUser.CreateInactiveAsync(factory.Services);
+        Guid openTicketId;
+        Guid resolvedTicketId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var stamp = DateTime.UtcNow.AddMinutes(-5);
+            var closerUserId = await GetSeedUserIdAsync(db);
+            var open = Ticket.Create(
+                UniqueSeedTicketNumber("VS-AI"),
+                "Inactive assignee",
+                "Ada",
+                "ada-inactive@example.test",
+                stamp);
+            var resolved = Ticket.Create(
+                UniqueSeedTicketNumber("VS-AR"),
+                "Resolved assignment",
+                "Ada",
+                "ada-resolved@example.test",
+                stamp);
+            Assert.True(resolved.ResolveManually(stamp.AddMinutes(1), closerUserId));
+            openTicketId = open.Id;
+            resolvedTicketId = resolved.Id;
+            db.Add(open);
+            db.Add(resolved);
+            await db.SaveChangesAsync();
+        }
+
+        try
+        {
+            var (client, csrf, supportUserId) =
+                await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
+            {
+                CookieAuthTestHelper.UseDefaultCsrfHeader(client, csrf);
+                using var inactiveResponse = await client.PutAsJsonAsync(
+                    $"/api/tickets/{openTicketId}/assignee",
+                    new { userId = (Guid?)inactive.Id });
+                Assert.Equal(HttpStatusCode.BadRequest, inactiveResponse.StatusCode);
+                using (var doc = JsonDocument.Parse(await inactiveResponse.Content.ReadAsStringAsync()))
+                {
+                    Assert.Equal(
+                        AssignTicketCodes.AssigneeNotAvailable,
+                        doc.RootElement.GetProperty("code").GetString());
+                }
+
+                using var resolvedResponse = await client.PutAsJsonAsync(
+                    $"/api/tickets/{resolvedTicketId}/assignee",
+                    new { userId = (Guid?)supportUserId });
+                Assert.Equal(HttpStatusCode.BadRequest, resolvedResponse.StatusCode);
+                using (var doc = JsonDocument.Parse(await resolvedResponse.Content.ReadAsStringAsync()))
+                {
+                    Assert.Equal(
+                        AssignTicketCodes.TicketResolved,
+                        doc.RootElement.GetProperty("code").GetString());
+                }
+            }
+        }
+        finally
+        {
+            await IntegrationTestUser.DeleteAsync(factory.Services, inactive.Id);
+        }
+    }
+
+    [Fact]
+    public async Task Assign_ConcurrencyConflictReturns409WithoutRetry()
+    {
+        var openTicket = Ticket.Create(
+            "VS-ACONFLICT",
+            "Conflict assignment",
+            "Ada",
+            "ada-assignment-conflict@example.test",
+            DateTime.UtcNow.AddHours(-1));
+        Assert.True(openTicket.Assign(Guid.NewGuid(), DateTime.UtcNow.AddMinutes(-30)));
+        var conflictDb = new ConflictOnSaveDbContext(openTicket);
+        var conflictFactory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Development");
+            builder.UseEnvironment("Development");
+            builder.UseSetting("SeedUser:Enabled", "false");
+            builder.UseSetting("SeedAdmin:Enabled", "false");
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IApplicationDbContext>();
+                services.AddSingleton<IApplicationDbContext>(conflictDb);
+            });
+        });
+
+        var (authJwt, csrf, _) = await CookieAuthTestHelper.CaptureSupportLoginAsync(factory);
+        using var client = conflictFactory.CreateClient();
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"/api/tickets/{openTicket.Id}/assignee")
+        {
+            Content = JsonContent.Create(new { userId = (Guid?)null })
+        };
+        CookieAuthTestHelper.AddAuthCookies(request, authJwt, csrf);
+        CookieAuthTestHelper.AddCsrf(request, csrf);
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(1, conflictDb.SaveCallCount);
+        Assert.Equal(0, conflictDb.ClearTrackedCallCount);
     }
 
     /// <summary>
