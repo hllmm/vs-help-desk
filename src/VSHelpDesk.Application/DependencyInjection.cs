@@ -14,6 +14,10 @@ using VSHelpDesk.Application.Features.Tickets.GetTicketList;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 using VSHelpDesk.Application.Features.Tickets.ResolveTicket;
+using VSHelpDesk.Application.Features.Users.CreateUser;
+using VSHelpDesk.Application.Features.Users.GetUsers;
+using VSHelpDesk.Application.Features.Users.SetUserPassword;
+using VSHelpDesk.Application.Features.Users.UpdateUser;
 
 namespace VSHelpDesk.Application;
 
@@ -42,6 +46,10 @@ public static class DependencyInjection
         services.AddScoped<GetAttachmentHandler>();
         services.AddScoped<GetParametersHandler>();
         services.AddScoped<UpdateParameterHandler>();
+        services.AddScoped<GetUsersHandler>();
+        services.AddScoped<CreateUserHandler>();
+        services.AddScoped<UpdateUserHandler>();
+        services.AddScoped<SetUserPasswordHandler>();
 
         return services;
     }
