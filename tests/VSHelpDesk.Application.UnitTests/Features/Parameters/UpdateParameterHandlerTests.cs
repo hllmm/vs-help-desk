@@ -130,6 +130,9 @@ public sealed class UpdateParameterHandlerTests
 
         public IQueryable<ApplicationParameter> ApplicationParameters => Parameters.AsQueryable();
 
+        public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
+            Array.Empty<ParameterChangeLog>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
             if (entity is ApplicationParameter parameter)

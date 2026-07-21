@@ -129,6 +129,9 @@ public sealed class LoginHandlerTests
         public IQueryable<ApplicationParameter> ApplicationParameters { get; } =
             Array.Empty<ApplicationParameter>().AsQueryable();
 
+        public IQueryable<ParameterChangeLog> ParameterChangeLogs { get; } =
+            Array.Empty<ParameterChangeLog>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
         }
