@@ -53,6 +53,39 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                     b.ToTable("ApplicationParameters", (string)null);
                 });
 
+            modelBuilder.Entity("VSHelpDesk.Domain.Entities.ParameterChangeLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ChangedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ChangedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("NewValue")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("OldValue")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("ParameterKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParameterKey", "ChangedAt");
+
+                    b.ToTable("ParameterChangeLogs", (string)null);
+                });
+
             modelBuilder.Entity("VSHelpDesk.Domain.Entities.ProcessedEmailMessage", b =>
                 {
                     b.Property<Guid>("Id")

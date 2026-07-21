@@ -123,6 +123,9 @@ public sealed class ResolveInactiveTicketsConflictTests : IClassFixture<CustomWe
         public IQueryable<ApplicationParameter> ApplicationParameters =>
             inner.ApplicationParameters;
 
+        public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
+            Array.Empty<ParameterChangeLog>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class =>
             ((IApplicationDbContext)inner).Add(entity);
 

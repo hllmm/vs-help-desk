@@ -10,6 +10,10 @@ import {
   type ParameterLoadErrorKind,
   type ParameterSaveErrorKind,
 } from '../features/parameters/useParameters'
+import {
+  useParameterAudit,
+  type ParameterAuditLoadErrorKind,
+} from '../features/parameters/useParameterAudit'
 import { formatTicketActivity } from '../features/tickets/ticketListModel'
 
 function loadErrorMessage(
@@ -40,6 +44,12 @@ function saveErrorMessage(kind: ParameterSaveErrorKind): string {
   }
 }
 
+function auditErrorMessage(kind: ParameterAuditLoadErrorKind): string {
+  return kind === 'network'
+    ? 'Destek hizmetine ulaşılamadı. Değişiklik geçmişi yüklenemedi.'
+    : 'Değişiklik geçmişi yüklenemedi. Lütfen yeniden deneyin.'
+}
+
 export function ParametersPage(): ReactElement {
   const {
     parameters,
@@ -51,6 +61,14 @@ export function ParametersPage(): ReactElement {
     savingKey,
     saveParameter,
   } = useParameters()
+
+  const {
+    entries: auditEntries,
+    hasLoaded: auditHasLoaded,
+    isLoading: auditIsLoading,
+    error: auditError,
+    refresh: refreshAudit,
+  } = useParameterAudit(20)
 
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [rowError, setRowError] = useState<{
@@ -102,6 +120,7 @@ export function ParametersPage(): ReactElement {
         [key]: result.parameter.value,
       }))
       setSuccessKey(key)
+      void refreshAudit()
       return
     }
     if (result.error === null) {
@@ -129,7 +148,10 @@ export function ParametersPage(): ReactElement {
           <button
             type="button"
             className="button button--quiet"
-            onClick={() => void refresh()}
+            onClick={() => {
+              void refresh()
+              void refreshAudit()
+            }}
             disabled={isBusy || savingKey !== null}
           >
             {isRefreshing ? 'Yenileniyor…' : 'Yenile'}
@@ -259,6 +281,71 @@ export function ParametersPage(): ReactElement {
           </table>
         </div>
       ) : null}
+
+      <details className="parameters-audit" open>
+        <summary className="parameters-audit__summary">Son değişiklikler</summary>
+        {auditIsLoading && !auditHasLoaded ? (
+          <p className="ticket-state ticket-state--loading" role="status">
+            Değişiklik geçmişi yükleniyor…
+          </p>
+        ) : null}
+        {auditError ? (
+          <div className="ticket-state ticket-state--error" role="alert">
+            <p>{auditErrorMessage(auditError)}</p>
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => void refreshAudit()}
+            >
+              Yeniden dene
+            </button>
+          </div>
+        ) : null}
+        {auditHasLoaded && !auditError && auditEntries.length === 0 ? (
+          <p className="parameters-audit__empty">Henüz kayıtlı değişiklik yok.</p>
+        ) : null}
+        {auditHasLoaded && auditEntries.length > 0 ? (
+          <div className="parameters-table-view parameters-audit__table-wrap">
+            <table className="ticket-table parameters-audit-table">
+              <caption className="visually-hidden">
+                Parametre değişiklik geçmişi
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Zaman</th>
+                  <th scope="col">Anahtar</th>
+                  <th scope="col">Eski</th>
+                  <th scope="col">Yeni</th>
+                  <th scope="col">Kullanıcı</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>
+                      <time dateTime={entry.changedAt}>
+                        {formatTicketActivity(entry.changedAt)}
+                      </time>
+                    </td>
+                    <td className="parameters-table__key">
+                      <code>{entry.parameterKey}</code>
+                    </td>
+                    <td>
+                      <code>{entry.oldValue}</code>
+                    </td>
+                    <td>
+                      <code>{entry.newValue}</code>
+                    </td>
+                    <td>
+                      {entry.changedByUsername ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </details>
     </section>
   )
 }

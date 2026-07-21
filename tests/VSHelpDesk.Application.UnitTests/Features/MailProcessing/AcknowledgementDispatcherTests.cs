@@ -196,6 +196,9 @@ public sealed class AcknowledgementDispatcherTests
         public IQueryable<ApplicationParameter> ApplicationParameters =>
             Array.Empty<ApplicationParameter>().AsQueryable();
 
+        public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
+            Array.Empty<ParameterChangeLog>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

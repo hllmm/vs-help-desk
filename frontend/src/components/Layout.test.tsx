@@ -66,7 +66,7 @@ describe('Layout', () => {
     expect(screen.getByText('Destek operasyonları')).toBeInTheDocument()
   })
 
-  it('hides Parametreler nav when unauthenticated', () => {
+  it('hides Admin nav links when unauthenticated', () => {
     // /me bootstrap fails → stays logged out
     vi.stubGlobal(
       'fetch',
@@ -78,11 +78,14 @@ describe('Layout', () => {
       screen.queryByRole('link', { name: 'Parametreler' }),
     ).not.toBeInTheDocument()
     expect(
+      screen.queryByRole('link', { name: 'Kullanıcılar' }),
+    ).not.toBeInTheDocument()
+    expect(
       screen.queryByRole('navigation', { name: 'Ana menü' }),
     ).not.toBeInTheDocument()
   })
 
-  it('hides Parametreler nav for Support role', async () => {
+  it('hides Kullanıcılar and Parametreler nav for Support role', async () => {
     seedAuthenticatedUser('Support')
     renderLayout('/tickets')
 
@@ -90,15 +93,21 @@ describe('Layout', () => {
     expect(
       screen.queryByRole('link', { name: 'Parametreler' }),
     ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Kullanıcılar' }),
+    ).not.toBeInTheDocument()
   })
 
-  it('shows Parametreler nav for Admin role', async () => {
+  it('shows Kullanıcılar and Parametreler nav for Admin role', async () => {
     seedAuthenticatedUser('Admin')
-    renderLayout('/parameters')
+    renderLayout('/users')
 
     const nav = screen.getByRole('navigation', { name: 'Ana menü' })
     expect(
-      await screen.findByRole('link', { name: 'Parametreler' }),
+      await screen.findByRole('link', { name: 'Kullanıcılar' }),
+    ).toHaveAttribute('href', '/users')
+    expect(
+      screen.getByRole('link', { name: 'Parametreler' }),
     ).toHaveAttribute('href', '/parameters')
     expect(screen.getByRole('link', { name: 'Talepler' })).toHaveAttribute(
       'href',

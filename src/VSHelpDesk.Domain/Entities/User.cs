@@ -52,6 +52,24 @@ public sealed class User
         IsActive = false;
     }
 
+    public void Activate() => IsActive = true;
+
+    public void UpdateProfile(string fullName, string email)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            throw new ArgumentException("Full name is required.", nameof(fullName));
+        }
+
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new ArgumentException("Email is required.", nameof(email));
+        }
+
+        FullName = fullName.Trim();
+        Email = email.Trim();
+    }
+
     /// <summary>Development seed / admin password rotation only.</summary>
     public void ReplacePasswordHash(string passwordHash)
     {

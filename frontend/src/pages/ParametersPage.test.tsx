@@ -8,10 +8,12 @@ import { setStoredUser } from '../auth/tokenStorage'
 
 const listParameters = vi.hoisted(() => vi.fn())
 const updateParameter = vi.hoisted(() => vi.fn())
+const listParameterAudit = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/parametersApi', () => ({
   listParameters,
   updateParameter,
+  listParameterAudit,
 }))
 
 function deferred<T>() {
@@ -31,6 +33,18 @@ const sampleParameters: Parameter[] = [
     description:
       'WaitingCustomerReply sonrası otomatik çözüm eşiği (gün)',
     updatedAt: '2026-07-21T12:00:00.000Z',
+  },
+]
+
+const sampleAudit = [
+  {
+    id: 'log-1',
+    parameterKey: 'AutoResolve.InactiveDays',
+    oldValue: '3',
+    newValue: '5',
+    changedByUserId: 'user-1',
+    changedByUsername: 'admin',
+    changedAt: '2026-07-21T13:00:00.000Z',
   },
 ]
 
@@ -78,6 +92,8 @@ describe('ParametersPage', () => {
   beforeEach(() => {
     listParameters.mockReset()
     updateParameter.mockReset()
+    listParameterAudit.mockReset()
+    listParameterAudit.mockResolvedValue([])
     sessionStorage.clear()
     window.history.replaceState({}, '', '/')
   })
@@ -162,10 +178,9 @@ describe('ParametersPage', () => {
       'Parametre kaydedildi.',
     )
     expect(input).toHaveValue('7')
-    expect(screen.getByRole('table').querySelector('time')).toHaveAttribute(
-      'dateTime',
-      '2026-07-21T13:00:00.000Z',
-    )
+    expect(
+      screen.getByRole('table', { name: 'Uygulama parametreleri' }).querySelector('time'),
+    ).toHaveAttribute('dateTime', '2026-07-21T13:00:00.000Z')
   })
 
   it('shows Turkish-friendly validation error from ApiError 400', async () => {
@@ -225,6 +240,40 @@ describe('ParametersPage', () => {
     // Allow product keys such as AutoResolve.InactiveDays; ban sprint/impl jargon.
     expect(document.body).not.toHaveTextContent(
       /UC-|JWT|sessionStorage|REST|sprint/i,
+    )
+  })
+
+  it('renders Son değişiklikler audit history', async () => {
+    listParameters.mockResolvedValueOnce(sampleParameters)
+    listParameterAudit.mockResolvedValueOnce(sampleAudit)
+
+    renderParametersPage()
+    await screen.findByRole('table', { name: 'Uygulama parametreleri' })
+
+    expect(
+      screen.getByText('Son değişiklikler'),
+    ).toBeInTheDocument()
+
+    const auditTable = await screen.findByRole('table', {
+      name: 'Parametre değişiklik geçmişi',
+    })
+    expect(
+      within(auditTable).getByRole('columnheader', { name: 'Zaman' }),
+    ).toBeInTheDocument()
+    expect(
+      within(auditTable).getByRole('columnheader', { name: 'Eski' }),
+    ).toBeInTheDocument()
+    expect(
+      within(auditTable).getByRole('columnheader', { name: 'Yeni' }),
+    ).toBeInTheDocument()
+    expect(
+      within(auditTable).getByRole('columnheader', { name: 'Kullanıcı' }),
+    ).toBeInTheDocument()
+    expect(within(auditTable).getByText('admin')).toBeInTheDocument()
+    expect(within(auditTable).getByText('3')).toBeInTheDocument()
+    expect(within(auditTable).getByText('5')).toBeInTheDocument()
+    expect(listParameterAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 20 }),
     )
   })
 })

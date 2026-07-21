@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
@@ -18,8 +20,10 @@ public sealed class InboundEmailItemProcessor(
     CreateTicketHandler createTicketHandler,
     AppendCustomerReplyHandler appendCustomerReplyHandler,
     AcknowledgementDispatcher acknowledgementDispatcher,
+    ITicketAttachmentWriter ticketAttachmentWriter,
     TimeProvider timeProvider,
-    IDatabaseErrorClassifier databaseErrorClassifier) : IInboundEmailItemProcessor
+    IDatabaseErrorClassifier databaseErrorClassifier,
+    ILogger<InboundEmailItemProcessor> logger) : IInboundEmailItemProcessor
 {
     public async Task<InboundEmailItemResult> ProcessAsync(
         IncomingEmail email,
@@ -162,6 +166,11 @@ public sealed class InboundEmailItemProcessor(
                 FailureCode: null);
         }
 
+        await PersistAttachmentsAsync(
+            created.FirstTicketMessageId,
+            normalized.Attachments,
+            cancellationToken);
+
         var ack = await acknowledgementDispatcher.AttemptAsync(
             created.ProcessedEmailMessageId,
             cancellationToken);
@@ -210,6 +219,11 @@ public sealed class InboundEmailItemProcessor(
                 FailureCode: null);
         }
 
+        await PersistAttachmentsAsync(
+            reply.MessageId,
+            normalized.Attachments,
+            cancellationToken);
+
         return new InboundEmailItemResult(
             InboundEmailItemOutcome.AppendedReply,
             normalized.IdempotencyKey,
@@ -218,6 +232,52 @@ public sealed class InboundEmailItemProcessor(
             AcknowledgementSent: false,
             AcknowledgementFailed: false,
             FailureCode: null);
+    }
+
+    private async Task PersistAttachmentsAsync(
+        Guid ticketMessageId,
+        IReadOnlyList<IncomingEmailAttachment> attachments,
+        CancellationToken cancellationToken)
+    {
+        if (attachments.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var attachment in attachments)
+        {
+            try
+            {
+                await using var stream = new MemoryStream(
+                    attachment.Content ?? Array.Empty<byte>(),
+                    writable: false);
+                var result = await ticketAttachmentWriter.TryWriteAsync(
+                    ticketMessageId,
+                    attachment.FileName,
+                    attachment.ContentType,
+                    stream,
+                    attachment.FileSize > 0 ? attachment.FileSize : stream.Length,
+                    cancellationToken);
+
+                if (!result.WasStored)
+                {
+                    logger.LogWarning(
+                        "Skipped inbound attachment fileName={FileName} messageId={MessageId} reason={Reason}",
+                        attachment.FileName,
+                        ticketMessageId,
+                        result.SkipReason);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Never fail the mail item solely because one attachment could not be stored.
+                logger.LogError(
+                    ex,
+                    "Unexpected error storing inbound attachment fileName={FileName} messageId={MessageId}",
+                    attachment.FileName,
+                    ticketMessageId);
+            }
+        }
     }
 
     private bool TryGetMatchingCustomerTicket(

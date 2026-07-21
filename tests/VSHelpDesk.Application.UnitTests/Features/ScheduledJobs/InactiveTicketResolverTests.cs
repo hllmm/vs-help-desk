@@ -289,6 +289,9 @@ public sealed class InactiveTicketResolverTests
         public IQueryable<ApplicationParameter> ApplicationParameters =>
             Array.Empty<ApplicationParameter>().AsQueryable();
 
+        public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
+            Array.Empty<ParameterChangeLog>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
         }

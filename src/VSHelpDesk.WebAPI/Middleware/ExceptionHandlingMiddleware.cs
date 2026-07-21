@@ -65,11 +65,19 @@ public sealed class ExceptionHandlingMiddleware
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)statusCode;
 
-        var payload = new
-        {
-            status = (int)statusCode,
-            title
-        };
+        // DomainException.Message carries stable machine codes (e.g. last-admin-required).
+        object payload = exception is DomainException
+            ? new
+            {
+                status = (int)statusCode,
+                title,
+                code = exception.Message
+            }
+            : new
+            {
+                status = (int)statusCode,
+                title
+            };
 
         await context.Response.WriteAsync(JsonSerializer.Serialize(payload, JsonOptions));
     }

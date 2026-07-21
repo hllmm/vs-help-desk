@@ -140,6 +140,33 @@ public sealed class ApplicationDbContextTests
     }
 
     [Fact]
+    public void Model_MapsParameterChangeLogWithKeyAndChangedAtIndex()
+    {
+        using var context = CreateMetadataContext();
+
+        var logType = context.Model.FindEntityType(typeof(ParameterChangeLog));
+        Assert.NotNull(logType);
+        Assert.Equal("ParameterChangeLogs", logType.GetTableName());
+        Assert.Equal(200, logType.FindProperty(nameof(ParameterChangeLog.ParameterKey))!.GetMaxLength());
+        Assert.Equal(4000, logType.FindProperty(nameof(ParameterChangeLog.OldValue))!.GetMaxLength());
+        Assert.Equal(4000, logType.FindProperty(nameof(ParameterChangeLog.NewValue))!.GetMaxLength());
+        Assert.False(logType.FindProperty(nameof(ParameterChangeLog.ParameterKey))!.IsNullable);
+        Assert.False(logType.FindProperty(nameof(ParameterChangeLog.OldValue))!.IsNullable);
+        Assert.False(logType.FindProperty(nameof(ParameterChangeLog.NewValue))!.IsNullable);
+        Assert.False(logType.FindProperty(nameof(ParameterChangeLog.ChangedByUserId))!.IsNullable);
+        Assert.Equal(
+            "timestamp with time zone",
+            logType.FindProperty(nameof(ParameterChangeLog.ChangedAt))!.GetColumnType());
+        Assert.Contains(
+            logType.GetIndexes(),
+            index => index.Properties.Select(property => property.Name)
+                .SequenceEqual([
+                    nameof(ParameterChangeLog.ParameterKey),
+                    nameof(ParameterChangeLog.ChangedAt)
+                ]));
+    }
+
+    [Fact]
     public void AddInfrastructure_MissingConnectionString_ThrowsClearConfigurationError()
     {
         var configuration = new ConfigurationBuilder().Build();

@@ -1,3 +1,4 @@
+using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Parameters;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Exceptions;
@@ -11,6 +12,7 @@ namespace VSHelpDesk.Application.UnitTests.Features.Parameters;
 public sealed class UpdateParameterHandlerTests
 {
     private static readonly DateTimeOffset FixedNow = new(2026, 7, 21, 12, 0, 0, TimeSpan.Zero);
+    private static readonly Guid ActorId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
     [Fact]
     public async Task Update_ToFive_PersistsAndReturnsNewValue()
@@ -37,6 +39,48 @@ public sealed class UpdateParameterHandlerTests
     }
 
     [Fact]
+    public async Task Update_ToFive_WritesAuditLogWithOldNewAndActor()
+    {
+        var entity = new ApplicationParameter(
+            ApplicationParameterCatalog.AutoResolveInactiveDaysKey,
+            "3",
+            "desc");
+        var db = new FakeDb(entity);
+        var handler = CreateHandler(db);
+
+        await handler.HandleAsync(
+            new UpdateParameterCommand(ApplicationParameterCatalog.AutoResolveInactiveDaysKey, "5"),
+            CancellationToken.None);
+
+        var log = Assert.Single(db.ChangeLogs);
+        Assert.Equal(ApplicationParameterCatalog.AutoResolveInactiveDaysKey, log.ParameterKey);
+        Assert.Equal("3", log.OldValue);
+        Assert.Equal("5", log.NewValue);
+        Assert.Equal(ActorId, log.ChangedByUserId);
+        Assert.Equal(FixedNow.UtcDateTime, log.ChangedAt);
+    }
+
+    [Fact]
+    public async Task Update_WithoutUserId_ThrowsUnauthorized_AndDoesNotSave()
+    {
+        var entity = new ApplicationParameter(
+            ApplicationParameterCatalog.AutoResolveInactiveDaysKey,
+            "3",
+            "desc");
+        var db = new FakeDb(entity);
+        var handler = CreateHandler(db, userId: null);
+
+        await Assert.ThrowsAsync<UnauthorizedApplicationException>(() =>
+            handler.HandleAsync(
+                new UpdateParameterCommand(ApplicationParameterCatalog.AutoResolveInactiveDaysKey, "5"),
+                CancellationToken.None));
+
+        Assert.Equal("3", entity.Value);
+        Assert.Empty(db.ChangeLogs);
+        Assert.Equal(0, db.SaveCallCount);
+    }
+
+    [Fact]
     public async Task Update_Zero_ThrowsDomainException()
     {
         var entity = new ApplicationParameter(
@@ -53,6 +97,7 @@ public sealed class UpdateParameterHandlerTests
 
         Assert.Equal(ParameterCodes.ValueInvalid, ex.Message);
         Assert.Equal("3", entity.Value);
+        Assert.Empty(db.ChangeLogs);
         Assert.Equal(0, db.SaveCallCount);
     }
 
@@ -67,14 +112,31 @@ public sealed class UpdateParameterHandlerTests
                 new UpdateParameterCommand("not.a.key", "1"),
                 CancellationToken.None));
 
+        Assert.Empty(db.ChangeLogs);
         Assert.Equal(0, db.SaveCallCount);
     }
 
     private static UpdateParameterHandler CreateHandler(FakeDb db) =>
+        CreateHandler(db, ActorId);
+
+    private static UpdateParameterHandler CreateHandler(FakeDb db, Guid? userId) =>
         new(
             db,
             new CountingReader(db),
+            new StubCurrentUser(userId),
             new FixedTimeProvider(FixedNow));
+
+    private sealed class StubCurrentUser : ICurrentUserService
+    {
+        public StubCurrentUser(Guid? userId)
+        {
+            UserId = userId;
+        }
+
+        public Guid? UserId { get; }
+
+        public bool IsAuthenticated => UserId is Guid id && id != Guid.Empty;
+    }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
@@ -117,6 +179,7 @@ public sealed class UpdateParameterHandlerTests
         }
 
         public List<ApplicationParameter> Parameters { get; } = [];
+        public List<ParameterChangeLog> ChangeLogs { get; } = [];
         public int SaveCallCount { get; private set; }
         public int ReaderEnsureCallCount { get; set; }
 
@@ -130,11 +193,17 @@ public sealed class UpdateParameterHandlerTests
 
         public IQueryable<ApplicationParameter> ApplicationParameters => Parameters.AsQueryable();
 
+        public IQueryable<ParameterChangeLog> ParameterChangeLogs => ChangeLogs.AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
             if (entity is ApplicationParameter parameter)
             {
                 Parameters.Add(parameter);
+            }
+            else if (entity is ParameterChangeLog log)
+            {
+                ChangeLogs.Add(log);
             }
         }
 

@@ -20,6 +20,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<ApplicationParameter> ApplicationParameters => Set<ApplicationParameter>();
 
+    public DbSet<ParameterChangeLog> ParameterChangeLogs => Set<ParameterChangeLog>();
+
     IQueryable<User> IApplicationDbContext.Users => Users;
 
     IQueryable<Ticket> IApplicationDbContext.Tickets => Tickets;
@@ -33,6 +35,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     IQueryable<ApplicationParameter> IApplicationDbContext.ApplicationParameters =>
         ApplicationParameters;
+
+    IQueryable<ParameterChangeLog> IApplicationDbContext.ParameterChangeLogs =>
+        ParameterChangeLogs;
 
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Add(entity);
 

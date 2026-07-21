@@ -1,9 +1,12 @@
 using Microsoft.Extensions.DependencyInjection;
+using VSHelpDesk.Application.Abstractions.Storage;
+using VSHelpDesk.Application.Features.Attachments;
 using VSHelpDesk.Application.Features.Attachments.GetAttachment;
 using VSHelpDesk.Application.Features.Attachments.UploadAttachment;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
+using VSHelpDesk.Application.Features.Parameters.GetParameterAudit;
 using VSHelpDesk.Application.Features.Parameters.GetParameters;
 using VSHelpDesk.Application.Features.Parameters.UpdateParameter;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
@@ -12,6 +15,10 @@ using VSHelpDesk.Application.Features.Tickets.GetTicketList;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 using VSHelpDesk.Application.Features.Tickets.ResolveTicket;
+using VSHelpDesk.Application.Features.Users.CreateUser;
+using VSHelpDesk.Application.Features.Users.GetUsers;
+using VSHelpDesk.Application.Features.Users.SetUserPassword;
+using VSHelpDesk.Application.Features.Users.UpdateUser;
 
 namespace VSHelpDesk.Application;
 
@@ -29,6 +36,7 @@ public static class DependencyInjection
         services.AddScoped<SupportReplyToTicketHandler>();
         services.AddScoped<ResolveTicketHandler>();
         services.AddScoped<AcknowledgementDispatcher>();
+        services.AddScoped<ITicketAttachmentWriter, TicketAttachmentWriter>();
         services.AddScoped<IInboundEmailItemProcessor, InboundEmailItemProcessor>();
         services.AddScoped<ProcessIncomingEmailsHandler>();
         services.AddScoped<IInactiveTicketResolver, InactiveTicketResolver>();
@@ -38,7 +46,12 @@ public static class DependencyInjection
         services.AddScoped<UploadAttachmentHandler>();
         services.AddScoped<GetAttachmentHandler>();
         services.AddScoped<GetParametersHandler>();
+        services.AddScoped<GetParameterAuditHandler>();
         services.AddScoped<UpdateParameterHandler>();
+        services.AddScoped<GetUsersHandler>();
+        services.AddScoped<CreateUserHandler>();
+        services.AddScoped<UpdateUserHandler>();
+        services.AddScoped<SetUserPasswordHandler>();
 
         return services;
     }

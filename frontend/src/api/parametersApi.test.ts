@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { listParameters, updateParameter } from './parametersApi'
-import type { Parameter } from './types'
+import {
+  listParameterAudit,
+  listParameters,
+  updateParameter,
+} from './parametersApi'
+import type { Parameter, ParameterChangeLog } from './types'
 
 const sampleParameter: Parameter = {
   key: 'AutoResolve.InactiveDays',
@@ -8,6 +12,16 @@ const sampleParameter: Parameter = {
   description:
     'WaitingCustomerReply sonrası otomatik çözüm eşiği (gün)',
   updatedAt: '2026-07-21T12:00:00.000Z',
+}
+
+const sampleAudit: ParameterChangeLog = {
+  id: 'log-1',
+  parameterKey: 'AutoResolve.InactiveDays',
+  oldValue: '3',
+  newValue: '5',
+  changedByUserId: 'user-1',
+  changedByUsername: 'admin',
+  changedAt: '2026-07-21T13:00:00.000Z',
 }
 
 function clearCsrfCookie() {
@@ -123,5 +137,36 @@ describe('parameters API', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       `/api/parameters/${encodeURIComponent('key with/slash')}`,
     )
+  })
+
+  it('listParameterAudit uses GET /api/parameters/audit with take and key', async () => {
+    const controller = new AbortController()
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([sampleAudit]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await listParameterAudit({
+      take: 20,
+      key: 'AutoResolve.InactiveDays',
+      signal: controller.signal,
+    })
+
+    expect(result).toEqual([sampleAudit])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const url = String(fetchMock.mock.calls[0]?.[0])
+    expect(url.startsWith('/api/parameters/audit?')).toBe(true)
+    expect(url).toContain('take=20')
+    expect(url).toContain(
+      `key=${encodeURIComponent('AutoResolve.InactiveDays')}`,
+    )
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: 'GET',
+      signal: controller.signal,
+      credentials: 'include',
+    })
   })
 })

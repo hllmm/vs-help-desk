@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -158,6 +159,116 @@ public sealed class ProcessIncomingEmailsApiTests : IClassFixture<CustomWebAppli
     }
 
     [Fact]
+    public async Task ProcessIncomingEmails_WithAttachment_StoresOnTicketAndDownloadWorks()
+    {
+        var token = Guid.NewGuid().ToString("N");
+        var messageId = $"<attach-job-{token}@vshelpdesk.test>";
+        var receiptValue = $"fake\0attach-job-{token}";
+        var customerEmail = $"attach-{token[..8]}@example.test";
+        var attachmentBytes = Encoding.UTF8.GetBytes($"fake-attachment-{token}");
+        var storageRoot = Path.Combine(
+            Path.GetTempPath(),
+            "vshd-it-inbound-storage",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(storageRoot);
+
+        var incoming = new IncomingEmail(
+            MessageId: messageId,
+            ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, receiptValue),
+            FromAddress: customerEmail,
+            FromDisplayName: "Attach Customer",
+            Subject: $"Attach job subject {token}",
+            Body: $"Attach job body {token}",
+            IsHtml: false,
+            ReceivedAt: DateTime.UtcNow.AddMinutes(-2),
+            Attachments:
+            [
+                new IncomingEmailAttachment(
+                    FileName: "note.txt",
+                    ContentType: "text/plain",
+                    FileSize: attachmentBytes.Length,
+                    Content: attachmentBytes)
+            ]);
+
+        var receiver = new ControllableEmailReceiver(incoming);
+        var sender = new RecordingEmailSender();
+        await using var factory = CreateFactory(receiver, sender, storageRoot);
+        var apiKey = GetJobsApiKey(factory);
+        await ParkDueAcknowledgementsAsync(factory);
+
+        Guid? ticketId = null;
+        Guid? processedId = null;
+        Guid? messageRowId = null;
+        Guid? attachmentId = null;
+
+        try
+        {
+            using var jobsClient = factory.CreateClient();
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/api/jobs/process-incoming-emails");
+            request.Headers.Add("X-Jobs-Api-Key", apiKey);
+            using var response = await jobsClient.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var payload = await response.Content.ReadFromJsonAsync<JobPayload>(JsonOptions);
+            Assert.NotNull(payload);
+            Assert.Equal(1, payload.CreatedTickets);
+
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var processed = await db.ProcessedEmailMessages
+                    .SingleAsync(row => row.IdempotencyKey == messageId);
+                processedId = processed.Id;
+                ticketId = processed.TicketId;
+                Assert.NotNull(ticketId);
+
+                var messages = await db.TicketMessages
+                    .Where(row => row.TicketId == ticketId)
+                    .ToListAsync();
+                var firstCustomer = Assert.Single(messages);
+                messageRowId = firstCustomer.Id;
+
+                var attachment = await db.TicketAttachments
+                    .SingleAsync(row => row.TicketMessageId == firstCustomer.Id);
+                attachmentId = attachment.Id;
+                Assert.Equal("note.txt", attachment.FileName);
+                Assert.Equal("text/plain", attachment.ContentType);
+                Assert.Equal(attachmentBytes.Length, attachment.FileSize);
+                Assert.True(File.Exists(attachment.FilePath));
+            }
+
+            var (supportClient, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (supportClient)
+            {
+                using var detailResponse = await supportClient.GetAsync($"/api/tickets/{ticketId}");
+                Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+                using var detailDoc = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
+                var attachments = detailDoc.RootElement.GetProperty("attachments");
+                Assert.Equal(1, attachments.GetArrayLength());
+                Assert.Equal(attachmentId, attachments[0].GetProperty("id").GetGuid());
+                Assert.Equal("note.txt", attachments[0].GetProperty("fileName").GetString());
+
+                using var downloadRequest = new HttpRequestMessage(
+                    HttpMethod.Get,
+                    $"/api/attachments/{attachmentId}");
+                using var downloadResponse = await supportClient.SendAsync(downloadRequest);
+                Assert.Equal(HttpStatusCode.OK, downloadResponse.StatusCode);
+                Assert.Equal(
+                    Encoding.UTF8.GetString(attachmentBytes),
+                    await downloadResponse.Content.ReadAsStringAsync());
+            }
+        }
+        finally
+        {
+            await CleanupCreatedAsync(factory, ticketId, processedId, messageRowId, attachmentId);
+            if (Directory.Exists(storageRoot))
+            {
+                Directory.Delete(storageRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task JobApi_UsesQuarantineAndRetryableFailureCounters()
     {
         var token = Guid.NewGuid().ToString("N");
@@ -227,11 +338,26 @@ public sealed class ProcessIncomingEmailsApiTests : IClassFixture<CustomWebAppli
 
     private WebApplicationFactory<Program> CreateFactory(
         ControllableEmailReceiver receiver,
-        RecordingEmailSender sender) =>
+        RecordingEmailSender sender,
+        string? storageRoot = null) =>
         baseFactory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("environment", "Development");
             builder.UseEnvironment("Development");
+            if (storageRoot is not null)
+            {
+                builder.ConfigureAppConfiguration((_, config) =>
+                {
+                    config.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["FileStorage:RootPath"] = storageRoot,
+                        ["FileStorage:MaxFileSizeBytes"] = "1048576",
+                        ["FileStorage:AllowedContentTypes:0"] = "text/plain",
+                        ["FileStorage:AllowedContentTypes:1"] = "application/pdf"
+                    });
+                });
+            }
+
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IEmailReceiver>();
@@ -282,10 +408,20 @@ public sealed class ProcessIncomingEmailsApiTests : IClassFixture<CustomWebAppli
         WebApplicationFactory<Program> factory,
         Guid? ticketId,
         Guid? processedId,
-        Guid? messageRowId)
+        Guid? messageRowId,
+        Guid? attachmentId = null)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        if (attachmentId is Guid aid)
+        {
+            var attachment = await db.TicketAttachments.FindAsync(aid);
+            if (attachment is not null)
+            {
+                db.TicketAttachments.Remove(attachment);
+            }
+        }
 
         if (processedId is Guid pid)
         {
@@ -298,6 +434,11 @@ public sealed class ProcessIncomingEmailsApiTests : IClassFixture<CustomWebAppli
 
         if (messageRowId is Guid mid)
         {
+            var remainingAttachments = await db.TicketAttachments
+                .Where(row => row.TicketMessageId == mid)
+                .ToListAsync();
+            db.TicketAttachments.RemoveRange(remainingAttachments);
+
             var message = await db.TicketMessages.FindAsync(mid);
             if (message is not null)
             {
@@ -310,6 +451,15 @@ public sealed class ProcessIncomingEmailsApiTests : IClassFixture<CustomWebAppli
             var remainingMessages = await db.TicketMessages
                 .Where(row => row.TicketId == tid)
                 .ToListAsync();
+            var remainingMessageIds = remainingMessages.Select(m => m.Id).ToList();
+            if (remainingMessageIds.Count > 0)
+            {
+                var remainingAttachments = await db.TicketAttachments
+                    .Where(row => remainingMessageIds.Contains(row.TicketMessageId))
+                    .ToListAsync();
+                db.TicketAttachments.RemoveRange(remainingAttachments);
+            }
+
             db.TicketMessages.RemoveRange(remainingMessages);
 
             var remainingProcessed = await db.ProcessedEmailMessages

@@ -16,6 +16,8 @@ public interface IApplicationDbContext
 
     IQueryable<ApplicationParameter> ApplicationParameters { get; }
 
+    IQueryable<ParameterChangeLog> ParameterChangeLogs { get; }
+
     void Add<TEntity>(TEntity entity) where TEntity : class;
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
