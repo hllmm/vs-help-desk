@@ -98,3 +98,37 @@ export type Parameter = {
   description: string
   updatedAt: string
 }
+
+/** GET /api/users list item — no password hash. */
+export type UserListItem = {
+  id: string
+  fullName: string
+  username: string
+  email: string
+  role: UserRole
+  isActive: boolean
+  createdAt: string
+  lastLoginAt: string | null
+}
+
+/** POST /api/users body. */
+export type CreateUserRequest = {
+  fullName: string
+  username: string
+  email: string
+  password: string
+  role: UserRole
+}
+
+/** PUT /api/users/{id} body — username is fixed in v1. */
+export type UpdateUserRequest = {
+  fullName: string
+  email: string
+  role: UserRole
+  isActive: boolean
+}
+
+/** POST /api/users/{id}/password body. */
+export type SetUserPasswordRequest = {
+  password: string
+}
