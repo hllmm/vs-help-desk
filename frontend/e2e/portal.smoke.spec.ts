@@ -320,13 +320,14 @@ test('protected 401 clears session and explains expiry', async ({
     })
   })
 
-  await page.goto('/login')
-  await page.evaluate((user) => {
+  // Seed only the protected-page navigation. The session-expiry redirect performs
+  // a full navigation to /login, where this init script deliberately does nothing.
+  await page.addInitScript((user) => {
+    if (window.location.pathname !== '/tickets') return
+
     sessionStorage.removeItem('vshd.accessToken') // legacy Bearer key
     sessionStorage.setItem('vshd.user', JSON.stringify(user))
   }, SEED_USER)
-  // Reset counter after the login-page bootstrap /me so tickets navigation is first 200.
-  meCalls = 0
   // tickets 401 → expireSession may abort this navigation mid-load.
   await page.goto('/tickets', { waitUntil: 'commit' }).catch((error: Error) => {
     if (!/ERR_ABORTED|interrupted/i.test(String(error))) {
