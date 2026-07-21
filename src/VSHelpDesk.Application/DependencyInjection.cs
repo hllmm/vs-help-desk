@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using VSHelpDesk.Application.Abstractions.Storage;
+using VSHelpDesk.Application.Features.Attachments;
 using VSHelpDesk.Application.Features.Attachments.GetAttachment;
 using VSHelpDesk.Application.Features.Attachments.UploadAttachment;
 using VSHelpDesk.Application.Features.Authentication.Login;
@@ -29,6 +31,7 @@ public static class DependencyInjection
         services.AddScoped<SupportReplyToTicketHandler>();
         services.AddScoped<ResolveTicketHandler>();
         services.AddScoped<AcknowledgementDispatcher>();
+        services.AddScoped<ITicketAttachmentWriter, TicketAttachmentWriter>();
         services.AddScoped<IInboundEmailItemProcessor, InboundEmailItemProcessor>();
         services.AddScoped<ProcessIncomingEmailsHandler>();
         services.AddScoped<IInactiveTicketResolver, InactiveTicketResolver>();

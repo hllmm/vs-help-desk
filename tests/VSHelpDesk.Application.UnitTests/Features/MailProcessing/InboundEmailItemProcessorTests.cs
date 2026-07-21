@@ -1,5 +1,7 @@
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Storage;
+using VSHelpDesk.Application.Features.Attachments;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
@@ -188,13 +190,21 @@ public sealed class InboundEmailItemProcessorTests
             new RecordingSender(),
             time,
             NullLogger<AcknowledgementDispatcher>.Instance);
+        var writer = new TicketAttachmentWriter(
+            context,
+            new RecordingStorage(),
+            new FixedPolicy(maxBytes: 1024 * 1024, allowed: ["text/plain"]),
+            time,
+            NullLogger<TicketAttachmentWriter>.Instance);
         var processor = new InboundEmailItemProcessor(
             context,
             create,
             reply,
             dispatcher,
+            writer,
             time,
-            classifier);
+            classifier,
+            NullLogger<InboundEmailItemProcessor>.Instance);
         var mail = Mail(
             "<msg-concurrency@test>",
             "prior@example.test",
@@ -222,6 +232,94 @@ public sealed class InboundEmailItemProcessorTests
         Assert.Equal(InboundMailLimits.EmptyBodyPlaceholder, context.TicketMessagesList[0].Content);
     }
 
+    [Fact]
+    public async Task CreateTicket_WithAllowedAttachment_StoresOnCustomerMessage()
+    {
+        var context = new FakeDb();
+        var processor = CreateProcessor(context, new RecordingSender(), "VS-000409");
+        var bytes = "fake-attachment"u8.ToArray();
+        var mail = Mail(
+            "<msg-attach@test>",
+            "customer@example.test",
+            "With attach",
+            "Body",
+            attachments:
+            [
+                new IncomingEmailAttachment("note.txt", "text/plain", bytes.Length, bytes)
+            ]);
+
+        var result = await processor.ProcessAsync(mail, CancellationToken.None);
+
+        Assert.Equal(InboundEmailItemOutcome.CreatedTicket, result.Outcome);
+        var message = Assert.Single(context.TicketMessagesList);
+        var stored = Assert.Single(context.TicketAttachmentsList);
+        Assert.Equal(message.Id, stored.TicketMessageId);
+        Assert.Equal("note.txt", stored.FileName);
+        Assert.Equal("text/plain", stored.ContentType);
+        Assert.Equal(bytes.Length, stored.FileSize);
+    }
+
+    [Fact]
+    public async Task CreateTicket_WithDisallowedAttachment_SkipsWithoutFailingMailItem()
+    {
+        var context = new FakeDb();
+        var processor = CreateProcessor(context, new RecordingSender(), "VS-000410");
+        var bytes = new byte[] { 0x4D, 0x5A, 0x90, 0x00 };
+        var mail = Mail(
+            "<msg-bad-attach@test>",
+            "customer@example.test",
+            "Bad attach",
+            "Body",
+            attachments:
+            [
+                new IncomingEmailAttachment(
+                    "evil.exe",
+                    "application/x-msdownload",
+                    bytes.Length,
+                    bytes)
+            ]);
+
+        var result = await processor.ProcessAsync(mail, CancellationToken.None);
+
+        Assert.Equal(InboundEmailItemOutcome.CreatedTicket, result.Outcome);
+        Assert.Single(context.TicketsList);
+        Assert.Single(context.TicketMessagesList);
+        Assert.Empty(context.TicketAttachmentsList);
+    }
+
+    [Fact]
+    public async Task AppendReply_WithAllowedAttachment_StoresOnCustomerMessage()
+    {
+        var context = new FakeDb();
+        var existing = Ticket.Create(
+            "VS-000050",
+            "Original",
+            "Prior",
+            "prior@example.test",
+            FixedNow.UtcDateTime);
+        existing.MarkAsWaitingCustomerReply(FixedNow.UtcDateTime.AddMinutes(-30));
+        context.TicketsList.Add(existing);
+        var processor = CreateProcessor(context, new RecordingSender(), "VS-000411");
+        var bytes = "reply-note"u8.ToArray();
+        var mail = Mail(
+            "<msg-reply-attach@test>",
+            "prior@example.test",
+            "Re: [VS-000050] Original",
+            "Still broken",
+            attachments:
+            [
+                new IncomingEmailAttachment("reply.txt", "text/plain", bytes.Length, bytes)
+            ]);
+
+        var result = await processor.ProcessAsync(mail, CancellationToken.None);
+
+        Assert.Equal(InboundEmailItemOutcome.AppendedReply, result.Outcome);
+        var message = Assert.Single(context.TicketMessagesList);
+        var stored = Assert.Single(context.TicketAttachmentsList);
+        Assert.Equal(message.Id, stored.TicketMessageId);
+        Assert.Equal("reply.txt", stored.FileName);
+    }
+
     private static InboundEmailItemProcessor CreateProcessor(
         FakeDb context,
         IEmailSender sender,
@@ -236,13 +334,21 @@ public sealed class InboundEmailItemProcessorTests
             sender,
             time,
             NullLogger<AcknowledgementDispatcher>.Instance);
+        var writer = new TicketAttachmentWriter(
+            context,
+            new RecordingStorage(),
+            new FixedPolicy(maxBytes: 1024 * 1024, allowed: ["text/plain", "application/pdf"]),
+            time,
+            NullLogger<TicketAttachmentWriter>.Instance);
         return new InboundEmailItemProcessor(
             context,
             create,
             reply,
             dispatcher,
+            writer,
             time,
-            classifier);
+            classifier,
+            NullLogger<InboundEmailItemProcessor>.Instance);
     }
 
     private static IncomingEmail Mail(
@@ -250,7 +356,8 @@ public sealed class InboundEmailItemProcessorTests
         string? from,
         string subject,
         string body,
-        EmailReceiptHandle? receipt = null) =>
+        EmailReceiptHandle? receipt = null,
+        IReadOnlyList<IncomingEmailAttachment>? attachments = null) =>
         new(
             MessageId: messageId,
             ReceiptHandle: receipt ?? new EmailReceiptHandle(
@@ -262,7 +369,7 @@ public sealed class InboundEmailItemProcessorTests
             Body: body,
             IsHtml: false,
             ReceivedAt: FixedNow.UtcDateTime,
-            Attachments: Array.Empty<IncomingEmailAttachment>());
+            Attachments: attachments ?? Array.Empty<IncomingEmailAttachment>());
 
     private sealed class NeverConflictClassifier : IDatabaseErrorClassifier
     {
@@ -344,6 +451,9 @@ public sealed class InboundEmailItemProcessorTests
                     case ProcessedEmailMessage processed:
                         ProcessedEmailMessagesList.Add(processed);
                         break;
+                    case TicketAttachment attachment:
+                        TicketAttachmentsList.Add(attachment);
+                        break;
                     case User user:
                         UsersList.Add(user);
                         break;
@@ -366,5 +476,46 @@ public sealed class InboundEmailItemProcessorTests
             SaveAttempts++;
             throw new InvalidOperationException("simulated optimistic concurrency");
         }
+    }
+
+    private sealed class FixedPolicy(long maxBytes, string[] allowed) : IAttachmentUploadPolicy
+    {
+        private readonly HashSet<string> set = new(allowed, StringComparer.OrdinalIgnoreCase);
+
+        public long MaxFileSizeBytes => maxBytes;
+
+        public bool IsContentTypeAllowed(string? contentType) =>
+            !string.IsNullOrWhiteSpace(contentType) && set.Contains(contentType.Split(';')[0].Trim());
+
+        public string? DetectContentTypeFromContent(ReadOnlySpan<byte> header) => null;
+
+        public bool IsDeclaredTypeConsistentWithContent(
+            string? declaredContentType,
+            ReadOnlySpan<byte> header) =>
+            IsContentTypeAllowed(declaredContentType);
+    }
+
+    private sealed class RecordingStorage : IFileStorage
+    {
+        public async Task<StoredFile> SaveAsync(
+            Stream content,
+            string originalFileName,
+            string contentType,
+            CancellationToken cancellationToken = default)
+        {
+            using var ms = new MemoryStream();
+            await content.CopyToAsync(ms, cancellationToken);
+            return new StoredFile(
+                $"{Guid.NewGuid():N}{Path.GetExtension(originalFileName)}",
+                $"/tmp/{originalFileName}",
+                contentType,
+                ms.Length);
+        }
+
+        public Task<Stream> OpenReadAsync(string storedFileName, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 }
