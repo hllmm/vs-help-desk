@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, 'feature/**', 'fix/**']
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend build & test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stajyer
+          POSTGRES_PASSWORD: ci_postgres_password
+          POSTGRES_DB: VS_HelpDesk_DB
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stajyer -d VS_HelpDesk_DB"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: "true"
+      ConnectionStrings__DefaultConnection: >-
+        Host=localhost;Port=5432;Database=VS_HelpDesk_DB;Username=stajyer;Password=ci_postgres_password
+      Auth__SigningKey: ci-signing-key-with-at-least-32-bytes!!
+      Jobs__ApiKey: ci-jobs-api-key-32-characters!!
+      SeedUser__Enabled: "true"
+      SeedUser__Password: CiSeedPassword123!
+      SeedUser__Username: support
+      SeedUser__FullName: CI Support
+      SeedUser__Email: support@vshelpdesk.local
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore VSHelpDesk.slnx
+      - name: Restore tools
+        run: dotnet tool restore
+      - name: Build
+        run: dotnet build VSHelpDesk.slnx --no-restore -c Release
+      - name: Apply database migrations
+        run: >-
+          dotnet ef database update
+          --project src/VSHelpDesk.Infrastructure
+          --startup-project src/VSHelpDesk.WebAPI
+          --configuration Release
+          --no-build
+      - name: Test
+        run: dotnet test VSHelpDesk.slnx --no-build -c Release --nologo
+
+  frontend:
+    name: Frontend lint, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: env -u VITE_API_BASE_URL npm run build
+
+  kustomize:
+    name: Kustomize validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate kustomize build
+        run: |
+          kubectl kustomize deploy/k8s/base >/dev/null
+          kubectl kustomize deploy/k8s/overlays/prod >/dev/null

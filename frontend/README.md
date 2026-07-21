@@ -1,0 +1,102 @@
+# VS Help Desk — Frontend (React SPA)
+
+React + Vite SPA. **Only REST** to the ASP.NET Core API (no Next.js / Nuxt).
+
+## Auth choice (Faz 2 cookie auth)
+
+| Decision | Value |
+|---|---|
+| Auth JWT | HttpOnly cookie `vshd.auth` set by `POST /api/auth/login` (never readable by JS) |
+| Login body | `{ userId, fullName, username }` only — **no `accessToken`** |
+| CSRF | Readable cookie `vshd.csrf` + header `X-CSRF-Token` on unsafe methods |
+| Credentials | `fetch(..., { credentials: 'include' })` — no `Authorization` header |
+| Profile cache | Optional non-secret `sessionStorage` (`vshd.user`); bootstrap via `GET /api/auth/me` |
+| Logout | `POST /api/auth/logout` then clear local profile cache |
+| 401 | Clear local session → navigate to `/login?reason=session-expired` |
+
+## API base URL and production same-origin behavior
+
+Leave `VITE_API_BASE_URL` empty so the SPA uses relative `/api/...` URLs.
+In local Vite dev, `vite.config.ts` proxies `/api` and `/health` to `http://127.0.0.1:5154` so cookies stay same-origin.
+In production, the reverse proxy (nginx) serves the SPA and API under the same origin.
+
+| Env | Local development | Production build |
+|---|---|---|
+| `VITE_API_BASE_URL` | Empty (relative + Vite proxy) | Empty → relative `/api/...` behind reverse proxy |
+
+## Ticket workspace (Week 3 + Week 4 resolution)
+
+Depends on the merged Week 2 portal (login, protected layout, ticket list, four Playwright projects), Week 3 detail/reply contracts, and Week 4 resolve API:
+
+| Route / API | UI behavior |
+|---|---|
+| `/login` | Login (protected routes require session) |
+| `/tickets` | Ticket list (protected) |
+| `/tickets/:ticketId` | Detail + timeline + reply + resolve panel (protected) |
+| `GET /api/tickets/{id}` | Detail + chronological messages + attachment metadata |
+| `GET /api/attachments/{id}` | Authenticated Blob download (cookies; never token-in-URL) |
+| `POST /api/tickets/{id}/replies` | Plain-text support reply body `{ content }` only (no `isHtml`); CSRF header |
+| `POST /api/tickets/{id}/resolve` | No body; cookie auth + CSRF; server-confirmed **Çözüldü**; idempotent when already resolved |
+
+Message bodies render as **literal text** (no HTML injection). Reply limit is **65,536** characters after trim. Saved-versus-delivered outcomes:
+
+| HTTP / notice | Draft | Timeline / status |
+|---|---|---|
+| Delivered (`emailDelivered` + `ticketStateUpdated`) | cleared | saved Support message; status **Müşteri Bekleniyor** |
+| `smtp-delivery-failed` (HTTP 200) | cleared | saved message; status unchanged; delivery warning |
+| Pre-send 409 / network / other failures | preserved per composer rules | no false “sent” claim |
+| Resolved ticket reply | n/a | blocked until customer-email reopen (HTTP 409; composer hidden while resolved) |
+
+### Manual resolve UX
+
+- Secondary **resolve** trigger on open tickets; WCAG `alertdialog` confirmation (Turkish copy).
+- One bodyless `POST`; busy state; fixed outcome notices (`Talep çözüldü.`, no-op, conflict, network).
+- On success: status badge **Çözüldü**, closure note, composer + resolve hidden; server result is applied then detail refreshes.
+- Manual concurrency conflict: refresh once, **never** auto-retry resolve.
+- Reopen presentation after refresh when status returns to **Müşteri Yanıtladı** (cause is customer email on the backend).
+- No manual reopen control, assignment UI, or configurable auto-resolve threshold in the SPA.
+
+## Dev
+
+```bash
+# API (repo root)
+dotnet run --project src/VSHelpDesk.WebAPI
+
+# SPA
+npm install
+npm run dev -- --host 127.0.0.1
+```
+
+Open http://127.0.0.1:5173 — CORS allows this origin and `http://localhost:5173`.
+
+## Scripts
+
+| Command | Purpose |
+|---|---|
+| `npm run dev` | Vite dev server |
+| `npm run lint` | Lint the SPA sources |
+| `npm test` | Unit / component tests (Vitest) |
+| `npm run build` | Typecheck + production bundle |
+| `npm run preview` | Preview production build |
+| `npm run test:e2e` | Production build + Playwright smoke (same-origin preview) |
+
+Browser smoke covers desktop/tablet/mobile viewports (1440×900, 720×900, 390×844, 320×700), same-origin `/api` mocks, keyboard focus, reduced-motion, session expiry, attachment download, reply delivery outcomes, resolution confirm/idempotent/conflict/reopen presentation, and document overflow. Run Chromium once with `npx playwright install chromium` if needed.
+
+```bash
+env -u VITE_API_BASE_URL npm run build
+npx playwright test
+# Suites:
+npx playwright test e2e/portal.smoke.spec.ts
+npx playwright test e2e/ticket-detail.smoke.spec.ts
+npx playwright test e2e/ticket-resolution.smoke.spec.ts
+```
+
+Browser E2E is mocked REST presentation proof; DB/SMTP/idempotency reopen cause is covered by backend integration tests (see root README and `docs/known-limitations.md`).
+
+## Routes
+
+| Path | Screen |
+|---|---|
+| `/login` | Login |
+| `/tickets` | Ticket list (protected) |
+| `/tickets/:ticketId` | Detail, timeline, reply, resolve (protected) |

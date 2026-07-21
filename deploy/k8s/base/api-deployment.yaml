@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: vs-help-desk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/part-of: vs-help-desk
+    spec:
+      # Image runs as uid 10001 (Dockerfile appuser). fsGroup so the attachments PVC is writable.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: api
+          image: vshelpdesk-api:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            # Non-secret settings (ASPNETCORE_*, FileStorage__RootPath, Email__* hosts/ports/modes)
+            - configMapRef:
+                name: vshelpdesk-config
+            # Injects secret keys as env vars. Keys that already use ASP.NET double-underscore
+            # names bind as-is: ConnectionStrings__DefaultConnection, Email__ImapUsername,
+            # Email__ImapPassword, Email__ImapAccountId, Email__SmtpUsername, Email__SmtpPassword.
+            # Compose-style keys (AUTH_SIGNING_KEY, JOBS_API_KEY, POSTGRES_PASSWORD) need remaps
+            # below for Auth/Jobs (POSTGRES_PASSWORD is for the DB StatefulSet only).
+            - secretRef:
+                name: vshelpdesk-secrets
+          env:
+            # ASP.NET configuration uses Auth__SigningKey / Jobs__ApiKey (double underscore).
+            # Secret stores AUTH_SIGNING_KEY / JOBS_API_KEY (compose/.env parity) — remap here.
+            - name: Auth__SigningKey
+              valueFrom:
+                secretKeyRef:
+                  name: vshelpdesk-secrets
+                  key: AUTH_SIGNING_KEY
+            - name: Jobs__ApiKey
+              valueFrom:
+                secretKeyRef:
+                  name: vshelpdesk-secrets
+                  key: JOBS_API_KEY
+            # ConnectionStrings__DefaultConnection is already the correct ASP.NET key name
+            # and is injected via secretRef envFrom. Explicit pin for clarity/ops docs:
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: vshelpdesk-secrets
+                  key: ConnectionStrings__DefaultConnection
+            # Email__* secret keys match ASP.NET binding — no remaps; envFrom is sufficient.
+            # Required for api start when ConfigMap Email__ReceiverMode=Imap (default):
+            # Email__ImapUsername, Email__ImapPassword, Email__ImapAccountId (+ hosts in ConfigMap).
+          volumeMounts:
+            - name: attachments
+              mountPath: /var/vshelpdesk/attachments
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 10001
+      volumes:
+        - name: attachments
+          persistentVolumeClaim:
+            claimName: api-attachments

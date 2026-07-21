@@ -1,0 +1,28 @@
+@VSHelpDesk.WebAPI_HostAddress = http://localhost:5154
+
+### Health
+GET {{VSHelpDesk.WebAPI_HostAddress}}/health
+Accept: application/json
+
+### UC-001 Login (Hafta 1)
+POST {{VSHelpDesk.WebAPI_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "<configured-username>",
+  "password": "<configured-password>"
+}
+
+### Current user (Hafta 1)
+GET {{VSHelpDesk.WebAPI_HostAddress}}/api/auth/me
+
+### Tickets list (Hafta 3)
+GET {{VSHelpDesk.WebAPI_HostAddress}}/api/tickets
+
+### Process incoming emails job (Hafta 2)
+POST {{VSHelpDesk.WebAPI_HostAddress}}/api/jobs/process-incoming-emails
+X-Jobs-Api-Key: <from-user-secrets-or-appsettings.Development Jobs:ApiKey>
+
+### Resolve inactive tickets job (Hafta 4)
+POST {{VSHelpDesk.WebAPI_HostAddress}}/api/jobs/resolve-inactive-tickets
+X-Jobs-Api-Key: <from-user-secrets-or-appsettings.Development Jobs:ApiKey>

@@ -1,0 +1,37 @@
+# Keep Docker build context small and free of secrets / local junk
+.git
+.github
+.worktrees
+.superpowers
+.vs
+.idea
+**/.DS_Store
+
+# Local secrets and rehearsal files
+.env
+.env.*
+.rehearsal-secrets.env
+docker-compose.prod.rehearsal.yml
+
+# Build artifacts
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/coverage
+**/TestResults
+**/*.user
+**/*.suo
+
+# Docs and tests not needed in API image
+docs
+tests
+frontend
+storage
+*.md
+!README.md
+
+# Docker compose itself is not required inside the image
+docker-compose*.yml
+Dockerfile
+**/Dockerfile

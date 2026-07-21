@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: vshelpdesk
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - postgres-service.yaml
+  - postgres-statefulset.yaml
+  - api-pvc-attachments.yaml
+  - api-deployment.yaml
+  - api-service.yaml
+  - web-nginx-configmap.yaml
+  - web-deployment.yaml
+  - web-service.yaml
+  - ingress.yaml
+  - cronjob-process-incoming-emails.yaml
+  - cronjob-resolve-inactive-tickets.yaml
+commonLabels:
+  app.kubernetes.io/part-of: vs-help-desk
+

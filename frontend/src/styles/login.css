@@ -1,0 +1,208 @@
+.login-layout {
+  display: grid;
+  gap: 1.5rem;
+  align-items: center;
+  min-inline-size: 0;
+}
+
+.login-intro,
+.login-card {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.login-intro__title {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  overflow-wrap: anywhere;
+}
+
+.login-intro__lead,
+.login-card__lead {
+  color: var(--color-muted);
+  overflow-wrap: anywhere;
+}
+
+.login-card {
+  background: var(--color-paper);
+  border: 1px solid var(--color-line);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-soft);
+  padding: 1.5rem;
+}
+
+.login-card h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+}
+
+.login-card__lead {
+  margin-block-end: 1.25rem;
+}
+
+.form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+  min-inline-size: 0;
+}
+
+.field span {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-control);
+  padding: 0.7rem 0.85rem;
+  background: var(--color-paper);
+  min-inline-size: 0;
+}
+
+.field input:focus {
+  border-color: var(--color-petrol);
+}
+
+.mail-workflow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem 0.5rem;
+  margin-block-start: 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--color-line);
+  border-radius: 1rem;
+  background: var(--color-paper);
+  box-shadow: var(--shadow-soft);
+}
+
+.mail-workflow__node {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  min-inline-size: 4.5rem;
+}
+
+.mail-workflow__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-night);
+  text-align: center;
+}
+
+.mail-workflow__connector {
+  flex: 1 1 1.5rem;
+  min-inline-size: 1.25rem;
+  max-inline-size: 3rem;
+  block-size: 2px;
+  background: linear-gradient(
+    90deg,
+    var(--color-line),
+    var(--color-petrol)
+  );
+  position: relative;
+  align-self: center;
+  margin-block-end: 1.4rem;
+}
+
+.mail-workflow__connector::after {
+  content: '';
+  position: absolute;
+  inset-inline-end: -1px;
+  inset-block-start: 50%;
+  inline-size: 0;
+  block-size: 0;
+  border-style: solid;
+  border-width: 5px 0 5px 7px;
+  border-color: transparent transparent transparent var(--color-petrol);
+  transform: translateY(-50%);
+}
+
+.mail-workflow__icon {
+  display: grid;
+  place-items: center;
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  border-radius: 0.9rem;
+  background: var(--color-ice);
+  border: 1px solid var(--color-line);
+  position: relative;
+}
+
+.mail-workflow__icon--envelope {
+  overflow: hidden;
+}
+
+.mail-workflow__envelope-body {
+  position: absolute;
+  inset: 35% 18% 22%;
+  border: 2px solid var(--color-petrol);
+  border-radius: 0.2rem;
+  background: var(--color-paper);
+}
+
+.mail-workflow__envelope-flap {
+  position: absolute;
+  inset-inline: 18%;
+  inset-block-start: 22%;
+  block-size: 1.1rem;
+  border-inline: 2px solid transparent;
+  border-block-start: 2px solid var(--color-petrol);
+  border-block-end: 2px solid transparent;
+  clip-path: polygon(0 0, 50% 100%, 100% 0);
+  background: color-mix(in srgb, var(--color-petrol) 18%, white);
+}
+
+.mail-workflow__icon--ticket {
+  background: color-mix(in srgb, var(--color-petrol) 10%, white);
+}
+
+.mail-workflow__ticket-strip {
+  font-family: var(--font-body);
+  font-size: 0.58rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--color-night);
+  padding: 0.25rem 0.35rem;
+  border-radius: 0.3rem;
+  background: var(--color-paper);
+  border: 1px dashed var(--color-petrol);
+}
+
+.mail-workflow__icon--track {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+}
+
+.mail-workflow__track-dot {
+  inline-size: 0.45rem;
+  block-size: 0.45rem;
+  border-radius: 999px;
+  background: var(--color-petrol);
+}
+
+.mail-workflow__track-dot:nth-child(2) {
+  background: var(--color-amber);
+}
+
+.mail-workflow__track-dot:nth-child(3) {
+  background: var(--color-night);
+}
+
+@media (min-width: 52rem) {
+  .login-layout {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 2rem;
+    padding-block: 1rem;
+  }
+}
