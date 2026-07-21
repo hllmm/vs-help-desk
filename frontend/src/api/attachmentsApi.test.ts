@@ -22,7 +22,8 @@ describe('downloadAttachment', () => {
       signal: controller.signal,
     })
 
-    expect(result).toBeInstanceOf(Blob)
+    expect(result.type).toBe('text/plain')
+    expect(result.size).toBe(bytes.byteLength)
     expect(new TextDecoder().decode(await result.arrayBuffer())).toBe(
       'file-bytes',
     )

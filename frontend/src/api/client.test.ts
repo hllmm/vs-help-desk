@@ -285,7 +285,7 @@ describe('apiBlobRequest', () => {
   it('reuses cookie credentials and passes AbortSignal without Authorization', async () => {
     const controller = new AbortController()
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(new Blob(['abc']), {
+      new Response(new TextEncoder().encode('abc'), {
         status: 200,
         headers: { 'Content-Type': 'application/pdf' },
       }),
@@ -369,7 +369,7 @@ describe('apiBlobRequest', () => {
     )
 
     const blob = await apiBlobRequest('/api/attachments/ok')
-    expect(blob).toBeInstanceOf(Blob)
+    expect(blob.type).toBe('application/octet-stream')
     expect(await blob.arrayBuffer()).toEqual(new Uint8Array([1, 2, 3]).buffer)
   })
 })

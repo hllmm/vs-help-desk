@@ -46,8 +46,17 @@ jobs:
           dotnet-version: "10.0.x"
       - name: Restore
         run: dotnet restore VSHelpDesk.slnx
+      - name: Restore tools
+        run: dotnet tool restore
       - name: Build
         run: dotnet build VSHelpDesk.slnx --no-restore -c Release
+      - name: Apply database migrations
+        run: >-
+          dotnet ef database update
+          --project src/VSHelpDesk.Infrastructure
+          --startup-project src/VSHelpDesk.WebAPI
+          --configuration Release
+          --no-build
       - name: Test
         run: dotnet test VSHelpDesk.slnx --no-build -c Release --nologo
 
