@@ -1083,9 +1083,9 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     private static async Task<Guid> GetSeedUserIdAsync(ApplicationDbContext db)
     {
         var userId = await db.Users
-            .OrderBy(user => user.CreatedAt)
+            .Where(user => user.Username == CustomWebApplicationFactory.TestSeedUsername)
             .Select(user => user.Id)
-            .FirstOrDefaultAsync();
+            .SingleOrDefaultAsync();
         Assert.NotEqual(Guid.Empty, userId);
         return userId;
     }

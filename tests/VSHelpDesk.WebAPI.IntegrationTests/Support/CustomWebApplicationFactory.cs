@@ -12,6 +12,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
     public const string TestSigningKey = "integration-test-signing-key-32-bytes!!";
     public const string TestJobsApiKey = "integration-test-jobs-api-key-32!!";
     public const string TestSeedPassword = "IntegrationSeedPassword1!";
+    public const string TestSeedUsername = "support";
     public const string TestAdminPassword = TestSeedPassword;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -22,7 +23,7 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseSetting("Email:SupportMailboxAddress", "support@example.test");
         builder.UseSetting("SeedUser:Enabled", "true");
         builder.UseSetting("SeedUser:Password", TestSeedPassword);
-        builder.UseSetting("SeedUser:Username", "support");
+        builder.UseSetting("SeedUser:Username", TestSeedUsername);
         builder.UseSetting("SeedUser:FullName", "Local Support User");
         builder.UseSetting("SeedUser:Email", "support@vshelpdesk.local");
         builder.UseSetting("SeedAdmin:Enabled", "true");
