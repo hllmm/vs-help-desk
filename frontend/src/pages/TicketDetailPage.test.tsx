@@ -16,6 +16,8 @@ const fetchTicketDetails = vi.hoisted(() => vi.fn())
 const fetchTickets = vi.hoisted(() => vi.fn())
 const replyToTicket = vi.hoisted(() => vi.fn())
 const resolveTicket = vi.hoisted(() => vi.fn())
+const fetchAssignableUsers = vi.hoisted(() => vi.fn())
+const assignTicket = vi.hoisted(() => vi.fn())
 const downloadAttachment = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/ticketsApi', () => ({
@@ -23,6 +25,8 @@ vi.mock('../api/ticketsApi', () => ({
   fetchTickets,
   replyToTicket,
   resolveTicket,
+  fetchAssignableUsers,
+  assignTicket,
 }))
 
 vi.mock('../api/attachmentsApi', () => ({
@@ -186,7 +190,16 @@ describe('TicketDetailPage', () => {
     fetchTickets.mockReset()
     replyToTicket.mockReset()
     resolveTicket.mockReset()
+    fetchAssignableUsers.mockReset()
+    assignTicket.mockReset()
     downloadAttachment.mockReset()
+    fetchAssignableUsers.mockResolvedValue([
+      {
+        id: 'user-1',
+        fullName: 'Destek Kullanıcısı',
+        username: 'support',
+      },
+    ])
     sessionStorage.clear()
     window.history.replaceState({}, '', '/')
   })
@@ -224,6 +237,8 @@ describe('TicketDetailPage', () => {
     expect(screen.getByText('Son hareket')).toBeInTheDocument()
     expect(screen.getByText('İrem Yılmaz')).toBeInTheDocument()
     expect(screen.getByText('irem.yilmaz@example.com')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sorumlu' })).toBeInTheDocument()
+    expect(await screen.findByLabelText('Atanan destek personeli')).toHaveValue('')
     const customerMeta = document.querySelector('.ticket-detail__customer')
     expect(customerMeta).not.toBeNull()
     expect(within(customerMeta as HTMLElement).getByText('Müşteri')).toBeInTheDocument()

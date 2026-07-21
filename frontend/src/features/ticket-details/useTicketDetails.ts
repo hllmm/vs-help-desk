@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { fetchTicketDetails } from '../../api/ticketsApi'
-import type { ResolveTicketResult, TicketDetails } from '../../api/types'
+import type {
+  AssignTicketResult,
+  ResolveTicketResult,
+  TicketDetails,
+} from '../../api/types'
 
 export type TicketDetailErrorKind = 'network' | 'not-found' | 'server'
 
@@ -13,6 +17,7 @@ export type UseTicketDetailsResult = {
   error: { kind: TicketDetailErrorKind } | null
   refresh: () => Promise<void>
   applyResolvedTicket: (result: ResolveTicketResult) => void
+  applyAssignment: (result: AssignTicketResult) => void
 }
 
 type TicketDetailRequestState = {
@@ -157,6 +162,23 @@ export function useTicketDetails(
     })
   }, [])
 
+  const applyAssignment = useCallback((result: AssignTicketResult) => {
+    setState((current) => {
+      if (current.detail === null || current.detail.id !== result.ticketId) {
+        return current
+      }
+
+      return {
+        ...current,
+        detail: {
+          ...current.detail,
+          assignedUserId: result.assignedUserId,
+          updatedAt: result.updatedAt,
+        },
+      }
+    })
+  }, [])
+
   const forActiveTicket = state.activeTicketId === ticketId
   const usableTicketId = isUsableTicketId(ticketId)
 
@@ -171,5 +193,6 @@ export function useTicketDetails(
     error: forActiveTicket ? state.error : null,
     refresh: load,
     applyResolvedTicket,
+    applyAssignment,
   }
 }

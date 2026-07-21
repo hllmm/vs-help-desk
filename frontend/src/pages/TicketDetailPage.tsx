@@ -1,6 +1,7 @@
 import { useMemo, type ReactElement } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { TicketReplyForm } from '../features/ticket-details/TicketReplyForm'
+import { TicketAssignmentPanel } from '../features/ticket-details/TicketAssignmentPanel'
 import { TicketResolutionPanel } from '../features/ticket-details/TicketResolutionPanel'
 import { TicketTimeline } from '../features/ticket-details/TicketTimeline'
 import {
@@ -45,6 +46,7 @@ export function TicketDetailPage(): ReactElement {
     error,
     refresh,
     applyResolvedTicket,
+    applyAssignment,
   } = useTicketDetails(ticketId)
   const {
     activeAttachmentId,
@@ -184,6 +186,12 @@ export function TicketDetailPage(): ReactElement {
           </div>
 
           <aside className="ticket-detail__reply-slot">
+            <TicketAssignmentPanel
+              ticketId={detail.id}
+              status={detail.status}
+              assignedUserId={detail.assignedUserId}
+              onApplyAssignment={applyAssignment}
+            />
             <TicketResolutionPanel
               ticketId={detail.id}
               status={detail.status}
