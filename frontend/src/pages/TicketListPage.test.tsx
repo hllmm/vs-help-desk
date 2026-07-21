@@ -124,8 +124,11 @@ describe('TicketListPage', () => {
 
     renderTicketsPage()
 
-    const status = await screen.findByRole('status')
-    expect(status).toHaveTextContent('Destek talepleri yükleniyor…')
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Destek talepleri yükleniyor…',
+      )
+    })
 
     pending.resolve(sampleTickets)
     await screen.findByRole('table')

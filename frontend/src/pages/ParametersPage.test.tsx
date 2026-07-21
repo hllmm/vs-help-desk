@@ -104,8 +104,11 @@ describe('ParametersPage', () => {
 
     renderParametersPage()
 
-    const status = await screen.findByRole('status')
-    expect(status).toHaveTextContent('Parametreler yükleniyor…')
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Parametreler yükleniyor…',
+      )
+    })
 
     pending.resolve(sampleParameters)
     await screen.findByRole('table')

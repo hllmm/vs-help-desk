@@ -102,7 +102,7 @@ describe('Layout', () => {
     seedAuthenticatedUser('Admin')
     renderLayout('/users')
 
-    const nav = screen.getByRole('navigation', { name: 'Ana menü' })
+    const nav = await screen.findByRole('navigation', { name: 'Ana menü' })
     expect(
       await screen.findByRole('link', { name: 'Kullanıcılar' }),
     ).toHaveAttribute('href', '/users')

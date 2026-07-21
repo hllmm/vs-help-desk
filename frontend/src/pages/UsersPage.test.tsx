@@ -106,8 +106,11 @@ describe('UsersPage', () => {
 
     renderUsersPage()
 
-    const status = await screen.findByRole('status')
-    expect(status).toHaveTextContent('Kullanıcılar yükleniyor…')
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Kullanıcılar yükleniyor…',
+      )
+    })
 
     pending.resolve(sampleUsers)
     await screen.findByRole('table')
@@ -209,5 +212,82 @@ describe('UsersPage', () => {
       await screen.findByRole('alert'),
     ).toHaveTextContent('Sistemde en az bir aktif yönetici kalmalıdır.')
     expect(roleSelect).toHaveValue('Admin')
+  })
+
+  it('waits for cookie bootstrap and preserves a direct Admin route', async () => {
+    const me = deferred<Response>()
+    listUsers.mockResolvedValueOnce(sampleUsers)
+    sessionStorage.clear()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input).includes('/api/auth/me')) {
+          return me.promise
+        }
+        return Promise.resolve(new Response(null, { status: 404 }))
+      }),
+    )
+    window.history.pushState({}, '', '/users')
+
+    render(<App />)
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Oturum doğrulanıyor…',
+    )
+    expect(window.location.pathname).toBe('/users')
+    expect(
+      screen.queryByRole('heading', { name: 'Kullanıcılar' }),
+    ).not.toBeInTheDocument()
+
+    me.resolve(
+      new Response(
+        JSON.stringify({
+          userId: 'user-1',
+          fullName: 'Admin Kullanıcısı',
+          username: 'admin',
+          role: 'Admin',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Kullanıcılar' }),
+    ).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/users')
+  })
+
+  it('redirects a direct Admin route only after bootstrap rejects the cookie', async () => {
+    const me = deferred<Response>()
+    sessionStorage.clear()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input).includes('/api/auth/me')) {
+          return me.promise
+        }
+        return Promise.resolve(new Response(null, { status: 404 }))
+      }),
+    )
+    window.history.pushState({}, '', '/users')
+
+    render(<App />)
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Oturum doğrulanıyor…',
+    )
+    expect(window.location.pathname).toBe('/users')
+
+    me.resolve(
+      new Response(JSON.stringify({ message: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    expect(
+      await screen.findByRole('heading', { name: 'Hesabınıza giriş yapın' }),
+    ).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/login')
   })
 })

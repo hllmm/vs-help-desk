@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/authState'
 import { resolveSafeReturnPath } from '../auth/safeReturnPath'
 import { MailWorkflowIllustration } from '../components/MailWorkflowIllustration'
 

@@ -1,7 +1,5 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -13,21 +11,13 @@ import {
   login as loginApi,
   logout as logoutApi,
 } from '../api/authApi'
+import { AuthContext } from './authState'
 import {
   clearSession,
   getStoredUser,
   setStoredUser,
   type StoredUser,
 } from './tokenStorage'
-
-type AuthContextValue = {
-  user: StoredUser | null
-  isAuthenticated: boolean
-  login: (username: string, password: string) => Promise<void>
-  logout: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null)
 
 function toStoredUser(user: {
   userId: string
@@ -45,6 +35,7 @@ function toStoredUser(user: {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<StoredUser | null>(() => getStoredUser())
+  const [isBootstrapping, setIsBootstrapping] = useState(true)
   /** Bumps to invalidate in-flight /me when login/logout wins the race. */
   const bootstrapGeneration = useRef(0)
 
@@ -66,14 +57,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearSession()
         setUser(null)
       })
+      .finally(() => {
+        if (generation === bootstrapGeneration.current) {
+          setIsBootstrapping(false)
+        }
+      })
   }, [])
 
   const login = useCallback(async (username: string, password: string) => {
     bootstrapGeneration.current += 1
-    const result = await loginApi({ username, password })
-    const stored = toStoredUser(result)
-    setStoredUser(stored)
-    setUser(stored)
+    try {
+      const result = await loginApi({ username, password })
+      const stored = toStoredUser(result)
+      setStoredUser(stored)
+      setUser(stored)
+    } catch (error) {
+      clearSession()
+      setUser(null)
+      throw error
+    } finally {
+      setIsBootstrapping(false)
+    }
   }, [])
 
   const logout = useCallback(async () => {
@@ -85,25 +89,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     clearSession()
     setUser(null)
+    setIsBootstrapping(false)
   }, [])
 
   const value = useMemo(
     () => ({
       user,
-      isAuthenticated: Boolean(user),
+      isAuthenticated: !isBootstrapping && Boolean(user),
+      isBootstrapping,
       login,
       logout,
     }),
-    [user, login, logout],
+    [user, isBootstrapping, login, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext)
-  if (!ctx) {
-    throw new Error('useAuth must be used within AuthProvider')
-  }
-  return ctx
 }

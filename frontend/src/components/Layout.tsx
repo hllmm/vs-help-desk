@@ -1,5 +1,5 @@
 import { Link, NavLink } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
+import { useAuth } from '../auth/authState'
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout, isAuthenticated } = useAuth()

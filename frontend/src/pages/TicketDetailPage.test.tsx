@@ -197,8 +197,11 @@ describe('TicketDetailPage', () => {
 
     renderDetail()
 
-    const status = await screen.findByRole('status')
-    expect(status).toHaveTextContent('Talep ayrıntıları yükleniyor…')
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Talep ayrıntıları yükleniyor…',
+      )
+    })
     expect(
       screen.getByRole('link', { name: 'Destek taleplerine dön' }),
     ).toBeInTheDocument()
@@ -215,7 +218,7 @@ describe('TicketDetailPage', () => {
     expect(
       await screen.findByRole('link', { name: 'Destek taleplerine dön' }),
     ).toHaveAttribute('href', '/tickets')
-    expect(screen.getByText('VS-000042')).toBeInTheDocument()
+    expect(await screen.findByText('VS-000042')).toBeInTheDocument()
     expect(screen.getByText('Şifre sıfırlama')).toBeInTheDocument()
     expect(screen.getByText('Yeni')).toBeInTheDocument()
     expect(screen.getByText('Son hareket')).toBeInTheDocument()
@@ -799,4 +802,3 @@ describe('TicketDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Çıkış yap' })).toBeEnabled()
   })
 })
-
