@@ -7,6 +7,7 @@ import { LoginPage } from './pages/LoginPage'
 import { ParametersPage } from './pages/ParametersPage'
 import { TicketDetailPage } from './pages/TicketDetailPage'
 import { TicketListPage } from './pages/TicketListPage'
+import { UsersPage } from './pages/UsersPage'
 
 export default function App() {
   return (
@@ -29,6 +30,14 @@ export default function App() {
                 <ProtectedRoute>
                   <TicketDetailPage />
                 </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/users"
+              element={
+                <AdminRoute>
+                  <UsersPage />
+                </AdminRoute>
               }
             />
             <Route
