@@ -6,6 +6,7 @@ import {
   type TestInfo,
 } from '@playwright/test'
 import type {
+  AssignableUser,
   SupportReplyResult,
   TicketDetails,
   TicketListItem,
@@ -21,6 +22,7 @@ const MESSAGE_CUSTOMER_ID = '33333333-3333-3333-3333-333333333333'
 const MESSAGE_SUPPORT_ID = '44444444-4444-4444-4444-444444444444'
 const MESSAGE_REPLY_ID = '55555555-5555-5555-5555-555555555555'
 const ATTACHMENT_ID = '66666666-6666-6666-6666-666666666666'
+const ASSIGNEE_ADMIN_ID = '77777777-7777-7777-7777-777777777777'
 const ATTACHMENT_FILE_NAME = 'ekran-goruntusu.png'
 
 const EXPIRY_NOTICE =
@@ -50,6 +52,8 @@ type MutableTicketFixture = {
   detail: TicketDetails
   replyMode: ReplyMode
   lastReplyBody: unknown
+  lastAssignmentBody: unknown
+  lastAssignmentCsrf: string | null
   /** Authorization header if any (cookie era: should stay null). */
   lastAttachmentAuth: string | null
   lastAttachmentUrl: string | null
@@ -61,6 +65,19 @@ const SEED_USER = {
   username: 'ada.destek',
   role: 'Support',
 }
+
+const ASSIGNEES: AssignableUser[] = [
+  {
+    id: SEED_USER.userId,
+    fullName: SEED_USER.fullName,
+    username: SEED_USER.username,
+  },
+  {
+    id: ASSIGNEE_ADMIN_ID,
+    fullName: 'Ece Yönetici',
+    username: 'ece.admin',
+  },
+]
 
 const ME_API = `${ORIGIN}/api/auth/me`
 
@@ -142,6 +159,8 @@ function createFixture(options?: {
     detail,
     replyMode: 'delivered',
     lastReplyBody: null,
+    lastAssignmentBody: null,
+    lastAssignmentCsrf: null,
     lastAttachmentAuth: null,
     lastAttachmentUrl: null,
   }
@@ -383,6 +402,8 @@ async function installTicketWorkspaceMocks(
 
   const detailUrl = `${TICKETS_API}/${TICKET_ID}`
   const replyUrl = `${detailUrl}/replies`
+  const assigneesUrl = `${TICKETS_API}/assignees`
+  const assignmentUrl = `${detailUrl}/assignee`
   const unknownUrl = `${TICKETS_API}/${UNKNOWN_TICKET_ID}`
   const attachmentUrl = `${ORIGIN}/api/attachments/${ATTACHMENT_ID}`
 
@@ -407,6 +428,62 @@ async function installTicketWorkspaceMocks(
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(result),
+    })
+  })
+
+  await page.route(assigneesUrl, async (route: Route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(ASSIGNEES),
+    })
+  })
+
+  await page.route(assignmentUrl, async (route: Route) => {
+    if (route.request().method() !== 'PUT') {
+      await route.fallback()
+      return
+    }
+
+    const raw = route.request().postData() ?? '{}'
+    const body = JSON.parse(raw) as Record<string, unknown>
+    fixture.lastAssignmentBody = body
+    fixture.lastAssignmentCsrf =
+      route.request().headers()['x-csrf-token'] ?? null
+    expect(Object.keys(body)).toEqual(['userId'])
+    expect(
+      body.userId === null ||
+        ASSIGNEES.some((candidate) => candidate.id === body.userId),
+    ).toBe(true)
+
+    const assignedUserId = body.userId as string | null
+    const changed = fixture.detail.assignedUserId !== assignedUserId
+    const updatedAt = changed
+      ? '2026-07-20T11:30:00.000Z'
+      : fixture.detail.updatedAt
+    fixture.detail = {
+      ...fixture.detail,
+      assignedUserId,
+      updatedAt,
+    }
+    fixture.listItem = {
+      ...fixture.listItem,
+      assignedUserId,
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ticketId: TICKET_ID,
+        assignedUserId,
+        updatedAt,
+        changed,
+      }),
     })
   })
 
@@ -615,6 +692,52 @@ test('successful reply announces delivery and shows waiting status', async ({
   expect(fixture.lastReplyBody).toEqual({ content: replyText })
 
   await assertNoDocumentOverflow(page)
+  telemetry.assertClean()
+})
+
+test('assigns and clears an active owner without overflow', async ({
+  page,
+}, testInfo: TestInfo) => {
+  const telemetry = attachTelemetry(page)
+  const fixture = createFixture()
+  await installTicketWorkspaceMocks(page, fixture)
+  await seedAuthenticatedSession(page)
+
+  await page.goto(`/tickets/${TICKET_ID}`)
+  await expectReadyDetail(page, fixture)
+
+  const assigneeSelect = page.getByRole('combobox', {
+    name: 'Atanan destek personeli',
+  })
+  const saveButton = page.getByRole('button', { name: 'Atamayı kaydet' })
+  await expect(assigneeSelect).toHaveValue('')
+  await expect(saveButton).toBeDisabled()
+
+  await assigneeSelect.selectOption(ASSIGNEE_ADMIN_ID)
+  await expect(saveButton).toBeEnabled()
+  await saveButton.click()
+
+  await expect(page.getByRole('status')).toHaveText('Sorumlu güncellendi.')
+  expect(fixture.lastAssignmentBody).toEqual({ userId: ASSIGNEE_ADMIN_ID })
+  expect(fixture.lastAssignmentCsrf).toBe('browser-test-csrf')
+  await expect(assigneeSelect).toHaveValue(ASSIGNEE_ADMIN_ID)
+
+  await assigneeSelect.selectOption('')
+  await saveButton.click()
+
+  await expect(page.getByRole('status')).toHaveText('Sorumlu güncellendi.')
+  expect(fixture.lastAssignmentBody).toEqual({ userId: null })
+  expect(fixture.detail.assignedUserId).toBeNull()
+  await expect(assigneeSelect).toHaveValue('')
+
+  await assigneeSelect.focus()
+  await expect(assigneeSelect).toBeFocused()
+  await assertFocusVisibleOutline(page)
+  await assertNoDocumentOverflow(page)
+  await testInfo.attach(`ticket-assignment-${testInfo.project.name}`, {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  })
   telemetry.assertClean()
 })
 
