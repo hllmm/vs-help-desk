@@ -28,13 +28,15 @@ docker compose up -d postgres mailpit
 # 2) Connection string (şifreyi notlara yazma; örnek placeholder)
 export ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=VS_HelpDesk_DB;Username=stajyer;Password=..."
 
-# 3) Migration + seed login (SeedUser:Password user-secrets / env)
+# 3) Migration + seed logins (SeedUser:Password + SeedAdmin:Password)
 dotnet tool restore
+dotnet user-secrets set "SeedUser:Password" "..." --project src/VSHelpDesk.WebAPI
+dotnet user-secrets set "SeedAdmin:Password" "..." --project src/VSHelpDesk.WebAPI
 dotnet ef database update \
   --project src/VSHelpDesk.Infrastructure \
   --startup-project src/VSHelpDesk.WebAPI
 
-# 4) API (Auth:SigningKey, Jobs:ApiKey, SeedUser:Password)
+# 4) API (Auth:SigningKey, Jobs:ApiKey, SeedUser:Password, SeedAdmin:Password)
 dotnet restore VSHelpDesk.slnx
 dotnet run --project src/VSHelpDesk.WebAPI
 
@@ -42,7 +44,16 @@ dotnet run --project src/VSHelpDesk.WebAPI
 cd frontend && npm install && npm run dev -- --host 127.0.0.1
 ```
 
-Seed kullanıcı: username `support` (Development `SeedUser`); parola yalnız `SeedUser:Password` kaynağından.
+Development seed accounts (passwords only from user-secrets / env — never commit):
+
+| Username | Role | Password source |
+|----------|------|-----------------|
+| `support` | Support | `SeedUser:Password` |
+| `admin` | Admin | `SeedAdmin:Password` |
+
+```bash
+dotnet user-secrets set "SeedAdmin:Password" "..." --project src/VSHelpDesk.WebAPI
+```
 
 | Servis | Adres |
 |--------|--------|
@@ -78,7 +89,7 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 - `VITE_API_BASE_URL` is an optional build-time override (avoid for cookie auth — cross-origin cookies need extra CORS/`SameSite` setup).
 - Production bundle: relative `/api/...` behind same-origin reverse proxy.
 - Auth: login sets HttpOnly `vshd.auth` + readable `vshd.csrf`; SPA uses `credentials: 'include'` and `X-CSRF-Token` on mutations; **no** JWT in sessionStorage/localStorage; bootstrap via `GET /api/auth/me`.
-- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply + resolve), `/parameters` (UC-010 list/edit allowlisted keys).
+- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + reply + resolve), `/parameters` (UC-010 list/edit allowlisted keys — **Admin** only; Support has no nav/route access).
 - Detail messages render as literal text; attachments download via authenticated Blob + cookies (no token in URL).
 - Support reply: `POST /api/tickets/{id}/replies` with `{ content }` only; max **65,536** characters; saved-vs-delivered outcomes include SMTP failure warning without status change.
 - Manual resolve (detail): confirm dialog → `POST /api/tickets/{id}/resolve` (no body); server-confirmed **Çözüldü** state; reply composer hidden while resolved.
@@ -96,7 +107,7 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 | `POST /api/jobs/resolve-inactive-tickets` | `X-Jobs-Api-Key` zorunlu; JWT/cookie yok; eşik `AutoResolve.InactiveDays` (varsayılan 3, 1–30); `Status == WaitingCustomerReply` ve `WaitingCustomerSince <= now - days` |
 | Otomatik kapanış | `ClosedByUserId` **null** (sistem); `ResolvedAt` set |
 | Reopen | Yalnızca müşteri e-postası; kanonik ticket numarası + müşteri kimliği + idempotency (Message-ID / receipt); subject değişmez; manuel reopen UI/API **yok** |
-| `GET/PUT /api/parameters` | Cookie auth (+ CSRF on PUT); allowlist katalog (şimdilik `AutoResolve.InactiveDays`); bilinmeyen key → 404; geçersiz değer → 400; SMTP sırları DB’de **yok** |
+| `GET/PUT /api/parameters` | Cookie auth + **Admin** role (+ CSRF on PUT); Support → **403**; allowlist katalog (şimdilik `AutoResolve.InactiveDays`); bilinmeyen key → 404; geçersiz değer → 400; SMTP sırları DB’de **yok** |
 | Atama | **Uygulanmadı** — public assign rotası yok |
 
 Zamanlayıcı kurulumu uygulama **dışındadır**. Örnek dış çağrı / cron (yer tutucu anahtar):
