@@ -163,21 +163,46 @@ public sealed class Ticket
     }
 
     /// <summary>BR-011 — at most one assignee at a time. Not conversation activity (BR-019).</summary>
-    public void Assign(Guid userId, DateTime now)
+    public bool Assign(Guid userId, DateTime now)
     {
+        EnsureAssignmentCanChange();
+
         if (userId == Guid.Empty)
         {
-            throw new DomainException("Assignee user id is required.");
+            throw new DomainException("assignee-required");
         }
 
-        if (Status == TicketStatus.Resolved)
+        if (AssignedUserId == userId)
         {
-            throw new DomainException(
-                $"Cannot assign a ticket in status '{Status}'.");
+            return false;
         }
 
         AssignedUserId = userId;
         UpdatedAt = now;
+        return true;
+    }
+
+    /// <summary>BR-011 — clears the single assignee without conversation activity.</summary>
+    public bool Unassign(DateTime now)
+    {
+        EnsureAssignmentCanChange();
+
+        if (AssignedUserId is null)
+        {
+            return false;
+        }
+
+        AssignedUserId = null;
+        UpdatedAt = now;
+        return true;
+    }
+
+    private void EnsureAssignmentCanChange()
+    {
+        if (Status == TicketStatus.Resolved)
+        {
+            throw new DomainException("ticket-resolved");
+        }
     }
 
     private void EnsureCanTransitionTo(TicketStatus target, params TicketStatus[] allowedFrom)

@@ -200,11 +200,51 @@ public sealed class TicketTests
         var agent = Guid.Parse("22222222-2222-2222-2222-222222222222");
         var ticket = Ticket.Create("VS-000012", "Assign", "Ada", "ada@example.test", T0);
 
-        ticket.Assign(agent, T4);
+        var changed = ticket.Assign(agent, T4);
 
+        Assert.True(changed);
         Assert.Equal(agent, ticket.AssignedUserId);
         Assert.Equal(T4, ticket.UpdatedAt);
         Assert.Equal(T0, ticket.LastActivityAt);
+    }
+
+    [Fact]
+    public void Assign_SameUserIsIdempotent_AndUnassignClearsWithoutActivity()
+    {
+        var agent = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var ticket = Ticket.Create("VS-000013", "Assignment lifecycle", "Ada", "ada@example.test", T0);
+
+        Assert.True(ticket.Assign(agent, T1));
+        Assert.False(ticket.Assign(agent, T2));
+        Assert.Equal(T1, ticket.UpdatedAt);
+
+        Assert.True(ticket.Unassign(T3));
+        Assert.False(ticket.Unassign(T4));
+
+        Assert.Null(ticket.AssignedUserId);
+        Assert.Equal(T3, ticket.UpdatedAt);
+        Assert.Equal(T0, ticket.LastActivityAt);
+    }
+
+    [Fact]
+    public void Assign_EmptyUserAndResolvedChangesUseStableDomainCodes()
+    {
+        var ticket = Ticket.Create("VS-000014", "Assignment guards", "Ada", "ada@example.test", T0);
+
+        var empty = Assert.Throws<DomainException>(() => ticket.Assign(Guid.Empty, T1));
+        Assert.Equal("assignee-required", empty.Message);
+
+        Assert.True(ticket.Assign(SupportUserId, T1));
+        Assert.True(ticket.ResolveManually(T2, SupportUserId));
+
+        var assignResolved = Assert.Throws<DomainException>(
+            () => ticket.Assign(Guid.NewGuid(), T3));
+        var unassignResolved = Assert.Throws<DomainException>(
+            () => ticket.Unassign(T3));
+
+        Assert.Equal("ticket-resolved", assignResolved.Message);
+        Assert.Equal("ticket-resolved", unassignResolved.Message);
+        Assert.Equal(SupportUserId, ticket.AssignedUserId);
     }
 
     [Fact]
