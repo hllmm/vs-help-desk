@@ -143,6 +143,26 @@ describe('UsersPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('uses text and semantic metadata for role and activity state', async () => {
+    listUsers.mockResolvedValueOnce(sampleUsers)
+    renderUsersPage()
+
+    expect(
+      await screen.findByRole('heading', { name: 'Kullanıcı listesi' }),
+    ).toBeInTheDocument()
+    const role = screen.getByLabelText('admin rolü')
+    expect(role).toHaveAttribute('data-role', 'Admin')
+
+    const adminRow = screen.getByRole('row', {
+      name: /Admin Kullanıcısı/,
+    })
+    const activeText = within(adminRow).getByText('Aktif')
+    expect(activeText.closest('label')).toHaveAttribute(
+      'data-state',
+      'active',
+    )
+  })
+
   it('opens create dialog and submits a new user', async () => {
     const user = userEvent.setup()
     listUsers.mockResolvedValueOnce(sampleUsers)

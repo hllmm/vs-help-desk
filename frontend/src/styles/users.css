@@ -34,13 +34,25 @@
   align-items: center;
 }
 
+.users-results {
+  display: grid;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+
+.users-results__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
 .users-table-view {
   display: block;
   contain: inline-size paint;
   overflow-x: auto;
   background: var(--color-paper);
   border: 1px solid var(--color-line);
-  border-radius: calc(var(--radius-control) + 0.15rem);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-raised);
 }
 
 .users-table__username {
@@ -57,6 +69,18 @@
   border-radius: var(--radius-control);
   padding: 0.45rem 0.65rem;
   background: var(--color-paper);
+  font-weight: 600;
+}
+
+.users-table__select[data-role='Admin'] {
+  border-color: color-mix(in srgb, var(--color-petrol) 35%, var(--color-line));
+  background: var(--color-petrol-soft);
+  color: var(--color-petrol);
+}
+
+.users-table__select[data-role='Support'] {
+  background: var(--color-surface-subtle);
+  color: var(--color-text-primary);
 }
 
 .users-table__active {
@@ -64,6 +88,23 @@
   align-items: center;
   gap: 0.45rem;
   white-space: nowrap;
+  inline-size: fit-content;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.users-table__active[data-state='active'] {
+  border-color: color-mix(in srgb, var(--color-success) 32%, var(--color-line));
+  background: color-mix(in srgb, var(--color-success) 10%, white);
+  color: var(--color-success);
+}
+
+.users-table__active[data-state='inactive'] {
+  background: var(--color-surface-subtle);
+  color: var(--color-text-muted);
 }
 
 .users-table__active input {
@@ -107,8 +148,8 @@
   padding: 1.15rem 1.2rem;
   background: var(--color-paper);
   border: 1px solid var(--color-line);
-  border-radius: calc(var(--radius-control) + 0.1rem);
-  box-shadow: 0 18px 40px color-mix(in srgb, var(--color-night) 18%, transparent);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-raised);
 }
 
 .users-dialog__title {
