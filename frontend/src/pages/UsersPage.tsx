@@ -337,101 +337,113 @@ export function UsersPage(): ReactElement {
       ) : null}
 
       {showResults ? (
-        <div className="users-table-view">
-          <table className="ticket-table users-table">
-            <caption className="visually-hidden">Portal kullanıcıları</caption>
-            <thead>
-              <tr>
-                <th scope="col">Ad soyad</th>
-                <th scope="col">Kullanıcı adı</th>
-                <th scope="col">E-posta</th>
-                <th scope="col">Rol</th>
-                <th scope="col">Aktif</th>
-                <th scope="col">Son giriş</th>
-                <th scope="col">İşlemler</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((user) => {
-                const isRowBusy = mutatingUserId === user.id
-                const showRowError = rowError?.id === user.id
+        <section
+          className="users-results"
+          aria-labelledby="users-list-title"
+        >
+          <h2 id="users-list-title" className="users-results__title">
+            Kullanıcı listesi
+          </h2>
+          <div className="users-table-view">
+            <table className="ticket-table users-table">
+              <caption className="visually-hidden">Portal kullanıcıları</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Ad soyad</th>
+                  <th scope="col">Kullanıcı adı</th>
+                  <th scope="col">E-posta</th>
+                  <th scope="col">Rol</th>
+                  <th scope="col">Aktif</th>
+                  <th scope="col">Son giriş</th>
+                  <th scope="col">İşlemler</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => {
+                  const isRowBusy = mutatingUserId === user.id
+                  const showRowError = rowError?.id === user.id
 
-                return (
-                  <tr key={user.id}>
-                    <th scope="row">{user.fullName}</th>
-                    <td>
-                      <code className="users-table__username">
-                        {user.username}
-                      </code>
-                    </td>
-                    <td>{user.email}</td>
-                    <td>
-                      <label
-                        className="visually-hidden"
-                        htmlFor={`user-role-${user.id}`}
-                      >
-                        {user.username} rolü
-                      </label>
-                      <select
-                        id={`user-role-${user.id}`}
-                        className="users-table__select"
-                        value={user.role}
-                        disabled={isRowBusy || isBusy}
-                        onChange={(event) =>
-                          void handleRoleChange(
-                            user,
-                            event.target.value as UserRole,
-                          )
-                        }
-                      >
-                        <option value="Support">{roleLabel('Support')}</option>
-                        <option value="Admin">{roleLabel('Admin')}</option>
-                      </select>
-                    </td>
-                    <td>
-                      <label className="users-table__active">
-                        <input
-                          type="checkbox"
-                          checked={user.isActive}
-                          disabled={isRowBusy || isBusy}
-                          onChange={() => void handleActiveToggle(user)}
-                        />
-                        <span>{user.isActive ? 'Aktif' : 'Pasif'}</span>
-                      </label>
-                    </td>
-                    <td>
-                      {user.lastLoginAt ? (
-                        <time dateTime={user.lastLoginAt}>
-                          {formatLastLogin(user.lastLoginAt)}
-                        </time>
-                      ) : (
-                        formatLastLogin(null)
-                      )}
-                    </td>
-                    <td className="users-table__action-cell">
-                      <button
-                        type="button"
-                        className="button button--quiet users-table__password"
-                        onClick={() => openPassword(user)}
-                        disabled={isRowBusy || isBusy}
-                      >
-                        Parola sıfırla
-                      </button>
-                      {showRowError && rowError ? (
-                        <p
-                          className="notice notice--error users-table__notice"
-                          role="alert"
+                  return (
+                    <tr key={user.id}>
+                      <th scope="row">{user.fullName}</th>
+                      <td>
+                        <code className="users-table__username">
+                          {user.username}
+                        </code>
+                      </td>
+                      <td>{user.email}</td>
+                      <td>
+                        <label
+                          className="visually-hidden"
+                          htmlFor={`user-role-${user.id}`}
                         >
-                          {rowError.message}
-                        </p>
-                      ) : null}
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                          {user.username} rolü
+                        </label>
+                        <select
+                          id={`user-role-${user.id}`}
+                          className="users-table__select"
+                          data-role={user.role}
+                          value={user.role}
+                          disabled={isRowBusy || isBusy}
+                          onChange={(event) =>
+                            void handleRoleChange(
+                              user,
+                              event.target.value as UserRole,
+                            )
+                          }
+                        >
+                          <option value="Support">{roleLabel('Support')}</option>
+                          <option value="Admin">{roleLabel('Admin')}</option>
+                        </select>
+                      </td>
+                      <td>
+                        <label
+                          className="users-table__active"
+                          data-state={user.isActive ? 'active' : 'inactive'}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={user.isActive}
+                            disabled={isRowBusy || isBusy}
+                            onChange={() => void handleActiveToggle(user)}
+                          />
+                          <span>{user.isActive ? 'Aktif' : 'Pasif'}</span>
+                        </label>
+                      </td>
+                      <td>
+                        {user.lastLoginAt ? (
+                          <time dateTime={user.lastLoginAt}>
+                            {formatLastLogin(user.lastLoginAt)}
+                          </time>
+                        ) : (
+                          formatLastLogin(null)
+                        )}
+                      </td>
+                      <td className="users-table__action-cell">
+                        <button
+                          type="button"
+                          className="button button--quiet users-table__password"
+                          onClick={() => openPassword(user)}
+                          disabled={isRowBusy || isBusy}
+                        >
+                          Parola sıfırla
+                        </button>
+                        {showRowError && rowError ? (
+                          <p
+                            className="notice notice--error users-table__notice"
+                            role="alert"
+                          >
+                            {rowError.message}
+                          </p>
+                        ) : null}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
       ) : null}
 
       {createOpen ? (
