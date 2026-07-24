@@ -3,7 +3,7 @@ import type { TicketAttachmentMeta } from '../../api/types'
 import {
   formatAttachmentSize,
   formatTicketDetailDate,
-  getMessageSenderLabel,
+  getMessageSenderMeta,
   groupAttachmentsByMessage,
 } from './ticketDetailModel'
 
@@ -36,12 +36,24 @@ describe('groupAttachmentsByMessage', () => {
   })
 })
 
-describe('getMessageSenderLabel', () => {
-  it('maps known senders and falls back for unknown values', () => {
-    expect(getMessageSenderLabel('Customer')).toBe('Müşteri')
-    expect(getMessageSenderLabel('Support')).toBe('Destek ekibi')
-    expect(getMessageSenderLabel('System')).toBe('Gönderen bilgisi yok')
-    expect(getMessageSenderLabel('')).toBe('Gönderen bilgisi yok')
+describe('getMessageSenderMeta', () => {
+  it('maps known senders to labels and semantic tones', () => {
+    expect(getMessageSenderMeta('Customer')).toEqual({
+      label: 'Müşteri',
+      tone: 'customer',
+    })
+    expect(getMessageSenderMeta('Support')).toEqual({
+      label: 'Destek ekibi',
+      tone: 'support',
+    })
+    expect(getMessageSenderMeta('System')).toEqual({
+      label: 'Sistem',
+      tone: 'system',
+    })
+    expect(getMessageSenderMeta('')).toEqual({
+      label: 'Gönderen bilgisi yok',
+      tone: 'unknown',
+    })
   })
 })
 

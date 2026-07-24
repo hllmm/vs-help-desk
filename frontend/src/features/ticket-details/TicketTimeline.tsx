@@ -6,7 +6,7 @@ import type {
 import {
   formatAttachmentSize,
   formatTicketDetailDate,
-  getMessageSenderLabel,
+  getMessageSenderMeta,
 } from './ticketDetailModel'
 
 export type TicketTimelineProps = {
@@ -30,12 +30,17 @@ export function TicketTimeline(props: TicketTimelineProps): ReactElement {
     <ol className="ticket-timeline" aria-label="Mesaj geçmişi">
       {messages.map((message) => {
         const attachments = attachmentsByMessage.get(message.id) ?? []
+        const sender = getMessageSenderMeta(message.senderType)
         return (
-          <li key={message.id} className="ticket-timeline__item">
+          <li
+            key={message.id}
+            className="ticket-timeline__item"
+            data-sender={sender.tone}
+          >
             <article className="ticket-timeline__message">
               <header className="ticket-timeline__meta">
                 <span className="ticket-timeline__sender">
-                  {getMessageSenderLabel(message.senderType)}
+                  {sender.label}
                 </span>
                 <time dateTime={message.createdAt}>
                   {formatTicketDetailDate(message.createdAt)}

@@ -269,6 +269,13 @@ describe('TicketDetailPage', () => {
     expect(within(customerMeta as HTMLElement).getByText('Müşteri')).toBeInTheDocument()
     expect(within(customerMeta as HTMLElement).getByText('E-posta')).toBeInTheDocument()
     expect(
+      within(customerMeta as HTMLElement).getByText('Açılış zamanı'),
+    ).toBeInTheDocument()
+    expect(customerMeta?.querySelector('time')).toHaveAttribute(
+      'dateTime',
+      '2026-07-20T09:00:00.000Z',
+    )
+    expect(
       screen.getByRole('heading', { name: 'Mesaj geçmişi' }),
     ).toBeInTheDocument()
 
@@ -283,6 +290,42 @@ describe('TicketDetailPage', () => {
       'dateTime',
       '2026-07-20T09:05:00.000Z',
     )
+  })
+
+  it('distinguishes customer, system, and support messages in server order', async () => {
+    fetchTicketDetails.mockResolvedValueOnce(
+      sampleDetail({
+        messages: [
+          sampleDetail().messages[0]!,
+          {
+            id: 'msg-system',
+            senderType: 'System',
+            userId: null,
+            content: 'Talep otomatik olarak güncellendi.',
+            isHtml: false,
+            createdAt: '2026-07-20T09:20:00.000Z',
+          },
+          sampleDetail().messages[1]!,
+        ],
+      }),
+    )
+    renderDetail()
+
+    const timeline = await screen.findByRole('list', {
+      name: 'Mesaj geçmişi',
+    })
+    const articles = within(timeline).getAllByRole('article')
+    expect(articles).toHaveLength(3)
+    expect(articles[0]?.closest('li')).toHaveAttribute(
+      'data-sender',
+      'customer',
+    )
+    expect(articles[1]?.closest('li')).toHaveAttribute('data-sender', 'system')
+    expect(articles[2]?.closest('li')).toHaveAttribute('data-sender', 'support')
+    expect(within(articles[1]!).getByText('Sistem')).toBeInTheDocument()
+    expect(
+      within(articles[1]!).getByText('Talep otomatik olarak güncellendi.'),
+    ).toBeInTheDocument()
   })
 
   it('shows empty timeline guidance when there are no messages', async () => {
@@ -735,6 +778,10 @@ describe('TicketDetailPage', () => {
 
     expect(await screen.findByText(RESOLUTION_COPY.closureNote)).toBeInTheDocument()
     expect(screen.getByText('Çözüldü')).toBeInTheDocument()
+    expect(screen.getByText('Çözülme zamanı')).toBeInTheDocument()
+    expect(
+      screen.getByText('Çözülme zamanı').parentElement?.querySelector('time'),
+    ).toHaveAttribute('dateTime', '2026-07-20T12:00:00.000Z')
     expect(
       screen.queryByRole('button', { name: RESOLUTION_COPY.trigger }),
     ).not.toBeInTheDocument()

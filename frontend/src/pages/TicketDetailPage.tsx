@@ -164,6 +164,24 @@ export function TicketDetailPage(): ReactElement {
                   {detail.customerEmail}
                 </dd>
               </div>
+              <div>
+                <dt className="ticket-detail__label">Açılış zamanı</dt>
+                <dd>
+                  <time dateTime={detail.createdAt}>
+                    {formatTicketDetailDate(detail.createdAt)}
+                  </time>
+                </dd>
+              </div>
+              {detail.resolvedAt ? (
+                <div>
+                  <dt className="ticket-detail__label">Çözülme zamanı</dt>
+                  <dd>
+                    <time dateTime={detail.resolvedAt}>
+                      {formatTicketDetailDate(detail.resolvedAt)}
+                    </time>
+                  </dd>
+                </div>
+              ) : null}
             </dl>
 
             {downloadError ? (
