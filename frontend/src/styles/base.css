@@ -68,7 +68,7 @@ button,
 }
 
 :where(button, a, input, select, textarea, .button):focus-visible {
-  outline: 3px solid var(--color-petrol);
+  outline: 3px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
