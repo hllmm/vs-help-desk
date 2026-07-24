@@ -252,6 +252,35 @@ describe('TicketListPage', () => {
     fetchTickets
       .mockResolvedValueOnce(page([], { counts: { ...counts, all: 0 } }))
       .mockReturnValueOnce(refresh.promise)
+  })
+
+  it('explains loaded counts and clears search and status together', async () => {
+    fetchTickets.mockResolvedValueOnce(page(sampleTickets))
+    renderTicketsPage()
+    const user = userEvent.setup()
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Yüklenen taleplerin durum dağılımı',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Sayılar şu anda yüklenen talepleri gösterir.'),
+    ).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Taleplerde ara'), 'eşleşmez')
+    await user.selectOptions(screen.getByLabelText('Durum'), 'Resolved')
+    await user.click(
+      screen.getByRole('button', { name: 'Filtreleri temizle' }),
+    )
+
+    expect(screen.getByLabelText('Taleplerde ara')).toHaveValue('')
+    expect(screen.getByLabelText('Durum')).toHaveValue('all')
+    expect(
+      screen.queryByRole('button', { name: 'Filtreleri temizle' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  })
     renderTicketsPage()
     await screen.findByText('Henüz destek talebi yok.')
 
