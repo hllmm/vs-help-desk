@@ -10,8 +10,10 @@ export type TicketFiltersProps = {
   status: TicketStatusFilter
   resultCount: number
   isBusy: boolean
+  hasActiveFilters: boolean
   onQueryChange(value: string): void
   onStatusChange(value: TicketStatusFilter): void
+  onClear(): void
   onRefresh(): void
 }
 
@@ -21,8 +23,10 @@ export function TicketFilters(props: TicketFiltersProps): ReactElement {
     status,
     resultCount,
     isBusy,
+    hasActiveFilters,
     onQueryChange,
     onStatusChange,
+    onClear,
     onRefresh,
   } = props
 
@@ -67,14 +71,26 @@ export function TicketFilters(props: TicketFiltersProps): ReactElement {
         {resultCount} sonuç
       </p>
 
-      <button
-        type="button"
-        className="button button--quiet ticket-refresh"
-        onClick={onRefresh}
-        disabled={isBusy}
-      >
-        {isBusy ? 'Yenileniyor…' : 'Yenile'}
-      </button>
+      <div className="ticket-toolbar__actions">
+        {hasActiveFilters ? (
+          <button
+            type="button"
+            className="button button--quiet"
+            onClick={onClear}
+            disabled={isBusy}
+          >
+            Filtreleri temizle
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="button button--quiet ticket-refresh"
+          onClick={onRefresh}
+          disabled={isBusy}
+        >
+          {isBusy ? 'Yenileniyor…' : 'Yenile'}
+        </button>
+      </div>
     </div>
   )
 }

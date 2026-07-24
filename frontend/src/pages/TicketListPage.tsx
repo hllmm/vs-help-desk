@@ -103,18 +103,34 @@ export function TicketListPage(): ReactElement {
             status={selectedStatus}
             resultCount={visibleTickets.length}
             isBusy={isBusy}
+            hasActiveFilters={query.trim() !== '' || selectedStatus !== 'all'}
             onQueryChange={setQuery}
             onStatusChange={setSelectedStatus}
+            onClear={() => {
+              setQuery('')
+              setSelectedStatus('all')
+            }}
             onRefresh={() => void refresh()}
           />
 
-          <div className="ticket-lifecycle-scroll">
-            <TicketLifecycleRail
-              counts={lifecycleCounts}
-              value={selectedStatus}
-              onChange={setSelectedStatus}
-            />
-          </div>
+          <section
+            className="ticket-lifecycle-region"
+            aria-labelledby="ticket-lifecycle-title"
+          >
+            <div className="ticket-lifecycle-region__heading">
+              <h2 id="ticket-lifecycle-title">
+                Yüklenen taleplerin durum dağılımı
+              </h2>
+              <p>Sayılar şu anda yüklenen talepleri gösterir.</p>
+            </div>
+            <div className="ticket-lifecycle-scroll">
+              <TicketLifecycleRail
+                counts={lifecycleCounts}
+                value={selectedStatus}
+                onChange={setSelectedStatus}
+              />
+            </div>
+          </section>
         </>
       ) : null}
 
