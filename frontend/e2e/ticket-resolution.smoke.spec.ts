@@ -670,6 +670,14 @@ test('login list detail confirm resolve shows resolved status and notice', async
   await expect(page.getByText(COPY.closureNote)).toBeVisible()
   await page.getByRole('button', { name: 'Yenile' }).click()
   await expect(page.getByText(COPY.closureNote)).toBeVisible()
+  const viewport = page.viewportSize()
+  expect(viewport).not.toBeNull()
+  if (viewport!.width <= 767.84) {
+    await page.getByRole('button', { name: 'Menüyü aç' }).click()
+    await expect(
+      page.getByRole('navigation', { name: 'Ana menü' }),
+    ).toBeVisible()
+  }
   await page.getByRole('button', { name: 'Çıkış yap' }).click()
   await expect(page).toHaveURL(/\/login$/)
 
