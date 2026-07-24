@@ -132,6 +132,11 @@
   font-weight: 600;
 }
 
+.ticket-detail__customer time {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .ticket-detail__email {
   font-weight: 500;
   color: var(--color-muted);
@@ -485,10 +490,52 @@
 .ticket-timeline__message {
   display: grid;
   gap: 0.55rem;
+  inline-size: min(100%, 44rem);
   padding: 0.85rem 0.95rem;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--color-ice) 55%, white);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.ticket-timeline__item[data-sender='customer'] .ticket-timeline__message {
+  margin-inline-end: auto;
+}
+
+.ticket-timeline__item[data-sender='support'] .ticket-timeline__message {
+  margin-inline-start: auto;
+  border-color: color-mix(in srgb, var(--color-petrol) 30%, var(--color-line));
+  background: var(--color-petrol-soft);
+}
+
+.ticket-timeline__item[data-sender='support']::after {
+  background: var(--color-success);
+}
+
+.ticket-timeline__item[data-sender='system'] {
+  padding-inline: 1.15rem 0;
+}
+
+.ticket-timeline__item[data-sender='system']::after {
+  background: var(--color-muted);
+}
+
+.ticket-timeline__item[data-sender='system'] .ticket-timeline__message {
+  inline-size: min(100%, 34rem);
+  margin-inline: auto;
+  border-style: dashed;
+  background: var(--color-surface-subtle);
+}
+
+.ticket-timeline__item[data-sender='unknown'] .ticket-timeline__message {
+  border-style: dashed;
+}
+
+.ticket-timeline__message:focus-within {
+  border-color: var(--color-petrol);
+  box-shadow: 0 0 0 2px var(--color-petrol-soft);
 }
 
 .ticket-timeline__meta {
