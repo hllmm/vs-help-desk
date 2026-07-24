@@ -171,6 +171,33 @@ describe('LoginPage', () => {
     )
   })
 
+  it('shows and hides the password without changing its value', async () => {
+    const user = userEvent.setup()
+    mockFetch((url) => {
+      if (url.includes('/api/auth/me')) {
+        return jsonResponse({ message: 'Unauthorized' }, 401)
+      }
+      return jsonResponse({ message: 'not found' }, 404)
+    })
+    renderAt('/login')
+
+    const password = screen.getByLabelText('Parola')
+    await user.type(password, 'secret-value')
+    expect(password).toHaveAttribute('type', 'password')
+
+    await user.click(
+      screen.getByRole('button', { name: 'Parolayı göster' }),
+    )
+    expect(password).toHaveAttribute('type', 'text')
+    expect(password).toHaveValue('secret-value')
+
+    await user.click(
+      screen.getByRole('button', { name: 'Parolayı gizle' }),
+    )
+    expect(password).toHaveAttribute('type', 'password')
+    expect(password).toHaveValue('secret-value')
+  })
+
   it('contains no implementation or sprint jargon', () => {
     mockFetch((url) => {
       if (url.includes('/api/auth/me')) {
@@ -185,4 +212,3 @@ describe('LoginPage', () => {
     )
   })
 })
-
