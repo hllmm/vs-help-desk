@@ -19,6 +19,7 @@ const TICKETS_API = `${ORIGIN}/api/tickets`
 const TICKET_ID = '22222222-2222-2222-2222-222222222222'
 const UNKNOWN_TICKET_ID = '99999999-9999-9999-9999-999999999999'
 const MESSAGE_CUSTOMER_ID = '33333333-3333-3333-3333-333333333333'
+const MESSAGE_SYSTEM_ID = '88888888-8888-8888-8888-888888888888'
 const MESSAGE_SUPPORT_ID = '44444444-4444-4444-4444-444444444444'
 const MESSAGE_REPLY_ID = '55555555-5555-5555-5555-555555555555'
 const ATTACHMENT_ID = '66666666-6666-6666-6666-666666666666'
@@ -123,6 +124,14 @@ function createFixture(options?: {
         content: customerContent,
         isHtml: true,
         createdAt: '2026-07-20T09:05:00.000Z',
+      },
+      {
+        id: MESSAGE_SYSTEM_ID,
+        senderType: 'System',
+        userId: null,
+        content: 'Talep otomatik olarak güncellendi.',
+        isHtml: false,
+        createdAt: '2026-07-20T09:20:00.000Z',
       },
       {
         id: MESSAGE_SUPPORT_ID,
@@ -602,11 +611,20 @@ test('login list detail refresh timeline and browser back', async ({
   await expectReadyDetail(page, fixture)
 
   const timelineItems = page.locator('.ticket-timeline__item')
-  await expect(timelineItems).toHaveCount(2)
+  await expect(timelineItems).toHaveCount(3)
+  await expect(timelineItems.nth(0)).toHaveAttribute(
+    'data-sender',
+    'customer',
+  )
   await expect(timelineItems.nth(0)).toContainText(HTML_LOOKING_CONTENT)
   await expect(timelineItems.nth(0).locator('img')).toHaveCount(0)
   await expect(timelineItems.nth(0).locator('strong')).toHaveCount(0)
+  await expect(timelineItems.nth(1)).toHaveAttribute('data-sender', 'system')
   await expect(timelineItems.nth(1)).toContainText(
+    'Talep otomatik olarak güncellendi.',
+  )
+  await expect(timelineItems.nth(2)).toHaveAttribute('data-sender', 'support')
+  await expect(timelineItems.nth(2)).toContainText(
     'Merhaba, yazıcı kuyruğunu kontrol ediyoruz.',
   )
   await expect(timelineItems.nth(0).locator('time')).toHaveAttribute(
@@ -614,6 +632,10 @@ test('login list detail refresh timeline and browser back', async ({
     '2026-07-20T09:05:00.000Z',
   )
   await expect(timelineItems.nth(1).locator('time')).toHaveAttribute(
+    'dateTime',
+    '2026-07-20T09:20:00.000Z',
+  )
+  await expect(timelineItems.nth(2).locator('time')).toHaveAttribute(
     'dateTime',
     '2026-07-20T10:00:00.000Z',
   )
@@ -898,6 +920,19 @@ test('keyboard traversal covers back refresh attachment composer and shell', asy
   await assertFocusVisibleOutline(page)
 
   await page.locator('body').focus()
+  const viewport = page.viewportSize()
+  expect(viewport).not.toBeNull()
+  if (viewport!.width <= 767.84) {
+    await tabUntil(page, () =>
+      page
+        .getByRole('button', { name: 'Menüyü aç' })
+        .evaluate((el) => el === document.activeElement),
+    )
+    await page.keyboard.press('Enter')
+    await expect(
+      page.getByRole('navigation', { name: 'Ana menü' }),
+    ).toBeVisible()
+  }
   await tabUntil(page, () =>
     page
       .getByRole('button', { name: 'Çıkış yap' })
