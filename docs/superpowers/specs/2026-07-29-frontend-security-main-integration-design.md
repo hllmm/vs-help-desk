@@ -1,6 +1,6 @@
 # Frontend and Security Main Integration Design
 
-Date: 2026-07-29  
+Date: 2026-07-29
 Status: Approved for written-spec review
 
 ## Context
