@@ -11,7 +11,8 @@ namespace VSHelpDesk.Application.Features.Users.UpdateUser;
 public sealed class UpdateUserHandler(
     IApplicationDbContext applicationDbContext,
     ICurrentUserService currentUserService,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IUserAdministrationTransaction userAdministrationTransaction)
 {
     public async Task<UserListItemDto> HandleAsync(
         UpdateUserCommand command,
@@ -30,44 +31,54 @@ public sealed class UpdateUserHandler(
         var email = CreateUserHandler.ValidateEmail(command.Email);
         var role = CreateUserHandler.ParseRole(command.Role);
 
-        var user = applicationDbContext.Users.FirstOrDefault(candidate => candidate.Id == command.Id)
-            ?? throw new NotFoundException(nameof(User), command.Id);
+        return await userAdministrationTransaction.ExecuteAsync(
+            async transactionCancellationToken =>
+            {
+                var user = applicationDbContext.Users.FirstOrDefault(
+                        candidate => candidate.Id == command.Id)
+                    ?? throw new NotFoundException(
+                        nameof(User),
+                        command.Id);
 
-        LastAdminGuard.EnsureCanDemoteOrDeactivate(
-            applicationDbContext.Users,
-            command.Id,
-            role,
-            command.IsActive);
+                LastAdminGuard.EnsureCanDemoteOrDeactivate(
+                    applicationDbContext.Users,
+                    command.Id,
+                    role,
+                    command.IsActive);
 
-        var before = UserAdministrationAuditState.Format(user);
-        user.UpdateProfile(fullName, email);
-        user.AssignRole(role);
-        if (command.IsActive)
-        {
-            user.Activate();
-        }
-        else
-        {
-            user.Deactivate();
-        }
+                var before = UserAdministrationAuditState.Format(user);
+                user.UpdateProfile(fullName, email);
+                user.AssignRole(role);
+                if (command.IsActive)
+                {
+                    user.Activate();
+                }
+                else
+                {
+                    user.Deactivate();
+                }
 
-        applicationDbContext.Add(new UserAdministrationAuditLog(
-            actorUserId,
-            user.Id,
-            "user-updated",
-            timeProvider.GetUtcNow().UtcDateTime,
-            before,
-            UserAdministrationAuditState.Format(user)));
-        await applicationDbContext.SaveChangesAsync(cancellationToken);
+                applicationDbContext.Add(
+                    new UserAdministrationAuditLog(
+                        actorUserId,
+                        user.Id,
+                        "user-updated",
+                        timeProvider.GetUtcNow().UtcDateTime,
+                        before,
+                        UserAdministrationAuditState.Format(user)));
+                await applicationDbContext.SaveChangesAsync(
+                    transactionCancellationToken);
 
-        return new UserListItemDto(
-            user.Id,
-            user.FullName,
-            user.Username,
-            user.Email,
-            user.Role.ToString(),
-            user.IsActive,
-            user.CreatedAt,
-            user.LastLoginAt);
+                return new UserListItemDto(
+                    user.Id,
+                    user.FullName,
+                    user.Username,
+                    user.Email,
+                    user.Role.ToString(),
+                    user.IsActive,
+                    user.CreatedAt,
+                    user.LastLoginAt);
+            },
+            cancellationToken);
     }
 }

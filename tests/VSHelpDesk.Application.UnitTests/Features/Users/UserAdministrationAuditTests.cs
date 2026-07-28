@@ -61,7 +61,8 @@ public sealed class UserAdministrationAuditTests
         var handler = new UpdateUserHandler(
             db,
             new FixedCurrentUser(ActorId),
-            new FixedTimeProvider(FixedNow));
+            new FixedTimeProvider(FixedNow),
+            new InlineTransaction());
 
         await handler.HandleAsync(
             new UpdateUserCommand(
@@ -223,5 +224,13 @@ public sealed class UserAdministrationAuditTests
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class InlineTransaction : IUserAdministrationTransaction
+    {
+        public Task<T> ExecuteAsync<T>(
+            Func<CancellationToken, Task<T>> operation,
+            CancellationToken cancellationToken = default) =>
+            operation(cancellationToken);
     }
 }
