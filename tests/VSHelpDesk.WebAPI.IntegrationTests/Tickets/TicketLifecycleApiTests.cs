@@ -66,6 +66,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
         await ParkDueAcknowledgementsAsync(factory);
 
         Guid ticketId = default;
+        var replyReference = string.Empty;
         var createdTicketIds = new List<Guid>();
         var initialMessageCount = 0;
 
@@ -93,6 +94,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 db.Add(seedMessage);
                 await db.SaveChangesAsync();
                 ticketId = ticket.Id;
+                replyReference = ticket.ReplyReference;
                 createdTicketIds.Add(ticketId);
                 initialMessageCount = 1;
             }
@@ -149,7 +151,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, reopenReceipt),
                 FromAddress: customerEmail,
                 FromDisplayName: "Lifecycle Customer",
-                Subject: $"Re: [{ticketNumber}] {subject} — reopen suffix {token[..6]}",
+                Subject: $"Re: {replyReference} {subject} — reopen suffix {token[..6]}",
                 Body: reopenBody,
                 IsHtml: false,
                 ReceivedAt: DateTime.UtcNow.AddMinutes(-1),
@@ -299,6 +301,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
         var ticketIds = new List<Guid>();
         var parked = new List<ParkedTicket>();
         Guid ticketId = default;
+        var replyReference = string.Empty;
 
         try
         {
@@ -315,6 +318,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 db.Add(ticket);
                 await db.SaveChangesAsync();
                 ticketId = ticket.Id;
+                replyReference = ticket.ReplyReference;
                 ticketIds.Add(ticketId);
                 parked = await ParkForeignEligibleAsync(db, CutoffUtc, ticketIds);
             }
@@ -350,7 +354,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, reopenReceipt),
                 FromAddress: customerEmail,
                 FromDisplayName: "Auto Customer",
-                Subject: $"Re: [{ticketNumber}] {subject} — auto reopen",
+                Subject: $"Re: {replyReference} {subject} — auto reopen",
                 Body: reopenBody,
                 IsHtml: false,
                 ReceivedAt: DateTime.UtcNow.AddMinutes(-1),
@@ -420,6 +424,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
 
         Guid originalTicketId = default;
         Guid? newTicketId = null;
+        var replyReference = string.Empty;
         var ticketIds = new List<Guid>();
 
         try
@@ -438,6 +443,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 db.Add(ticket);
                 await db.SaveChangesAsync();
                 originalTicketId = ticket.Id;
+                replyReference = ticket.ReplyReference;
                 ticketIds.Add(originalTicketId);
             }
 
@@ -446,7 +452,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, receipt),
                 FromAddress: spoofEmail,
                 FromDisplayName: "Spoof",
-                Subject: $"Re: [{ticketNumber}] {subject}",
+                Subject: $"Re: {replyReference} {subject}",
                 Body: "Inject attempt body",
                 IsHtml: false,
                 ReceivedAt: DateTime.UtcNow.AddMinutes(-1),
@@ -526,6 +532,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
         await ParkDueAcknowledgementsAsync(factory);
 
         Guid ticketId = default;
+        var replyReference = string.Empty;
         var ticketIds = new List<Guid>();
 
         try
@@ -552,6 +559,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 db.Add(seedMessage);
                 await db.SaveChangesAsync();
                 ticketId = ticket.Id;
+                replyReference = ticket.ReplyReference;
                 ticketIds.Add(ticketId);
             }
 
@@ -569,7 +577,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, reopenReceipt),
                 FromAddress: customerEmail,
                 FromDisplayName: "List Customer",
-                Subject: $"Re: [{ticketNumber}] {subject}",
+                Subject: $"Re: {replyReference} {subject}",
                 Body: reopenBody,
                 IsHtml: false,
                 ReceivedAt: DateTime.UtcNow.AddMinutes(-1),
