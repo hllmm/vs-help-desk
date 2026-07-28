@@ -17,4 +17,25 @@
   --radius-control: 0.7rem;
   --control-min-height: 44px;
   --space-page: clamp(1rem, 2vw, 1.5rem);
+  --color-canvas: var(--color-ice);
+  --color-surface: var(--color-paper);
+  --color-surface-subtle: #edf4f5;
+  --color-text-primary: var(--color-night);
+  --color-text-muted: var(--color-muted);
+  --color-border: var(--color-line);
+  --color-focus-ring: var(--color-petrol);
+  --color-success: #167c68;
+  --color-warning: var(--color-amber);
+  --color-danger: var(--color-coral);
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --radius-surface: 1rem;
+  --shadow-raised: 0 18px 48px rgb(16 42 67 / 10%);
+  --transition-fast: 160ms ease;
+  --header-min-height: 4.5rem;
+  --content-max-width: 76rem;
 }

@@ -241,14 +241,25 @@ test('production same-origin responsive smoke', async ({
   expect(viewport).not.toBeNull()
   const tableView = page.locator('.ticket-table-view')
   const cardList = page.locator('.ticket-card-list')
+  const navigation = page.getByRole('navigation', { name: 'Ana menü' })
+  const menuTrigger = page.getByRole('button', { name: 'Menüyü aç' })
 
   // Breakpoint in tickets.css: max-width 47.99rem (~767.84px at 16px root).
   if (viewport!.width > 767.84) {
     await expect(tableView).toBeVisible()
     await expect(cardList).toBeHidden()
+    await expect(menuTrigger).toHaveCount(0)
+    await expect(navigation).toBeVisible()
   } else {
     await expect(cardList).toBeVisible()
     await expect(tableView).toBeHidden()
+    await expect(navigation).toBeHidden()
+    await expect(menuTrigger).toBeVisible()
+    await menuTrigger.click()
+    await expect(navigation).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(navigation).toBeHidden()
+    await expect(menuTrigger).toBeFocused()
   }
 
   await testInfo.attach(`portal-${testInfo.project.name}`, {
@@ -377,6 +388,16 @@ test('keyboard focus and controls work without a pointer', async ({
   await page.keyboard.type('secret-password')
 
   await page.keyboard.press('Tab')
+  const passwordToggle = page.getByRole('button', {
+    name: 'Parolayı göster',
+  })
+  await expect(passwordToggle).toBeFocused()
+  await assertFocusVisibleOutline(page)
+  await page.keyboard.press('Enter')
+  await expect(page.getByLabel('Parola')).toHaveAttribute('type', 'text')
+  await expect(page.getByLabel('Parola')).toHaveValue('secret-password')
+
+  await page.keyboard.press('Tab')
   await expect(
     page.getByRole('button', { name: 'Giriş yap' }),
   ).toBeFocused()
@@ -430,6 +451,19 @@ test('keyboard focus and controls work without a pointer', async ({
 
   // Logout lives in the header (before main controls in tab order).
   await page.locator('body').focus()
+  const viewport = page.viewportSize()
+  expect(viewport).not.toBeNull()
+  if (viewport!.width <= 767.84) {
+    await tabUntil(page, () =>
+      page
+        .getByRole('button', { name: 'Menüyü aç' })
+        .evaluate((el) => el === document.activeElement),
+    )
+    await page.keyboard.press('Enter')
+    await expect(
+      page.getByRole('navigation', { name: 'Ana menü' }),
+    ).toBeVisible()
+  }
   await tabUntil(page, () =>
     page
       .getByRole('button', { name: 'Çıkış yap' })

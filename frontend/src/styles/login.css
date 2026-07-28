@@ -26,8 +26,8 @@
 .login-card {
   background: var(--color-paper);
   border: 1px solid var(--color-line);
-  border-radius: 1rem;
-  box-shadow: var(--shadow-soft);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--shadow-raised);
   padding: 1.5rem;
 }
 
@@ -56,6 +56,11 @@
   font-weight: 600;
 }
 
+.field__label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
 .field input {
   width: 100%;
   border: 1px solid var(--color-line);
@@ -63,6 +68,21 @@
   padding: 0.7rem 0.85rem;
   background: var(--color-paper);
   min-inline-size: 0;
+}
+
+.password-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.password-control input {
+  min-inline-size: 0;
+}
+
+.password-control__toggle {
+  white-space: nowrap;
 }
 
 .field input:focus {
@@ -204,5 +224,15 @@
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
     gap: 2rem;
     padding-block: 1rem;
+  }
+}
+
+@media (max-width: 22.5rem) {
+  .password-control {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .password-control__toggle {
+    inline-size: 100%;
   }
 }

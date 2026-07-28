@@ -358,6 +358,34 @@ describe('TicketListPage', () => {
     expect(screen.getByText('1 sonuç')).toBeInTheDocument()
   })
 
+  it('explains loaded counts and clears search and status together', async () => {
+    fetchTickets.mockResolvedValueOnce(sampleTickets)
+    renderTicketsPage()
+    const user = userEvent.setup()
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Yüklenen taleplerin durum dağılımı',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Sayılar şu anda yüklenen talepleri gösterir.'),
+    ).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Taleplerde ara'), 'eşleşmez')
+    await user.selectOptions(screen.getByLabelText('Durum'), 'Resolved')
+    await user.click(
+      screen.getByRole('button', { name: 'Filtreleri temizle' }),
+    )
+
+    expect(screen.getByLabelText('Taleplerde ara')).toHaveValue('')
+    expect(screen.getByLabelText('Durum')).toHaveValue('all')
+    expect(
+      screen.queryByRole('button', { name: 'Filtreleri temizle' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  })
+
   it('renders an unknown status as Turkish fallback with unknown tone', async () => {
     fetchTickets.mockResolvedValueOnce([
       ticket({

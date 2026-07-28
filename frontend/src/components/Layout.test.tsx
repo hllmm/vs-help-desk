@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UserRole } from '../api/types'
@@ -43,6 +44,29 @@ function renderLayout(initialPath = '/') {
         </Layout>
       </MemoryRouter>
     </AuthProvider>,
+  )
+}
+
+function stubViewport(isMobile: boolean) {
+  const listeners = new Set<(event: MediaQueryListEvent) => void>()
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((query: string) => ({
+      matches: isMobile && query === '(max-width: 47.99rem)',
+      media: query,
+      onchange: null,
+      addEventListener: (
+        _type: 'change',
+        listener: (event: MediaQueryListEvent) => void,
+      ) => listeners.add(listener),
+      removeEventListener: (
+        _type: 'change',
+        listener: (event: MediaQueryListEvent) => void,
+      ) => listeners.delete(listener),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
   )
 }
 
@@ -114,6 +138,50 @@ describe('Layout', () => {
       '/tickets',
     )
     expect(nav).toBeInTheDocument()
+  })
+
+  it('opens the mobile navigation, closes on route change, and returns focus on Escape', async () => {
+    stubViewport(true)
+    seedAuthenticatedUser('Admin')
+    renderLayout('/users')
+    const user = userEvent.setup()
+
+    const trigger = await screen.findByRole('button', { name: 'Menüyü aç' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      screen.queryByRole('navigation', { name: 'Ana menü' }),
+    ).not.toBeInTheDocument()
+
+    await user.click(trigger)
+    expect(trigger).toHaveAccessibleName('Menüyü kapat')
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      screen.getByRole('navigation', { name: 'Ana menü' }),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: 'Parametreler' }))
+    expect(trigger).toHaveAccessibleName('Menüyü aç')
+    expect(
+      screen.queryByRole('navigation', { name: 'Ana menü' }),
+    ).not.toBeInTheDocument()
+
+    await user.click(trigger)
+    await user.keyboard('{Escape}')
+    expect(trigger).toHaveAccessibleName('Menüyü aç')
+    expect(trigger).toHaveFocus()
+  })
+
+  it('keeps navigation visible without a menu trigger on desktop', async () => {
+    stubViewport(false)
+    seedAuthenticatedUser('Admin')
+    renderLayout('/tickets')
+
+    expect(
+      await screen.findByRole('navigation', { name: 'Ana menü' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /Menüyü/ }),
+    ).not.toBeInTheDocument()
   })
 
   it('contains no implementation or sprint jargon', () => {

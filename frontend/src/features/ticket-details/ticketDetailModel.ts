@@ -17,14 +17,29 @@ export function groupAttachmentsByMessage(
   return groups
 }
 
-export function getMessageSenderLabel(senderType: string): string {
+export type MessageSenderTone =
+  | 'customer'
+  | 'support'
+  | 'system'
+  | 'unknown'
+
+export type MessageSenderMeta = {
+  label: string
+  tone: MessageSenderTone
+}
+
+export function getMessageSenderMeta(
+  senderType: string,
+): MessageSenderMeta {
   switch (senderType) {
     case 'Customer':
-      return 'Müşteri'
+      return { label: 'Müşteri', tone: 'customer' }
     case 'Support':
-      return 'Destek ekibi'
+      return { label: 'Destek ekibi', tone: 'support' }
+    case 'System':
+      return { label: 'Sistem', tone: 'system' }
     default:
-      return 'Gönderen bilgisi yok'
+      return { label: 'Gönderen bilgisi yok', tone: 'unknown' }
   }
 }
 

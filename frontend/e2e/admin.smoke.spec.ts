@@ -255,10 +255,22 @@ test('direct Admin bootstrap manages users and parameters responsively', async (
   await expect(page.getByText('Kullanıcı eklendi.')).toBeVisible()
   await expect(page.getByText('Yeni Destek')).toBeVisible()
 
+  const viewport = page.viewportSize()
+  expect(viewport).not.toBeNull()
+  if (viewport!.width <= 767.84) {
+    await page.getByRole('button', { name: 'Menüyü aç' }).click()
+    await expect(
+      page.getByRole('navigation', { name: 'Ana menü' }),
+    ).toBeVisible()
+  }
   await page.getByRole('link', { name: 'Parametreler' }).click()
   await expect(
     page.getByRole('heading', { name: 'Parametreler' }),
   ).toBeVisible()
+  await expect(page.locator('.parameters-audit__summary')).toHaveCSS(
+    'list-style-position',
+    'inside',
+  )
   await expectNoDocumentOverflow(page)
   const input = page.getByLabel('AutoResolve.InactiveDays değeri')
   await input.fill('7')

@@ -31,6 +31,7 @@ export function LoginPage() {
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [passwordVisible, setPasswordVisible] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [sessionNotice] = useState(() =>
@@ -112,18 +113,32 @@ export function LoginPage() {
               required
             />
           </label>
-          <label className="field">
-            <span>Parola</span>
-            <input
-              ref={passwordRef}
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </label>
+          <div className="field">
+            <label className="field__label" htmlFor="login-password">
+              Parola
+            </label>
+            <div className="password-control">
+              <input
+                id="login-password"
+                ref={passwordRef}
+                name="password"
+                type={passwordVisible ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="button button--quiet password-control__toggle"
+                onClick={() =>
+                  setPasswordVisible((current) => !current)
+                }
+              >
+                {passwordVisible ? 'Parolayı gizle' : 'Parolayı göster'}
+              </button>
+            </div>
+          </div>
           {error ? (
             <p className="notice notice--error" role="alert">
               {error}
