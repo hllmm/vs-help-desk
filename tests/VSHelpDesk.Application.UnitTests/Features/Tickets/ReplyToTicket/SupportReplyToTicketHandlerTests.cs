@@ -44,6 +44,9 @@ public sealed class SupportReplyToTicketHandlerTests
         Assert.Single(sender.Sent);
         Assert.False(sender.Sent[0].IsHtml);
         Assert.Equal(content, sender.Sent[0].Body);
+        Assert.Equal(
+            $"{ticket.ReplyReference} {ticket.Subject}",
+            sender.Sent[0].Subject);
         var log = Assert.Single(logger.InformationMessages);
         Assert.Contains(ticket.Id.ToString(), log, StringComparison.Ordinal);
         Assert.Contains("CustomerReplied", log, StringComparison.Ordinal);

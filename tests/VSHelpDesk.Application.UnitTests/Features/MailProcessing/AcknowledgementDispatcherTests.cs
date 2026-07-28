@@ -72,7 +72,11 @@ public sealed class AcknowledgementDispatcherTests
         Assert.Null(processed.AcknowledgementLastError);
         Assert.Single(sender.Sent);
         Assert.Equal("ada@example.test", sender.Sent[0].ToAddress);
-        Assert.Contains("VS-000301", sender.Sent[0].Subject, StringComparison.Ordinal);
+        Assert.StartsWith(ticket.ReplyReference, sender.Sent[0].Subject);
+        Assert.Contains(
+            ticket.ReplyReference,
+            sender.Sent[0].Body,
+            StringComparison.Ordinal);
     }
 
     [Fact]

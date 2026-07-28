@@ -67,7 +67,7 @@ public sealed class SupportReplyToTicketHandler(
                 new EmailMessage(
                     ToAddress: ticket.CustomerEmail,
                     ToDisplayName: ticket.CustomerName,
-                    Subject: $"[{ticket.TicketNumber}] {ticket.Subject}",
+                    Subject: $"{ticket.ReplyReference} {ticket.Subject}",
                     Body: content,
                     IsHtml: false),
                 cancellationToken);
