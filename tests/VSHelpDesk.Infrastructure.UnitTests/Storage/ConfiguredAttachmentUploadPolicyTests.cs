@@ -66,6 +66,26 @@ public sealed class ConfiguredAttachmentUploadPolicyTests
         Assert.Equal("text/plain", result.CanonicalContentType);
     }
 
+    [Fact]
+    public void DefaultAllowList_ContainsOnlyInspectableFormats()
+    {
+        Assert.Equal(
+            [
+                "application/pdf",
+                "image/png",
+                "image/jpeg",
+                "image/gif",
+                "image/webp",
+                "text/plain"
+            ],
+            new FileStorageOptions().AllowedContentTypes);
+        Assert.DoesNotContain(
+            new FileStorageOptions().AllowedContentTypes,
+            value => value.Contains("word", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("excel", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("sheet", StringComparison.OrdinalIgnoreCase));
+    }
+
     public static TheoryData<string, string, byte[]> RejectedFiles => new()
     {
         { "file.jpg", "image/jpeg", SampleFor("image/png") },
