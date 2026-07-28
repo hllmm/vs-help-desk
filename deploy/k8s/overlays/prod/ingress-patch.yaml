@@ -4,6 +4,8 @@
 # (nginx, traefik, azure-application-gateway, etc.).
 # Optional cert-manager: uncomment the annotation and ensure the ClusterIssuer exists;
 # then either omit a pre-created TLS secret or let cert-manager manage vshelpdesk-tls.
+# If the cluster pod CIDR is not 10.244.0.0/16, also replace
+# ReverseProxy__KnownNetworks__0 in the production configuration.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

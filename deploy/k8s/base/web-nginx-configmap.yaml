@@ -11,6 +11,12 @@ metadata:
     app.kubernetes.io/part-of: vs-help-desk
 data:
   default.conf: |
+    map $http_x_forwarded_proto $trusted_forwarded_proto {
+        default $scheme;
+        "~*^https$" https;
+        "~*^http$" http;
+    }
+
     server {
         listen 80;
         server_name _;
@@ -30,7 +36,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $trusted_forwarded_proto;
         }
 
         # API + health proxy to the ASP.NET Service (same-origin via Ingress → web)
@@ -40,7 +46,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $trusted_forwarded_proto;
             client_max_body_size 25m;
         }
 
@@ -50,7 +56,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $trusted_forwarded_proto;
         }
 
         # SPA fallback

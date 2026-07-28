@@ -9,6 +9,7 @@ resources:
   - api-pvc-attachments.yaml
   - api-deployment.yaml
   - api-service.yaml
+  - api-networkpolicy.yaml
   - web-nginx-configmap.yaml
   - web-deployment.yaml
   - web-service.yaml
@@ -17,4 +18,3 @@ resources:
   - cronjob-resolve-inactive-tickets.yaml
 commonLabels:
   app.kubernetes.io/part-of: vs-help-desk
-
