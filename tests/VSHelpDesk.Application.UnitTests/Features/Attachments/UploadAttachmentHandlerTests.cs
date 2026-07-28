@@ -88,6 +88,55 @@ public sealed class UploadAttachmentHandlerTests
     }
 
     [Fact]
+    public async Task Upload_InvalidContent_RejectsBeforeStorage()
+    {
+        var message = CreateMessage();
+        var db = new FakeDb(message);
+        var storage = new RecordingStorage();
+        var handler = CreateHandler(db, storage, maxBytes: 1024, allowed: ["text/plain"]);
+
+        await using var content = new MemoryStream("invalid"u8.ToArray());
+        var result = await handler.HandleAsync(
+            new UploadAttachmentCommand(
+                message.Id,
+                "notes.txt",
+                "text/plain",
+                content.Length,
+                content),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("content", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(storage.Saved);
+        Assert.Empty(db.Attachments);
+    }
+
+    [Fact]
+    public async Task Upload_NonSeekableActualSizeExceedsDeclaredSize_ReadsOnlyMaximumPlusOne()
+    {
+        var message = CreateMessage();
+        var db = new FakeDb(message);
+        var storage = new RecordingStorage();
+        var handler = CreateHandler(db, storage, maxBytes: 10, allowed: ["text/plain"]);
+        await using var content = new CountingNonSeekableStream(new byte[100]);
+
+        var result = await handler.HandleAsync(
+            new UploadAttachmentCommand(
+                message.Id,
+                "notes.txt",
+                "text/plain",
+                DeclaredFileSize: 10,
+                content),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Contains("maximum", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(11, content.BytesRead);
+        Assert.Empty(storage.Saved);
+        Assert.Empty(db.Attachments);
+    }
+
+    [Fact]
     public async Task Upload_UnknownMessage_ThrowsNotFound()
     {
         var handler = CreateHandler(
@@ -136,15 +185,18 @@ public sealed class UploadAttachmentHandlerTests
 
         public long MaxFileSizeBytes => maxBytes;
 
-        public bool IsContentTypeAllowed(string? contentType) =>
-            !string.IsNullOrWhiteSpace(contentType) && set.Contains(contentType.Split(';')[0].Trim());
-
-        public string? DetectContentTypeFromContent(ReadOnlySpan<byte> header) => null;
-
-        public bool IsDeclaredTypeConsistentWithContent(
+        public AttachmentValidationResult Validate(
+            string fileName,
             string? declaredContentType,
-            ReadOnlySpan<byte> header) =>
-            IsContentTypeAllowed(declaredContentType);
+            ReadOnlySpan<byte> content)
+        {
+            var declared = declaredContentType?.Split(';')[0].Trim();
+            return declared is not null &&
+                   set.Contains(declared) &&
+                   !content.SequenceEqual("invalid"u8)
+                ? AttachmentValidationResult.Allowed(declared)
+                : AttachmentValidationResult.Rejected("File content is not allowed.");
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
@@ -178,6 +230,51 @@ public sealed class UploadAttachmentHandlerTests
 
         public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed class CountingNonSeekableStream(byte[] content) : Stream
+    {
+        private int position;
+
+        public int BytesRead { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var copied = Math.Min(buffer.Length, content.Length - position);
+            content.AsMemory(position, copied).CopyTo(buffer);
+            position += copied;
+            BytesRead += copied;
+            return ValueTask.FromResult(copied);
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) =>
+            throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
     }
 
     private sealed class FakeDb : IApplicationDbContext

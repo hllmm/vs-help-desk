@@ -606,15 +606,16 @@ public sealed class InboundEmailItemProcessorTests
 
         public long MaxFileSizeBytes => maxBytes;
 
-        public bool IsContentTypeAllowed(string? contentType) =>
-            !string.IsNullOrWhiteSpace(contentType) && set.Contains(contentType.Split(';')[0].Trim());
-
-        public string? DetectContentTypeFromContent(ReadOnlySpan<byte> header) => null;
-
-        public bool IsDeclaredTypeConsistentWithContent(
+        public AttachmentValidationResult Validate(
+            string fileName,
             string? declaredContentType,
-            ReadOnlySpan<byte> header) =>
-            IsContentTypeAllowed(declaredContentType);
+            ReadOnlySpan<byte> content)
+        {
+            var declared = declaredContentType?.Split(';')[0].Trim();
+            return declared is not null && set.Contains(declared)
+                ? AttachmentValidationResult.Allowed(declared)
+                : AttachmentValidationResult.Rejected("Content type is not allowed.");
+        }
     }
 
     private sealed class RecordingStorage : IFileStorage
