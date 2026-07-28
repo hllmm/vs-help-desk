@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Configuration;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure;
@@ -77,6 +79,9 @@ public sealed class AuthenticationServicesTests
         Assert.Equal(user.Username, principal.Claims.Single(claim => claim.Type == JwtRegisteredClaimNames.UniqueName).Value);
         Assert.Equal(user.FullName, principal.Claims.Single(claim => claim.Type == "full_name").Value);
         Assert.Equal("Support", principal.Claims.Single(claim => claim.Type == "role").Value);
+        Assert.Equal(
+            user.SecurityVersion.ToString(CultureInfo.InvariantCulture),
+            token.Claims.Single(claim => claim.Type == AuthClaimNames.SecurityVersion).Value);
         Assert.Equal(TokenIssuedAt.AddMinutes(options.ExpirationMinutes).UtcDateTime, token.ValidTo);
     }
 
@@ -178,4 +183,3 @@ public sealed class AuthenticationServicesTests
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 }
-

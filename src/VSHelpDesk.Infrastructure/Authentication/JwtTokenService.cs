@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Globalization;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Options;
@@ -29,7 +30,10 @@ public sealed class JwtTokenService : ITokenService
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
             new Claim("full_name", user.FullName),
-            new Claim("role", user.Role.ToString())
+            new Claim("role", user.Role.ToString()),
+            new Claim(
+                AuthClaimNames.SecurityVersion,
+                user.SecurityVersion.ToString(CultureInfo.InvariantCulture))
         };
         var token = new JwtSecurityToken(
             authOptions.Issuer,

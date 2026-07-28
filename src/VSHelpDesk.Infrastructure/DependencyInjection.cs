@@ -52,6 +52,7 @@ public static class DependencyInjection
             .ValidateOnStart();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
+        services.AddScoped<IUserSessionValidator, UserSessionValidator>();
         services.AddScoped<ITicketNumberGenerator, TicketNumberGenerator>();
         services.AddSingleton<IDatabaseErrorClassifier, PostgresDatabaseErrorClassifier>();
 

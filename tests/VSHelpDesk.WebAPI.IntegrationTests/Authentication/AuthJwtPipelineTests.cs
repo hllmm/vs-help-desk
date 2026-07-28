@@ -7,9 +7,14 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
+using VSHelpDesk.Application.Abstractions.Authentication;
+using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Domain.Enums;
+using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.WebAPI.IntegrationTests.Support;
 
 namespace VSHelpDesk.WebAPI.IntegrationTests.Authentication;
@@ -96,6 +101,20 @@ public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFac
         Assert.False(string.IsNullOrWhiteSpace(me.FullName));
         Assert.NotEqual(Guid.Empty, me.UserId);
     }
+
+    [Fact]
+    public Task Me_WithCookieIssuedBeforeDeactivation_Returns401() =>
+        AssertSessionRevokedAsync((user, _) => user.Deactivate());
+
+    [Fact]
+    public Task Me_WithCookieIssuedBeforeRoleChange_Returns401() =>
+        AssertSessionRevokedAsync((user, _) => user.AssignRole(UserRole.Admin));
+
+    [Fact]
+    public Task Me_WithCookieIssuedBeforePasswordChange_Returns401() =>
+        AssertSessionRevokedAsync(
+            (user, passwordHasher) =>
+                user.ReplacePasswordHash(passwordHasher.Hash("ReplacementPassword12!")));
 
     [Fact]
     public async Task Logout_ClearsCookies_MeReturns401()
@@ -266,6 +285,61 @@ public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFac
         Assert.False(string.IsNullOrWhiteSpace(username), "SeedUser:Username must be configured for integration tests.");
         Assert.False(string.IsNullOrWhiteSpace(password), "SeedUser:Password must be configured for integration tests.");
         return (username!, password!);
+    }
+
+    private async Task AssertSessionRevokedAsync(
+        Action<User, IPasswordHasher> mutate)
+    {
+        var created = await CreateActiveUserAsync();
+        try
+        {
+            using var client = CookieAuthTestHelper.CreateCookieClient(factory);
+            using var loginResponse = await CookieAuthTestHelper.LoginAsync(
+                client,
+                created.Username,
+                created.Password);
+            Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
+
+            using var controlResponse = await client.GetAsync("/api/auth/me");
+            Assert.Equal(HttpStatusCode.OK, controlResponse.StatusCode);
+
+            await using (var scope = factory.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+                var user = await db.Users.SingleAsync(
+                    candidate => candidate.Id == created.Id);
+                mutate(user, passwordHasher);
+                await db.SaveChangesAsync();
+            }
+
+            using var response = await client.GetAsync("/api/auth/me");
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+        finally
+        {
+            await IntegrationTestUser.DeleteAsync(factory.Services, created.Id);
+        }
+    }
+
+    private async Task<IntegrationTestUser> CreateActiveUserAsync()
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+        var token = Guid.NewGuid().ToString("N");
+        var username = $"session-{token[..12]}";
+        var password = $"Pw-{token[..16]}!";
+        var user = new User(
+            "Session Integration User",
+            username,
+            $"{username}@example.test",
+            passwordHasher.Hash(password),
+            UserRole.Support);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return new IntegrationTestUser(user.Id, username, password);
     }
 
     private static string CreateJwtWithSigningKey(
