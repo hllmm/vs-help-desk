@@ -120,11 +120,11 @@ public sealed class AcknowledgementDispatcher(
             ToDisplayName: string.IsNullOrWhiteSpace(ticket.CustomerName)
                 ? ticket.CustomerEmail
                 : ticket.CustomerName,
-            Subject: $"[{ticket.TicketNumber}] We received your support request",
+            Subject: $"{ticket.ReplyReference} We received your support request",
             Body:
             $"Hello,{Environment.NewLine}{Environment.NewLine}" +
             $"We received your message and opened ticket {ticket.TicketNumber}.{Environment.NewLine}" +
-            $"Please keep {ticket.TicketNumber} in the subject when you reply.{Environment.NewLine}{Environment.NewLine}" +
+            $"Please keep {ticket.ReplyReference} in the subject when you reply.{Environment.NewLine}{Environment.NewLine}" +
             "VS Help Desk",
             IsHtml: false);
 }

@@ -13,6 +13,7 @@ using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.AssignTicket;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
+using VSHelpDesk.Domain.Tickets;
 using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.WebAPI.IntegrationTests.Support;
 
@@ -414,7 +415,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var stamp = DateTime.UtcNow;
             var ticket = Ticket.Create(
-                $"VS-H{stamp:HHmmssfff}",
+                UniqueCanonicalTicketNumber(),
                 "HTML ignored",
                 "Ada",
                 "ada-html@example.test",
@@ -470,7 +471,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var stamp = DateTime.UtcNow;
-            ticketNumber = $"VS-R{stamp:HHmmssfff}";
+            ticketNumber = UniqueCanonicalTicketNumber();
             var ticket = Ticket.Create(
                 ticketNumber,
                 "Reply subject",
@@ -539,7 +540,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
             var stamp = DateTime.UtcNow;
             var ticket = Ticket.Create(
-                $"VS-F{stamp:HHmmssfff}",
+                UniqueCanonicalTicketNumber(),
                 "Fail SMTP",
                 "Bob",
                 "bob-fail@example.test",
@@ -1078,6 +1079,15 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     {
         var candidate = $"{prefix}{DateTime.UtcNow:HHmmssfff}-{Guid.NewGuid():N}";
         return candidate.Length <= 32 ? candidate : candidate[..32];
+    }
+
+    private static string UniqueCanonicalTicketNumber()
+    {
+        var value =
+            (BitConverter.ToUInt32(Guid.NewGuid().ToByteArray(), 0)
+                % 900_000)
+            + 100_000;
+        return TicketNumberFormat.Format(value);
     }
 
     private static async Task<Guid> GetSeedUserIdAsync(ApplicationDbContext db)

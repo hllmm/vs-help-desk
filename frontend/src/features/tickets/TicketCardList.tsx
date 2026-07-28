@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import type { TicketListItem } from '../../api/types'
 import { formatTicketActivity } from './ticketListModel'
 import { TicketStatusBadge } from './TicketStatusBadge'

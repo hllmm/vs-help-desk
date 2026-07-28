@@ -38,4 +38,13 @@ public sealed class EmailOptions
     public string SupportMailboxAddress { get; init; } = string.Empty;
 
     public string SupportMailboxDisplayName { get; init; } = "VS Help Desk";
+
+    public int MaxUnreadBatchSize { get; init; } = 25;
+
+    public long MaxMessageSizeBytes { get; init; } = 25L * 1024 * 1024;
+
+    public int MaxAttachmentsPerMessage { get; init; } = 10;
+
+    public long MaxTotalAttachmentBytesPerMessage { get; init; } =
+        20L * 1024 * 1024;
 }

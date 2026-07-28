@@ -13,6 +13,7 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
 
         builder.Property(ticket => ticket.Id).ValueGeneratedNever();
         builder.Property(ticket => ticket.TicketNumber).IsRequired().HasMaxLength(32);
+        builder.Property(ticket => ticket.ReplyToken).IsRequired().HasMaxLength(32);
         builder.Property(ticket => ticket.Subject).IsRequired().HasMaxLength(500);
         builder.Property(ticket => ticket.CustomerName).IsRequired().HasMaxLength(200);
         builder.Property(ticket => ticket.CustomerEmail).IsRequired().HasMaxLength(255);
@@ -25,6 +26,7 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
         builder.Property(ticket => ticket.Version).IsRowVersion();
 
         builder.HasIndex(ticket => ticket.TicketNumber).IsUnique();
+        builder.HasIndex(ticket => ticket.ReplyToken).IsUnique();
 
         builder.HasOne<User>()
             .WithMany()

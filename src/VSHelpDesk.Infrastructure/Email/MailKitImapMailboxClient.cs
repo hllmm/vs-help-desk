@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using MailKit;
 using MailKit.Net.Imap;
 using MailKit.Search;
@@ -19,8 +20,10 @@ public sealed class MailKitImapMailboxClient(
     private IMailFolder? folder;
     private bool disposed;
 
-    public async Task<IReadOnlyList<ImapMailboxItem>> FetchUnreadAsync(
-        CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ImapMailboxItem> ReadUnreadAsync(
+        int maxCount,
+        long maxMessageSizeBytes,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
@@ -33,25 +36,53 @@ public sealed class MailKitImapMailboxClient(
             .SearchAsync(SearchQuery.NotSeen, cancellationToken)
             .ConfigureAwait(false);
 
-        var uidValidity = openFolder.UidValidity;
-        var items = new List<ImapMailboxItem>(uids.Count);
+        var selected = uids.Take(maxCount).ToList();
+        var summaries = await openFolder.FetchAsync(
+                selected,
+                MessageSummaryItems.UniqueId
+                    | MessageSummaryItems.Size
+                    | MessageSummaryItems.Envelope,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var yieldedCount = 0;
 
-        foreach (var uid in uids)
+        foreach (var summary in summaries.OrderBy(item => item.UniqueId.Id))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            long? declaredSize = summary.Size is uint size
+                ? (long)size
+                : null;
+            if (declaredSize > maxMessageSizeBytes)
+            {
+                yieldedCount++;
+                yield return new ImapMailboxItem(
+                    openFolder.UidValidity,
+                    summary.UniqueId.Id,
+                    summary.Envelope,
+                    Message: null,
+                    declaredSize,
+                    BoundaryViolation: "message-size-exceeded");
+                continue;
+            }
+
             var message = await openFolder
-                .GetMessageAsync(uid, cancellationToken)
+                .GetMessageAsync(summary.UniqueId, cancellationToken)
                 .ConfigureAwait(false);
-            items.Add(new ImapMailboxItem(uidValidity, uid.Id, message));
+            yieldedCount++;
+            yield return new ImapMailboxItem(
+                openFolder.UidValidity,
+                summary.UniqueId.Id,
+                summary.Envelope,
+                message,
+                declaredSize,
+                BoundaryViolation: null);
         }
 
         logger.LogInformation(
             "IMAP fetch unread completed host={ImapHost} port={ImapPort} count={Count}",
             options.ImapHost,
             options.ImapPort,
-            items.Count);
-
-        return items;
+            yieldedCount);
     }
 
     public async Task MarkSeenAsync(

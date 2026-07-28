@@ -26,6 +26,7 @@ public sealed class ApplicationDbContextTests
         var username = entityType.FindProperty(nameof(User.Username))!;
         var email = entityType.FindProperty(nameof(User.Email))!;
         var passwordHash = entityType.FindProperty(nameof(User.PasswordHash))!;
+        var securityVersion = entityType.FindProperty(nameof(User.SecurityVersion))!;
         var isActive = entityType.FindProperty(nameof(User.IsActive))!;
         var createdAt = entityType.FindProperty(nameof(User.CreatedAt))!;
         var lastLoginAt = entityType.FindProperty(nameof(User.LastLoginAt))!;
@@ -37,6 +38,8 @@ public sealed class ApplicationDbContextTests
         Assert.False(username.IsNullable);
         Assert.False(email.IsNullable);
         Assert.False(passwordHash.IsNullable);
+        Assert.False(securityVersion.IsNullable);
+        Assert.Equal(1, securityVersion.GetDefaultValue());
         Assert.False(isActive.IsNullable);
         Assert.False(createdAt.IsNullable);
         Assert.True(lastLoginAt.IsNullable);
@@ -163,6 +166,48 @@ public sealed class ApplicationDbContextTests
                 .SequenceEqual([
                     nameof(ParameterChangeLog.ParameterKey),
                     nameof(ParameterChangeLog.ChangedAt)
+                ]));
+    }
+
+    [Fact]
+    public void Model_MapsUserAdministrationAuditWithBoundedRequiredFields()
+    {
+        using var context = CreateMetadataContext();
+
+        var entityType = context.Model.FindEntityType(
+            typeof(UserAdministrationAuditLog));
+        Assert.NotNull(entityType);
+        Assert.Equal("UserAdministrationAuditLogs", entityType.GetTableName());
+
+        var actorUserId = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.ActorUserId))!;
+        var targetUserId = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.TargetUserId))!;
+        var action = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.Action))!;
+        var occurredAt = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.OccurredAt))!;
+        var beforeValue = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.BeforeValue))!;
+        var afterValue = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.AfterValue))!;
+
+        Assert.False(actorUserId.IsNullable);
+        Assert.False(targetUserId.IsNullable);
+        Assert.False(action.IsNullable);
+        Assert.False(occurredAt.IsNullable);
+        Assert.Equal(64, action.GetMaxLength());
+        Assert.Equal(1000, beforeValue.GetMaxLength());
+        Assert.Equal(1000, afterValue.GetMaxLength());
+        Assert.Equal("timestamp with time zone", occurredAt.GetColumnType());
+        Assert.Contains(
+            entityType.GetIndexes(),
+            index => index.Properties
+                .Select(property => property.Name)
+                .SequenceEqual(
+                [
+                    nameof(UserAdministrationAuditLog.TargetUserId),
+                    nameof(UserAdministrationAuditLog.OccurredAt)
                 ]));
     }
 

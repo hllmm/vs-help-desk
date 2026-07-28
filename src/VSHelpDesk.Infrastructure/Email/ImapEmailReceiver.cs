@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
@@ -18,28 +19,38 @@ public sealed class ImapEmailReceiver(
 {
     private const int CopyBufferSize = 8192;
 
-    public async Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
-        CancellationToken cancellationToken = default)
+    public async IAsyncEnumerable<IncomingEmail> ReadUnreadAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var options = emailOptions.Value;
         var accountId = options.ImapAccountId.Trim();
         var folder = options.ImapFolder.Trim();
 
-        var items = await mailboxClient
-            .FetchUnreadAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var mapped = new List<IncomingEmail>(items.Count);
-        foreach (var item in items)
+        var count = 0;
+        await foreach (var item in mailboxClient
+                           .ReadUnreadAsync(
+                               options.MaxUnreadBatchSize,
+                               options.MaxMessageSizeBytes,
+                               cancellationToken)
+                           .WithCancellation(cancellationToken)
+                           .ConfigureAwait(false))
         {
-            mapped.Add(MapMessage(item, accountId, folder));
+            count++;
+            if (!string.IsNullOrWhiteSpace(item.BoundaryViolation))
+            {
+                yield return MapBoundaryViolation(
+                    item,
+                    accountId,
+                    folder);
+                continue;
+            }
+
+            yield return MapMessage(item, accountId, folder);
         }
 
         logger.LogInformation(
             "IMAP receiver fetched unread count={Count} mode=Imap",
-            mapped.Count);
-
-        return mapped;
+            count);
     }
 
     public async Task MarkAsProcessedAsync(
@@ -68,7 +79,9 @@ public sealed class ImapEmailReceiver(
         string accountId,
         string folder)
     {
-        var message = item.Message;
+        var message = item.Message
+            ?? throw new InvalidOperationException(
+                "IMAP mailbox item did not contain message content.");
         var receiptValue = ImapReceiptHandleCodec.Encode(
             new ImapReceiptCoordinates(
                 accountId,
@@ -100,6 +113,35 @@ public sealed class ImapEmailReceiver(
             IsHtml: false,
             ReceivedAt: receivedAt,
             Attachments: MapAttachments(message));
+    }
+
+    private static IncomingEmail MapBoundaryViolation(
+        ImapMailboxItem item,
+        string accountId,
+        string folder)
+    {
+        var envelopeMailbox =
+            item.Envelope?.From?.Mailboxes.FirstOrDefault();
+        return new IncomingEmail(
+            MessageId: CanonicalizeMimeKitMessageId(
+                item.Envelope?.MessageId),
+            ReceiptHandle: new EmailReceiptHandle(
+                EmailReceiptKind.Imap,
+                ImapReceiptHandleCodec.Encode(
+                    new ImapReceiptCoordinates(
+                        accountId,
+                        folder,
+                        item.UidValidity,
+                        item.Uid))),
+            FromAddress: envelopeMailbox?.Address,
+            FromDisplayName: envelopeMailbox?.Name,
+            Subject: item.Envelope?.Subject,
+            Body: null,
+            IsHtml: false,
+            ReceivedAt:
+                item.Envelope?.Date?.UtcDateTime ?? DateTime.UtcNow,
+            Attachments: [],
+            BoundaryViolation: item.BoundaryViolation);
     }
 
     /// <summary>
@@ -175,13 +217,23 @@ public sealed class ImapEmailReceiver(
     private IReadOnlyList<IncomingEmailAttachment> MapAttachments(MimeMessage message)
     {
         var maxFileSizeBytes = fileStorageOptions.Value.MaxFileSizeBytes;
+        var options = emailOptions.Value;
         var attachments = new List<IncomingEmailAttachment>();
+        long acceptedBytes = 0;
 
         foreach (var attachment in message.Attachments)
         {
             if (attachment is not MimePart part)
             {
                 continue;
+            }
+
+            if (attachments.Count >= options.MaxAttachmentsPerMessage)
+            {
+                logger.LogWarning(
+                    "IMAP attachment omitted because message attachment limit was reached maxAttachments={MaxAttachments}",
+                    options.MaxAttachmentsPerMessage);
+                break;
             }
 
             var fileName = part.FileName;
@@ -212,6 +264,17 @@ public sealed class ImapEmailReceiver(
                 continue;
             }
 
+            var remainingAggregate =
+                options.MaxTotalAttachmentBytesPerMessage
+                - acceptedBytes;
+            if (declaredSize > remainingAggregate)
+            {
+                logger.LogWarning(
+                    "IMAP attachment omitted because aggregate byte limit would be exceeded fileName={FileName}",
+                    fileName);
+                continue;
+            }
+
             if (part.Content is null)
             {
                 attachments.Add(new IncomingEmailAttachment(
@@ -225,13 +288,16 @@ public sealed class ImapEmailReceiver(
             try
             {
                 using var stream = part.Content.Open();
-                if (stream.CanSeek && stream.Length > maxFileSizeBytes)
+                if (stream.CanSeek
+                    && (stream.Length > maxFileSizeBytes
+                        || stream.Length > remainingAggregate))
                 {
                     logger.LogWarning(
-                        "IMAP attachment omitted as oversized fileName={FileName} streamLength={StreamLength} maxFileSizeBytes={MaxFileSizeBytes}",
+                        "IMAP attachment omitted as oversized fileName={FileName} streamLength={StreamLength} maxFileSizeBytes={MaxFileSizeBytes} remainingAggregateBytes={RemainingAggregateBytes}",
                         fileName,
                         stream.Length,
-                        maxFileSizeBytes);
+                        maxFileSizeBytes,
+                        remainingAggregate);
                     continue;
                 }
 
@@ -245,7 +311,8 @@ public sealed class ImapEmailReceiver(
                 {
                     total += read;
                     // Hard stop at MaxFileSizeBytes + 1 so we never retain oversize bodies.
-                    if (total > maxFileSizeBytes)
+                    if (total > maxFileSizeBytes
+                        || total > remainingAggregate)
                     {
                         oversize = true;
                         break;
@@ -269,6 +336,7 @@ public sealed class ImapEmailReceiver(
                     ContentType: contentType,
                     FileSize: content.Length,
                     Content: content));
+                acceptedBytes += content.LongLength;
             }
             catch (Exception ex)
             {

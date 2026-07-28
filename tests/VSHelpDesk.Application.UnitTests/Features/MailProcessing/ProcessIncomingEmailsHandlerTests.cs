@@ -14,6 +14,36 @@ public sealed class ProcessIncomingEmailsHandlerTests
     private static readonly DateTimeOffset FixedNow = new(2026, 7, 31, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task Stream_ProcessesPriorItemBeforeRequestingNext()
+    {
+        var first = Mail(
+            "<lazy-1@test>",
+            "first@example.test",
+            "First",
+            "Body",
+            "fake\0lazy-1");
+        var second = Mail(
+            "<lazy-2@test>",
+            "second@example.test",
+            "Second",
+            "Body",
+            "fake\0lazy-2");
+        var state = new LazyConsumptionState();
+        var receiver = new LazyGuardReceiver([first, second], state);
+        var factory = new LazyGuardFactory(state);
+        var handler = CreateHandler(receiver, factory);
+
+        var result = await handler.HandleAsync(
+            new ProcessIncomingEmailsCommand(),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(2, result.Value!.FetchedCount);
+        Assert.Equal(1, receiver.MaximumOutstandingItems);
+        Assert.Equal(2, factory.ProcessCallCount);
+    }
+
+    [Fact]
     public async Task PoisonFirstReceipt_DoesNotStopLaterValidReceipt()
     {
         var poison = Mail("<poison@test>", null, "Bad", "x", "fake\0poison");
@@ -399,9 +429,17 @@ public sealed class ProcessIncomingEmailsHandlerTests
         public List<EmailReceiptHandle> Marked { get; } = [];
         public HashSet<string> ThrowOnMarkValues { get; init; } = new(StringComparer.Ordinal);
 
-        public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(messages);
+        public async IAsyncEnumerable<IncomingEmail> ReadUnreadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken = default)
+        {
+            foreach (var message in messages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return message;
+                await Task.Yield();
+            }
+        }
 
         public Task MarkAsProcessedAsync(
             EmailReceiptHandle receiptHandle,
@@ -415,6 +453,92 @@ public sealed class ProcessIncomingEmailsHandlerTests
             Marked.Add(receiptHandle);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class LazyConsumptionState
+    {
+        public bool ProcessorActive { get; set; }
+    }
+
+    private sealed class LazyGuardReceiver(
+        IReadOnlyList<IncomingEmail> messages,
+        LazyConsumptionState state) : IEmailReceiver
+    {
+        private int outstandingItems;
+
+        public int MaximumOutstandingItems { get; private set; }
+
+        public async IAsyncEnumerable<IncomingEmail> ReadUnreadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken = default)
+        {
+            foreach (var message in messages)
+            {
+                if (state.ProcessorActive)
+                {
+                    throw new InvalidOperationException(
+                        "The next item was requested before processing completed.");
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                outstandingItems++;
+                MaximumOutstandingItems = Math.Max(
+                    MaximumOutstandingItems,
+                    outstandingItems);
+                try
+                {
+                    yield return message;
+                }
+                finally
+                {
+                    outstandingItems--;
+                }
+
+                await Task.Yield();
+            }
+        }
+
+        public Task MarkAsProcessedAsync(
+            EmailReceiptHandle receiptHandle,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class LazyGuardFactory(LazyConsumptionState state)
+        : IInboundEmailItemProcessorFactory
+    {
+        public int ProcessCallCount { get; private set; }
+
+        public async Task<InboundEmailItemResult> ProcessAsync(
+            IncomingEmail email,
+            CancellationToken cancellationToken)
+        {
+            Assert.False(state.ProcessorActive);
+            state.ProcessorActive = true;
+            try
+            {
+                ProcessCallCount++;
+                await Task.Yield();
+                return new InboundEmailItemResult(
+                    InboundEmailItemOutcome.AlreadyProcessed,
+                    email.MessageId ?? "receipt",
+                    TicketNumber: null,
+                    WasReopened: false,
+                    AcknowledgementSent: false,
+                    AcknowledgementFailed: false,
+                    FailureCode: null);
+            }
+            finally
+            {
+                state.ProcessorActive = false;
+            }
+        }
+
+        public Task<AcknowledgementDispatchSummary>
+            RetryDueAcknowledgementsAsync(
+                CancellationToken cancellationToken) =>
+            Task.FromResult(
+                new AcknowledgementDispatchSummary(0, 0, 0));
     }
 
     private sealed class ScriptedFactory(IReadOnlyList<InboundEmailItemResult> results)

@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -35,9 +36,12 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await ReadAllAsync(receiver);
 
         var item = Assert.Single(unread);
+        Assert.Equal(25, client.RequestedMaxCount);
+        Assert.Equal(25L * 1024 * 1024, client.RequestedMaxMessageSizeBytes);
+        Assert.Equal(1, client.MaxSimultaneouslyMaterializedMessages);
         Assert.Null(item.MessageId);
         Assert.Equal(EmailReceiptKind.Imap, item.ReceiptHandle.Kind);
         Assert.Equal(
@@ -73,7 +77,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await ReadAllAsync(receiver);
 
         var item = Assert.Single(unread);
         // Boundary canonicalizes bare MimeKit id into <left@right> for identity.
@@ -104,7 +108,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var item = Assert.Single(await ReadAllAsync(receiver));
 
         Assert.Equal("<html-only@example.test>", item.MessageId);
 
@@ -150,7 +154,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await ReadAllAsync(receiver);
         var item = Assert.Single(unread);
 
         await receiver.MarkAsProcessedAsync(item.ReceiptHandle);
@@ -177,7 +181,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client, maxFileSizeBytes: 1024);
-        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var item = Assert.Single(await ReadAllAsync(receiver));
         var attachment = Assert.Single(item.Attachments);
 
         Assert.Equal("note.txt", attachment.FileName);
@@ -201,15 +205,177 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client, maxFileSizeBytes: 4);
-        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var item = Assert.Single(await ReadAllAsync(receiver));
 
         Assert.Empty(item.Attachments);
+    }
+
+    [Fact]
+    public async Task Receiver_AcceptsOnlyConfiguredAttachmentCount()
+    {
+        var attachments = Enumerable.Range(1, 11)
+            .Select(index => (
+                FileName: $"file-{index}.txt",
+                ContentType: "text/plain",
+                Content: Encoding.UTF8.GetBytes($"payload-{index}"),
+                DeclaredSize: (long?)null))
+            .ToArray();
+        var mime = BuildMessageWithAttachments(attachments);
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(
+                    UidValidity: 1u,
+                    Uid: 3u,
+                    Message: mime)
+            ]
+        };
+        var receiver = CreateReceiver(
+            client,
+            maxAttachmentsPerMessage: 10);
+
+        var email = Assert.Single(await ReadAllAsync(receiver));
+
+        Assert.Equal(10, email.Attachments.Count);
+        Assert.DoesNotContain(
+            email.Attachments,
+            attachment => attachment.FileName == "file-11.txt");
+    }
+
+    [Fact]
+    public async Task Receiver_OmitsAttachmentThatWouldExceedAggregateBytes()
+    {
+        var mime = BuildMessageWithAttachments(
+            (
+                "first.txt",
+                "text/plain",
+                Encoding.UTF8.GetBytes("123456"),
+                (long?)6),
+            (
+                "second.txt",
+                "text/plain",
+                Encoding.UTF8.GetBytes("abcdef"),
+                (long?)6));
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(
+                    UidValidity: 1u,
+                    Uid: 4u,
+                    Message: mime)
+            ]
+        };
+        var receiver = CreateReceiver(
+            client,
+            maxTotalAttachmentBytesPerMessage: 10);
+
+        var email = Assert.Single(await ReadAllAsync(receiver));
+
+        var attachment = Assert.Single(email.Attachments);
+        Assert.Equal("first.txt", attachment.FileName);
+        Assert.True(
+            email.Attachments.Sum(item => item.FileSize) <= 10);
+    }
+
+    [Fact]
+    public async Task Receiver_OmitsWhenCopiedBytesExceedRemainingAggregate()
+    {
+        var mime = BuildMessageWithAttachments(
+            (
+                "misdeclared.txt",
+                "text/plain",
+                Encoding.UTF8.GetBytes("12345678"),
+                (long?)4));
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(
+                    UidValidity: 1u,
+                    Uid: 5u,
+                    Message: mime)
+            ]
+        };
+        var receiver = CreateReceiver(
+            client,
+            maxTotalAttachmentBytesPerMessage: 6);
+
+        var email = Assert.Single(await ReadAllAsync(receiver));
+
+        Assert.Empty(email.Attachments);
+    }
+
+    [Fact]
+    public async Task Receiver_OmittedAttachment_DoesNotBlockLaterMail()
+    {
+        var oversized = BuildMessageWithAttachment(
+            "oversized.txt",
+            "text/plain",
+            Encoding.UTF8.GetBytes("12345678"));
+        var valid = BuildMessageWithAttachment(
+            "valid.txt",
+            "text/plain",
+            Encoding.UTF8.GetBytes("ok"));
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(1u, 6u, Message: oversized),
+                new ImapMailboxItem(1u, 7u, Message: valid)
+            ]
+        };
+        var receiver = CreateReceiver(
+            client,
+            maxTotalAttachmentBytesPerMessage: 6);
+
+        var emails = await ReadAllAsync(receiver);
+
+        Assert.Equal(2, emails.Count);
+        Assert.Empty(emails[0].Attachments);
+        Assert.Single(emails[1].Attachments);
+    }
+
+    [Fact]
+    public async Task Receiver_OversizedSummary_YieldsMetadataOnlyViolation()
+    {
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(
+                    UidValidity: 7u,
+                    Uid: 9u,
+                    Envelope: null,
+                    Message: null,
+                    DeclaredSize: 25L * 1024 * 1024 + 1,
+                    BoundaryViolation: "message-size-exceeded")
+            ]
+        };
+
+        var receiver = CreateReceiver(client);
+
+        var email = Assert.Single(await ReadAllAsync(receiver));
+
+        Assert.Equal("message-size-exceeded", email.BoundaryViolation);
+        Assert.Empty(email.Attachments);
+        Assert.True(string.IsNullOrEmpty(email.Body));
     }
 
     private static MimeMessage BuildMessageWithAttachment(
         string fileName,
         string contentType,
-        byte[] content)
+        byte[] content) =>
+        BuildMessageWithAttachments(
+            (fileName, contentType, content, (long?)null));
+
+    private static MimeMessage BuildMessageWithAttachments(
+        params (
+            string FileName,
+            string ContentType,
+            byte[] Content,
+            long? DeclaredSize)[] attachments)
     {
         var mime = new MimeMessage();
         mime.From.Add(new MailboxAddress("Eve", "eve@example.test"));
@@ -217,21 +383,34 @@ public sealed class ImapEmailReceiverTests
         mime.MessageId = "with-attachment@example.test";
 
         var body = new TextPart("plain") { Text = "Body with attachment" };
-        var attachment = new MimePart(contentType)
+        var mixed = new Multipart("mixed") { body };
+        foreach (var source in attachments)
         {
-            Content = new MimeContent(new MemoryStream(content)),
-            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
-            ContentTransferEncoding = ContentEncoding.Base64,
-            FileName = fileName
-        };
+            var disposition =
+                new ContentDisposition(ContentDisposition.Attachment)
+                {
+                    Size = source.DeclaredSize
+                };
+            var attachment = new MimePart(source.ContentType)
+            {
+                Content = new MimeContent(
+                    new MemoryStream(source.Content)),
+                ContentDisposition = disposition,
+                ContentTransferEncoding = ContentEncoding.Base64,
+                FileName = source.FileName
+            };
+            mixed.Add(attachment);
+        }
 
-        mime.Body = new Multipart("mixed") { body, attachment };
+        mime.Body = mixed;
         return mime;
     }
 
     private static ImapEmailReceiver CreateReceiver(
         FakeImapMailboxClient client,
-        long maxFileSizeBytes = 10 * 1024 * 1024)
+        long maxFileSizeBytes = 10 * 1024 * 1024,
+        int maxAttachmentsPerMessage = 10,
+        long maxTotalAttachmentBytesPerMessage = 20L * 1024 * 1024)
     {
         var options = Options.Create(new EmailOptions
         {
@@ -245,7 +424,10 @@ public sealed class ImapEmailReceiverTests
             ImapFolder = "INBOX",
             SmtpHost = "localhost",
             SmtpPort = 3025,
-            SupportMailboxAddress = "support@vshelpdesk.test"
+            SupportMailboxAddress = "support@vshelpdesk.test",
+            MaxAttachmentsPerMessage = maxAttachmentsPerMessage,
+            MaxTotalAttachmentBytesPerMessage =
+                maxTotalAttachmentBytesPerMessage
         });
 
         var fileStorageOptions = Options.Create(new FileStorageOptions
@@ -262,15 +444,57 @@ public sealed class ImapEmailReceiverTests
             NullLogger<ImapEmailReceiver>.Instance);
     }
 
+    private static async Task<List<IncomingEmail>> ReadAllAsync(
+        IEmailReceiver receiver)
+    {
+        var items = new List<IncomingEmail>();
+        await foreach (var item in receiver.ReadUnreadAsync())
+        {
+            items.Add(item);
+        }
+
+        return items;
+    }
+
     private sealed class FakeImapMailboxClient : IImapMailboxClient
     {
         public List<ImapMailboxItem> Items { get; init; } = [];
 
         public List<(uint ExpectedUidValidity, uint Uid)> Marked { get; } = [];
 
-        public Task<IReadOnlyList<ImapMailboxItem>> FetchUnreadAsync(
-            CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<ImapMailboxItem>>(Items);
+        public int RequestedMaxCount { get; private set; }
+
+        public long RequestedMaxMessageSizeBytes { get; private set; }
+
+        public int MaxSimultaneouslyMaterializedMessages { get; private set; }
+
+        public async IAsyncEnumerable<ImapMailboxItem> ReadUnreadAsync(
+            int maxCount,
+            long maxMessageSizeBytes,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            RequestedMaxCount = maxCount;
+            RequestedMaxMessageSizeBytes = maxMessageSizeBytes;
+            var outstanding = 0;
+            foreach (var item in Items.Take(maxCount))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                outstanding++;
+                MaxSimultaneouslyMaterializedMessages = Math.Max(
+                    MaxSimultaneouslyMaterializedMessages,
+                    outstanding);
+                try
+                {
+                    yield return item;
+                }
+                finally
+                {
+                    outstanding--;
+                }
+
+                await Task.Yield();
+            }
+        }
 
         public Task MarkSeenAsync(
             uint expectedUidValidity,

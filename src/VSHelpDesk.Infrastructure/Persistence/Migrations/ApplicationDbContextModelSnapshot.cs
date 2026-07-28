@@ -172,6 +172,11 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("LastActivityAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ReplyToken")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<DateTime?>("ResolvedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -205,6 +210,9 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                     b.HasIndex("AssignedUserId");
 
                     b.HasIndex("ClosedByUserId");
+
+                    b.HasIndex("ReplyToken")
+                        .IsUnique();
 
                     b.HasIndex("TicketNumber")
                         .IsUnique();
@@ -320,6 +328,11 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                     b.Property<int>("Role")
                         .HasColumnType("integer");
 
+                    b.Property<int>("SecurityVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("Username")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -331,6 +344,40 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("Users", (string)null);
+                });
+
+            modelBuilder.Entity("VSHelpDesk.Domain.Entities.UserAdministrationAuditLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AfterValue")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("BeforeValue")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TargetUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TargetUserId", "OccurredAt");
+
+                    b.ToTable("UserAdministrationAuditLogs", (string)null);
                 });
 
             modelBuilder.Entity("VSHelpDesk.Domain.Entities.ProcessedEmailMessage", b =>

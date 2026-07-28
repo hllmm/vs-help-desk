@@ -17,6 +17,37 @@ public sealed class EmailOptionsValidator(IHostEnvironment environment)
                 "The Email:ReceiverMode configuration value must be 'Fake' or 'Imap'.");
         }
 
+        if (options.MaxUnreadBatchSize <= 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "The Email:MaxUnreadBatchSize configuration value must be positive.");
+        }
+
+        if (options.MaxMessageSizeBytes <= 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "The Email:MaxMessageSizeBytes configuration value must be positive.");
+        }
+
+        if (options.MaxAttachmentsPerMessage <= 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "The Email:MaxAttachmentsPerMessage configuration value must be positive.");
+        }
+
+        if (options.MaxTotalAttachmentBytesPerMessage <= 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "The Email:MaxTotalAttachmentBytesPerMessage configuration value must be positive.");
+        }
+
+        if (options.MaxTotalAttachmentBytesPerMessage
+            > options.MaxMessageSizeBytes)
+        {
+            return ValidateOptionsResult.Fail(
+                "The Email:MaxTotalAttachmentBytesPerMessage configuration value cannot exceed Email:MaxMessageSizeBytes.");
+        }
+
         var isLocal =
             environment.IsDevelopment() ||
             environment.IsEnvironment("Testing");

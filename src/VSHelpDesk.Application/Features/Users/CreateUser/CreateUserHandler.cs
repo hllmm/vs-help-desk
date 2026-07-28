@@ -1,6 +1,8 @@
 using System.Net.Mail;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Features.Users;
 using VSHelpDesk.Application.Features.Users.GetUsers;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -10,7 +12,9 @@ namespace VSHelpDesk.Application.Features.Users.CreateUser;
 
 public sealed class CreateUserHandler(
     IApplicationDbContext applicationDbContext,
-    IPasswordHasher passwordHasher)
+    IPasswordHasher passwordHasher,
+    ICurrentUserService currentUserService,
+    TimeProvider timeProvider)
 {
     public const int MinPasswordLength = 12;
     public const int MaxPasswordLength = 128;
@@ -23,6 +27,13 @@ public sealed class CreateUserHandler(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
+
+        if (!currentUserService.IsAuthenticated
+            || currentUserService.UserId is not Guid actorUserId
+            || actorUserId == Guid.Empty)
+        {
+            throw new UnauthorizedApplicationException();
+        }
 
         var fullName = ValidateFullName(command.FullName);
         var username = ValidateUsername(command.Username);
@@ -44,6 +55,13 @@ public sealed class CreateUserHandler(
             role);
 
         applicationDbContext.Add(user);
+        applicationDbContext.Add(new UserAdministrationAuditLog(
+            actorUserId,
+            user.Id,
+            "user-created",
+            timeProvider.GetUtcNow().UtcDateTime,
+            beforeValue: null,
+            afterValue: UserAdministrationAuditState.Format(user)));
         await applicationDbContext.SaveChangesAsync(cancellationToken);
 
         return ToDto(user);

@@ -15,7 +15,7 @@ public sealed record EmailReceiptHandle(
 
 public interface IEmailReceiver
 {
-    Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
+    IAsyncEnumerable<IncomingEmail> ReadUnreadAsync(
         CancellationToken cancellationToken = default);
 
     Task MarkAsProcessedAsync(
@@ -32,7 +32,8 @@ public sealed record IncomingEmail(
     string? Body,
     bool IsHtml,
     DateTime ReceivedAt,
-    IReadOnlyList<IncomingEmailAttachment> Attachments);
+    IReadOnlyList<IncomingEmailAttachment> Attachments,
+    string? BoundaryViolation = null);
 
 public sealed record IncomingEmailAttachment(
     string FileName,

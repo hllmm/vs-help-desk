@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
@@ -54,8 +55,15 @@ public sealed class InboundEmailItemProcessor(
 
         try
         {
-            if (TicketNumberParser.TryFindInText(normalized.Subject, out var ticketNumber) &&
-                TryGetMatchingCustomerTicket(ticketNumber, normalized.FromAddress, out _))
+            if (TicketReplyReference.TryFindInText(
+                    normalized.Subject,
+                    out var ticketNumber,
+                    out var replyToken)
+                && TryGetMatchingCustomerTicket(
+                    ticketNumber,
+                    replyToken,
+                    normalized.FromAddress,
+                    out _))
             {
                 return await AppendAsync(normalized, ticketNumber, cancellationToken);
             }
@@ -297,23 +305,30 @@ public sealed class InboundEmailItemProcessor(
 
     private bool TryGetMatchingCustomerTicket(
         string ticketNumber,
+        string replyToken,
         string fromAddress,
         out Ticket ticket)
     {
         var found = applicationDbContext.Tickets
             .FirstOrDefault(candidate => candidate.TicketNumber == ticketNumber);
 
-        if (found is null ||
-            !string.Equals(
+        var tokenMatches = found is not null
+            && CryptographicOperations.FixedTimeEquals(
+                Convert.FromHexString(found.ReplyToken),
+                Convert.FromHexString(replyToken));
+        var addressMatches = found is not null
+            && string.Equals(
                 found.CustomerEmail.Trim(),
                 fromAddress,
-                StringComparison.OrdinalIgnoreCase))
+                StringComparison.OrdinalIgnoreCase);
+
+        if (!tokenMatches || !addressMatches)
         {
             ticket = null!;
             return false;
         }
 
-        ticket = found;
+        ticket = found!;
         return true;
     }
 

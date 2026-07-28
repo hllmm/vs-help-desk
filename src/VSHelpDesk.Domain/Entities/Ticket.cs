@@ -1,5 +1,7 @@
+using System.Security.Cryptography;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Domain.Exceptions;
+using VSHelpDesk.Domain.Tickets;
 
 namespace VSHelpDesk.Domain.Entities;
 
@@ -8,6 +10,11 @@ public sealed class Ticket
     public Guid Id { get; private set; } = Guid.NewGuid();
 
     public string TicketNumber { get; private set; } = string.Empty;
+
+    public string ReplyToken { get; private set; } = CreateReplyToken();
+
+    public string ReplyReference =>
+        TicketReplyReference.Format(TicketNumber, ReplyToken);
 
     public string Subject { get; private set; } = string.Empty;
 
@@ -213,4 +220,8 @@ public sealed class Ticket
                 $"Cannot transition ticket from '{Status}' to '{target}'.");
         }
     }
+
+    private static string CreateReplyToken() =>
+        Convert.ToHexString(RandomNumberGenerator.GetBytes(16))
+            .ToLowerInvariant();
 }

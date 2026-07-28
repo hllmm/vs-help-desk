@@ -23,6 +23,7 @@ builder.Services.AddScoped<ICurrentUserService, HttpCurrentUserService>();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddJwtBearerAuthentication(builder.Configuration);
+builder.Services.AddTrustedForwardedHeaders(builder.Configuration, builder.Environment);
 
 builder.Services.AddSingleton<IValidateOptions<JobsOptions>, JobsOptionsValidator>();
 builder.Services.AddOptions<JobsOptions>()
@@ -95,17 +96,6 @@ builder.Services.AddCors(options =>
                 .AllowAnyMethod()
                 .AllowCredentials();
         });
-});
-
-// Trust reverse-proxy headers (nginx / company edge).
-builder.Services.Configure<ForwardedHeadersOptions>(options =>
-{
-    options.ForwardedHeaders =
-        Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
-        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
-    // Company single-proxy: clear known networks so docker bridge works; lock down at edge.
-    options.KnownIPNetworks.Clear();
-    options.KnownProxies.Clear();
 });
 
 var app = builder.Build();

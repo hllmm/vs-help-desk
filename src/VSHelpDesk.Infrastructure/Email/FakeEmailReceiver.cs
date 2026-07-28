@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Email;
@@ -26,18 +27,26 @@ public sealed class FakeEmailReceiver(
         unread.AddRange(initialMessages);
     }
 
-    public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(CancellationToken cancellationToken = default)
+    public async IAsyncEnumerable<IncomingEmail> ReadUnreadAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        _ = emailOptions.Value;
-        var batch = unread
-            .Where(message => !processedIds.Contains(message.ReceiptHandle.Value))
-            .ToList();
+        var options = emailOptions.Value;
+        var count = 0;
+        foreach (var email in unread
+                     .Where(message =>
+                         !processedIds.Contains(
+                             message.ReceiptHandle.Value))
+                     .Take(options.MaxUnreadBatchSize))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            count++;
+            yield return email;
+            await Task.Yield();
+        }
 
         logger.LogInformation(
             "Fake email receiver fetched unread count={Count} mode=Fake",
-            batch.Count);
-
-        return Task.FromResult<IReadOnlyList<IncomingEmail>>(batch);
+            count);
     }
 
     public Task MarkAsProcessedAsync(

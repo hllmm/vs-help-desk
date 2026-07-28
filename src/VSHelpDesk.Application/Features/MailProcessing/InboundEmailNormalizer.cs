@@ -39,6 +39,16 @@ public static class InboundEmailNormalizer
 
         var identity = InboundEmailIdentityFactory.Create(email);
 
+        if (!string.IsNullOrWhiteSpace(email.BoundaryViolation))
+        {
+            return new InboundEmailNormalizationResult(
+                InboundEmailPolicyOutcome.Quarantine,
+                Email: null,
+                identity,
+                InboundMailLimits.BoundProcessingNote(
+                    email.BoundaryViolation));
+        }
+
         if (!TryNormalizeAddress(email.FromAddress, out var fromAddress, out var quarantineNote))
         {
             return new InboundEmailNormalizationResult(

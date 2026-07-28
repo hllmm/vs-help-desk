@@ -18,6 +18,8 @@ public sealed class User
 
     public bool IsActive { get; private set; } = true;
 
+    public int SecurityVersion { get; private set; } = 1;
+
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
 
     public DateTime? LastLoginAt { get; private set; }
@@ -40,7 +42,16 @@ public sealed class User
         Role = role;
     }
 
-    public void AssignRole(UserRole role) => Role = role;
+    public void AssignRole(UserRole role)
+    {
+        if (Role == role)
+        {
+            return;
+        }
+
+        Role = role;
+        IncrementSecurityVersion();
+    }
 
     public void RecordLogin(DateTime loginDate)
     {
@@ -49,10 +60,25 @@ public sealed class User
 
     public void Deactivate()
     {
+        if (!IsActive)
+        {
+            return;
+        }
+
         IsActive = false;
+        IncrementSecurityVersion();
     }
 
-    public void Activate() => IsActive = true;
+    public void Activate()
+    {
+        if (IsActive)
+        {
+            return;
+        }
+
+        IsActive = true;
+        IncrementSecurityVersion();
+    }
 
     public void UpdateProfile(string fullName, string email)
     {
@@ -79,5 +105,11 @@ public sealed class User
         }
 
         PasswordHash = passwordHash;
+        IncrementSecurityVersion();
+    }
+
+    private void IncrementSecurityVersion()
+    {
+        SecurityVersion = checked(SecurityVersion + 1);
     }
 }

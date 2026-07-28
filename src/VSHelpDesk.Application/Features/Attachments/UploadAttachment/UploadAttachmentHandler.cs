@@ -34,12 +34,6 @@ public sealed class UploadAttachmentHandler(
                 $"File exceeds the maximum allowed size of {uploadPolicy.MaxFileSizeBytes} bytes.");
         }
 
-        if (!uploadPolicy.IsContentTypeAllowed(command.ContentType))
-        {
-            return Result.Failure<UploadAttachmentResult>(
-                $"Content type '{command.ContentType}' is not allowed.");
-        }
-
         var messageExists = applicationDbContext.TicketMessages
             .Any(message => message.Id == command.TicketMessageId);
         if (!messageExists)
@@ -53,33 +47,22 @@ public sealed class UploadAttachmentHandler(
             return Result.Failure<UploadAttachmentResult>("File name is required.");
         }
 
-        // Sniff leading bytes before persisting (do not trust client Content-Type alone).
-        var header = new byte[16];
-        int read;
+        byte[] bytes;
         try
         {
-            if (command.Content.CanSeek)
-            {
-                command.Content.Position = 0;
-            }
-
-            read = await command.Content.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);
-            if (command.Content.CanSeek)
-            {
-                command.Content.Position = 0;
-            }
-            else if (read > 0)
-            {
-                // Non-seekable: rebuild a stream that re-plays the header then the remainder.
-                var remainder = new MemoryStream();
-                await command.Content.CopyToAsync(remainder, cancellationToken);
-                remainder.Position = 0;
-                var combined = new MemoryStream();
-                await combined.WriteAsync(header.AsMemory(0, read), cancellationToken);
-                await remainder.CopyToAsync(combined, cancellationToken);
-                combined.Position = 0;
-                command = command with { Content = combined };
-            }
+            bytes = await BoundedAttachmentContent.ReadAsync(
+                command.Content,
+                uploadPolicy.MaxFileSizeBytes,
+                cancellationToken);
+        }
+        catch (AttachmentTooLargeException)
+        {
+            return Result.Failure<UploadAttachmentResult>(
+                $"File exceeds the maximum allowed size of {uploadPolicy.MaxFileSizeBytes} bytes.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -90,21 +73,24 @@ public sealed class UploadAttachmentHandler(
             return Result.Failure<UploadAttachmentResult>("Failed to read the uploaded file.");
         }
 
-        if (!uploadPolicy.IsDeclaredTypeConsistentWithContent(
-                command.ContentType,
-                header.AsSpan(0, Math.Max(read, 0))))
+        var validation = uploadPolicy.Validate(
+            safeFileName,
+            command.ContentType,
+            bytes);
+        if (!validation.IsAllowed)
         {
             return Result.Failure<UploadAttachmentResult>(
-                "File content does not match the declared content type.");
+                validation.Error ?? "File content is not allowed.");
         }
 
         StoredFile stored;
         try
         {
+            await using var validatedContent = new MemoryStream(bytes, writable: false);
             stored = await fileStorage.SaveAsync(
-                command.Content,
+                validatedContent,
                 safeFileName,
-                command.ContentType.Trim(),
+                validation.CanonicalContentType!,
                 cancellationToken);
         }
         catch (Exception ex)
@@ -135,7 +121,7 @@ public sealed class UploadAttachmentHandler(
             safeFileName,
             stored.StoredFileName,
             stored.FilePath,
-            stored.ContentType,
+            validation.CanonicalContentType!,
             stored.FileSize,
             now);
 

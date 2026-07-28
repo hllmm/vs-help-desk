@@ -91,7 +91,7 @@ public sealed class InboundEmailItemProcessorTests
         var mail = Mail(
             "<msg-reply@test>",
             "prior@example.test",
-            "Re: [VS-000050] Original",
+            $"Re: {existing.ReplyReference} Original",
             "Still broken");
 
         var result = await processor.ProcessAsync(mail, CancellationToken.None);
@@ -156,7 +156,7 @@ public sealed class InboundEmailItemProcessorTests
         var mail = Mail(
             "<msg-reopen@test>",
             "prior@example.test",
-            "[VS-000060] Re: Resolved case",
+            $"{existing.ReplyReference} Re: Resolved case",
             "Broke again");
 
         var result = await processor.ProcessAsync(mail, CancellationToken.None);
@@ -170,17 +170,18 @@ public sealed class InboundEmailItemProcessorTests
     public async Task FromMismatch_CreatesNewTicketInsteadOfReply()
     {
         var context = new FakeDb();
-        context.TicketsList.Add(Ticket.Create(
+        var existing = Ticket.Create(
             "VS-000070",
             "Owned by Ada",
             "Ada",
             "ada@example.test",
-            FixedNow.UtcDateTime));
+            FixedNow.UtcDateTime);
+        context.TicketsList.Add(existing);
         var processor = CreateProcessor(context, new RecordingSender(), "VS-000405");
         var mail = Mail(
             "<msg-spoof@test>",
             "attacker@evil.test",
-            "Re: [VS-000070] Owned by Ada",
+            $"Re: {existing.ReplyReference} Owned by Ada",
             "Inject");
 
         var result = await processor.ProcessAsync(mail, CancellationToken.None);
@@ -189,6 +190,62 @@ public sealed class InboundEmailItemProcessorTests
         Assert.Equal("VS-000405", result.TicketNumber);
         Assert.Equal(2, context.TicketsList.Count);
         Assert.Equal("attacker@evil.test", context.TicketsList[1].CustomerEmail);
+    }
+
+    [Fact]
+    public async Task WrongReplyToken_CreatesNewTicketWithoutAppending()
+    {
+        var context = new FakeDb();
+        var existing = Ticket.Create(
+            "VS-000071",
+            "Owned by Ada",
+            "Ada",
+            "ada@example.test",
+            FixedNow.UtcDateTime);
+        context.TicketsList.Add(existing);
+        var processor = CreateProcessor(context, new RecordingSender(), "VS-000413");
+        var mail = Mail(
+            "<msg-wrong-token@test>",
+            "ada@example.test",
+            "Re: [VS-000071:R-00000000000000000000000000000000] Owned by Ada",
+            "Inject");
+
+        var result = await processor.ProcessAsync(mail, CancellationToken.None);
+
+        Assert.Equal(InboundEmailItemOutcome.CreatedTicket, result.Outcome);
+        Assert.Equal("VS-000413", result.TicketNumber);
+        Assert.Equal(2, context.TicketsList.Count);
+        Assert.DoesNotContain(
+            context.TicketMessagesList,
+            message => message.TicketId == existing.Id);
+    }
+
+    [Fact]
+    public async Task MissingReplyToken_CreatesNewTicketWithoutAppending()
+    {
+        var context = new FakeDb();
+        var existing = Ticket.Create(
+            "VS-000072",
+            "Owned by Ada",
+            "Ada",
+            "ada@example.test",
+            FixedNow.UtcDateTime);
+        context.TicketsList.Add(existing);
+        var processor = CreateProcessor(context, new RecordingSender(), "VS-000414");
+        var mail = Mail(
+            "<msg-missing-token@test>",
+            "ada@example.test",
+            "Re: [VS-000072] Owned by Ada",
+            "Inject");
+
+        var result = await processor.ProcessAsync(mail, CancellationToken.None);
+
+        Assert.Equal(InboundEmailItemOutcome.CreatedTicket, result.Outcome);
+        Assert.Equal("VS-000414", result.TicketNumber);
+        Assert.Equal(2, context.TicketsList.Count);
+        Assert.DoesNotContain(
+            context.TicketMessagesList,
+            message => message.TicketId == existing.Id);
     }
 
     [Fact]
@@ -248,7 +305,7 @@ public sealed class InboundEmailItemProcessorTests
         var mail = Mail(
             "<msg-concurrency@test>",
             "prior@example.test",
-            "Re: [VS-000080] Busy ticket",
+            $"Re: {existing.ReplyReference} Busy ticket",
             "Retry me");
 
         var result = await processor.ProcessAsync(mail, CancellationToken.None);
@@ -344,7 +401,7 @@ public sealed class InboundEmailItemProcessorTests
         var mail = Mail(
             "<msg-reply-attach@test>",
             "prior@example.test",
-            "Re: [VS-000050] Original",
+            $"Re: {existing.ReplyReference} Original",
             "Still broken",
             attachments:
             [
@@ -549,15 +606,16 @@ public sealed class InboundEmailItemProcessorTests
 
         public long MaxFileSizeBytes => maxBytes;
 
-        public bool IsContentTypeAllowed(string? contentType) =>
-            !string.IsNullOrWhiteSpace(contentType) && set.Contains(contentType.Split(';')[0].Trim());
-
-        public string? DetectContentTypeFromContent(ReadOnlySpan<byte> header) => null;
-
-        public bool IsDeclaredTypeConsistentWithContent(
+        public AttachmentValidationResult Validate(
+            string fileName,
             string? declaredContentType,
-            ReadOnlySpan<byte> header) =>
-            IsContentTypeAllowed(declaredContentType);
+            ReadOnlySpan<byte> content)
+        {
+            var declared = declaredContentType?.Split(';')[0].Trim();
+            return declared is not null && set.Contains(declared)
+                ? AttachmentValidationResult.Allowed(declared)
+                : AttachmentValidationResult.Rejected("Content type is not allowed.");
+        }
     }
 
     private sealed class RecordingStorage : IFileStorage

@@ -17,6 +17,27 @@ public sealed class TicketTests
     private static readonly Guid OtherUserId = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
     [Fact]
+    public void Create_GeneratesDistinctLowercaseReplyTokens()
+    {
+        var first = Ticket.Create(
+            "VS-000001",
+            "First",
+            "Ada",
+            "ada@example.test",
+            T0);
+        var second = Ticket.Create(
+            "VS-000002",
+            "Second",
+            "Grace",
+            "grace@example.test",
+            T0);
+
+        Assert.Matches("^[a-f0-9]{32}$", first.ReplyToken);
+        Assert.Matches("^[a-f0-9]{32}$", second.ReplyToken);
+        Assert.NotEqual(first.ReplyToken, second.ReplyToken);
+    }
+
+    [Fact]
     public void Create_SetsNewStatusSubjectAndTimestamps_WithoutMutatingSubjectLater()
     {
         var ticket = Ticket.Create("VS-000001", "Printer offline", "Ada", "ada@example.test", T0);

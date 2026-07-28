@@ -39,6 +39,9 @@ public static class DependencyInjection
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IApplicationDbContext>(
             serviceProvider => serviceProvider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<
+            IUserAdministrationTransaction,
+            PostgresUserAdministrationTransaction>();
         services.AddScoped<IApplicationParameterReader, ApplicationParameterReader>();
         services.AddOptions<SeedUserOptions>()
             .Bind(configuration.GetSection(SeedUserOptions.SectionName));
@@ -52,6 +55,7 @@ public static class DependencyInjection
             .ValidateOnStart();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
+        services.AddScoped<IUserSessionValidator, UserSessionValidator>();
         services.AddScoped<ITicketNumberGenerator, TicketNumberGenerator>();
         services.AddSingleton<IDatabaseErrorClassifier, PostgresDatabaseErrorClassifier>();
 

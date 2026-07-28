@@ -1,7 +1,11 @@
+using System.Globalization;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
+using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.WebAPI.Authentication;
 
@@ -54,6 +58,37 @@ public static class AuthenticationExtensions
                         }
 
                         return Task.CompletedTask;
+                    },
+                    OnTokenValidated = async context =>
+                    {
+                        if (!Guid.TryParse(
+                                context.Principal?.FindFirstValue(
+                                    JwtRegisteredClaimNames.Sub),
+                                out var userId)
+                            || !int.TryParse(
+                                context.Principal?.FindFirstValue(
+                                    AuthClaimNames.SecurityVersion),
+                                NumberStyles.None,
+                                CultureInfo.InvariantCulture,
+                                out var securityVersion))
+                        {
+                            context.Fail("Session is no longer valid.");
+                            return;
+                        }
+
+                        var claimedRole =
+                            context.Principal?.FindFirstValue("role")
+                            ?? string.Empty;
+                        var validator = context.HttpContext.RequestServices
+                            .GetRequiredService<IUserSessionValidator>();
+                        if (!await validator.IsCurrentAsync(
+                                userId,
+                                securityVersion,
+                                claimedRole,
+                                context.HttpContext.RequestAborted))
+                        {
+                            context.Fail("Session is no longer valid.");
+                        }
                     }
                 };
             });
