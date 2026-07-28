@@ -217,13 +217,23 @@ public sealed class ImapEmailReceiver(
     private IReadOnlyList<IncomingEmailAttachment> MapAttachments(MimeMessage message)
     {
         var maxFileSizeBytes = fileStorageOptions.Value.MaxFileSizeBytes;
+        var options = emailOptions.Value;
         var attachments = new List<IncomingEmailAttachment>();
+        long acceptedBytes = 0;
 
         foreach (var attachment in message.Attachments)
         {
             if (attachment is not MimePart part)
             {
                 continue;
+            }
+
+            if (attachments.Count >= options.MaxAttachmentsPerMessage)
+            {
+                logger.LogWarning(
+                    "IMAP attachment omitted because message attachment limit was reached maxAttachments={MaxAttachments}",
+                    options.MaxAttachmentsPerMessage);
+                break;
             }
 
             var fileName = part.FileName;
@@ -254,6 +264,17 @@ public sealed class ImapEmailReceiver(
                 continue;
             }
 
+            var remainingAggregate =
+                options.MaxTotalAttachmentBytesPerMessage
+                - acceptedBytes;
+            if (declaredSize > remainingAggregate)
+            {
+                logger.LogWarning(
+                    "IMAP attachment omitted because aggregate byte limit would be exceeded fileName={FileName}",
+                    fileName);
+                continue;
+            }
+
             if (part.Content is null)
             {
                 attachments.Add(new IncomingEmailAttachment(
@@ -267,13 +288,16 @@ public sealed class ImapEmailReceiver(
             try
             {
                 using var stream = part.Content.Open();
-                if (stream.CanSeek && stream.Length > maxFileSizeBytes)
+                if (stream.CanSeek
+                    && (stream.Length > maxFileSizeBytes
+                        || stream.Length > remainingAggregate))
                 {
                     logger.LogWarning(
-                        "IMAP attachment omitted as oversized fileName={FileName} streamLength={StreamLength} maxFileSizeBytes={MaxFileSizeBytes}",
+                        "IMAP attachment omitted as oversized fileName={FileName} streamLength={StreamLength} maxFileSizeBytes={MaxFileSizeBytes} remainingAggregateBytes={RemainingAggregateBytes}",
                         fileName,
                         stream.Length,
-                        maxFileSizeBytes);
+                        maxFileSizeBytes,
+                        remainingAggregate);
                     continue;
                 }
 
@@ -287,7 +311,8 @@ public sealed class ImapEmailReceiver(
                 {
                     total += read;
                     // Hard stop at MaxFileSizeBytes + 1 so we never retain oversize bodies.
-                    if (total > maxFileSizeBytes)
+                    if (total > maxFileSizeBytes
+                        || total > remainingAggregate)
                     {
                         oversize = true;
                         break;
@@ -311,6 +336,7 @@ public sealed class ImapEmailReceiver(
                     ContentType: contentType,
                     FileSize: content.Length,
                     Content: content));
+                acceptedBytes += content.LongLength;
             }
             catch (Exception ex)
             {

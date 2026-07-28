@@ -211,6 +211,133 @@ public sealed class ImapEmailReceiverTests
     }
 
     [Fact]
+    public async Task Receiver_AcceptsOnlyConfiguredAttachmentCount()
+    {
+        var attachments = Enumerable.Range(1, 11)
+            .Select(index => (
+                FileName: $"file-{index}.txt",
+                ContentType: "text/plain",
+                Content: Encoding.UTF8.GetBytes($"payload-{index}"),
+                DeclaredSize: (long?)null))
+            .ToArray();
+        var mime = BuildMessageWithAttachments(attachments);
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(
+                    UidValidity: 1u,
+                    Uid: 3u,
+                    Message: mime)
+            ]
+        };
+        var receiver = CreateReceiver(
+            client,
+            maxAttachmentsPerMessage: 10);
+
+        var email = Assert.Single(await ReadAllAsync(receiver));
+
+        Assert.Equal(10, email.Attachments.Count);
+        Assert.DoesNotContain(
+            email.Attachments,
+            attachment => attachment.FileName == "file-11.txt");
+    }
+
+    [Fact]
+    public async Task Receiver_OmitsAttachmentThatWouldExceedAggregateBytes()
+    {
+        var mime = BuildMessageWithAttachments(
+            (
+                "first.txt",
+                "text/plain",
+                Encoding.UTF8.GetBytes("123456"),
+                (long?)6),
+            (
+                "second.txt",
+                "text/plain",
+                Encoding.UTF8.GetBytes("abcdef"),
+                (long?)6));
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(
+                    UidValidity: 1u,
+                    Uid: 4u,
+                    Message: mime)
+            ]
+        };
+        var receiver = CreateReceiver(
+            client,
+            maxTotalAttachmentBytesPerMessage: 10);
+
+        var email = Assert.Single(await ReadAllAsync(receiver));
+
+        var attachment = Assert.Single(email.Attachments);
+        Assert.Equal("first.txt", attachment.FileName);
+        Assert.True(
+            email.Attachments.Sum(item => item.FileSize) <= 10);
+    }
+
+    [Fact]
+    public async Task Receiver_OmitsWhenCopiedBytesExceedRemainingAggregate()
+    {
+        var mime = BuildMessageWithAttachments(
+            (
+                "misdeclared.txt",
+                "text/plain",
+                Encoding.UTF8.GetBytes("12345678"),
+                (long?)4));
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(
+                    UidValidity: 1u,
+                    Uid: 5u,
+                    Message: mime)
+            ]
+        };
+        var receiver = CreateReceiver(
+            client,
+            maxTotalAttachmentBytesPerMessage: 6);
+
+        var email = Assert.Single(await ReadAllAsync(receiver));
+
+        Assert.Empty(email.Attachments);
+    }
+
+    [Fact]
+    public async Task Receiver_OmittedAttachment_DoesNotBlockLaterMail()
+    {
+        var oversized = BuildMessageWithAttachment(
+            "oversized.txt",
+            "text/plain",
+            Encoding.UTF8.GetBytes("12345678"));
+        var valid = BuildMessageWithAttachment(
+            "valid.txt",
+            "text/plain",
+            Encoding.UTF8.GetBytes("ok"));
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(1u, 6u, Message: oversized),
+                new ImapMailboxItem(1u, 7u, Message: valid)
+            ]
+        };
+        var receiver = CreateReceiver(
+            client,
+            maxTotalAttachmentBytesPerMessage: 6);
+
+        var emails = await ReadAllAsync(receiver);
+
+        Assert.Equal(2, emails.Count);
+        Assert.Empty(emails[0].Attachments);
+        Assert.Single(emails[1].Attachments);
+    }
+
+    [Fact]
     public async Task Receiver_OversizedSummary_YieldsMetadataOnlyViolation()
     {
         var client = new FakeImapMailboxClient
@@ -239,7 +366,16 @@ public sealed class ImapEmailReceiverTests
     private static MimeMessage BuildMessageWithAttachment(
         string fileName,
         string contentType,
-        byte[] content)
+        byte[] content) =>
+        BuildMessageWithAttachments(
+            (fileName, contentType, content, (long?)null));
+
+    private static MimeMessage BuildMessageWithAttachments(
+        params (
+            string FileName,
+            string ContentType,
+            byte[] Content,
+            long? DeclaredSize)[] attachments)
     {
         var mime = new MimeMessage();
         mime.From.Add(new MailboxAddress("Eve", "eve@example.test"));
@@ -247,21 +383,34 @@ public sealed class ImapEmailReceiverTests
         mime.MessageId = "with-attachment@example.test";
 
         var body = new TextPart("plain") { Text = "Body with attachment" };
-        var attachment = new MimePart(contentType)
+        var mixed = new Multipart("mixed") { body };
+        foreach (var source in attachments)
         {
-            Content = new MimeContent(new MemoryStream(content)),
-            ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
-            ContentTransferEncoding = ContentEncoding.Base64,
-            FileName = fileName
-        };
+            var disposition =
+                new ContentDisposition(ContentDisposition.Attachment)
+                {
+                    Size = source.DeclaredSize
+                };
+            var attachment = new MimePart(source.ContentType)
+            {
+                Content = new MimeContent(
+                    new MemoryStream(source.Content)),
+                ContentDisposition = disposition,
+                ContentTransferEncoding = ContentEncoding.Base64,
+                FileName = source.FileName
+            };
+            mixed.Add(attachment);
+        }
 
-        mime.Body = new Multipart("mixed") { body, attachment };
+        mime.Body = mixed;
         return mime;
     }
 
     private static ImapEmailReceiver CreateReceiver(
         FakeImapMailboxClient client,
-        long maxFileSizeBytes = 10 * 1024 * 1024)
+        long maxFileSizeBytes = 10 * 1024 * 1024,
+        int maxAttachmentsPerMessage = 10,
+        long maxTotalAttachmentBytesPerMessage = 20L * 1024 * 1024)
     {
         var options = Options.Create(new EmailOptions
         {
@@ -275,7 +424,10 @@ public sealed class ImapEmailReceiverTests
             ImapFolder = "INBOX",
             SmtpHost = "localhost",
             SmtpPort = 3025,
-            SupportMailboxAddress = "support@vshelpdesk.test"
+            SupportMailboxAddress = "support@vshelpdesk.test",
+            MaxAttachmentsPerMessage = maxAttachmentsPerMessage,
+            MaxTotalAttachmentBytesPerMessage =
+                maxTotalAttachmentBytesPerMessage
         });
 
         var fileStorageOptions = Options.Create(new FileStorageOptions
