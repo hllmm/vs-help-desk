@@ -22,6 +22,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<ParameterChangeLog> ParameterChangeLogs => Set<ParameterChangeLog>();
 
+    public DbSet<UserAdministrationAuditLog> UserAdministrationAuditLogs =>
+        Set<UserAdministrationAuditLog>();
+
     IQueryable<User> IApplicationDbContext.Users => Users;
 
     IQueryable<Ticket> IApplicationDbContext.Tickets => Tickets;

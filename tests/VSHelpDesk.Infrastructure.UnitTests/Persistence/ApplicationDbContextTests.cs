@@ -170,6 +170,48 @@ public sealed class ApplicationDbContextTests
     }
 
     [Fact]
+    public void Model_MapsUserAdministrationAuditWithBoundedRequiredFields()
+    {
+        using var context = CreateMetadataContext();
+
+        var entityType = context.Model.FindEntityType(
+            typeof(UserAdministrationAuditLog));
+        Assert.NotNull(entityType);
+        Assert.Equal("UserAdministrationAuditLogs", entityType.GetTableName());
+
+        var actorUserId = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.ActorUserId))!;
+        var targetUserId = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.TargetUserId))!;
+        var action = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.Action))!;
+        var occurredAt = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.OccurredAt))!;
+        var beforeValue = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.BeforeValue))!;
+        var afterValue = entityType.FindProperty(
+            nameof(UserAdministrationAuditLog.AfterValue))!;
+
+        Assert.False(actorUserId.IsNullable);
+        Assert.False(targetUserId.IsNullable);
+        Assert.False(action.IsNullable);
+        Assert.False(occurredAt.IsNullable);
+        Assert.Equal(64, action.GetMaxLength());
+        Assert.Equal(1000, beforeValue.GetMaxLength());
+        Assert.Equal(1000, afterValue.GetMaxLength());
+        Assert.Equal("timestamp with time zone", occurredAt.GetColumnType());
+        Assert.Contains(
+            entityType.GetIndexes(),
+            index => index.Properties
+                .Select(property => property.Name)
+                .SequenceEqual(
+                [
+                    nameof(UserAdministrationAuditLog.TargetUserId),
+                    nameof(UserAdministrationAuditLog.OccurredAt)
+                ]));
+    }
+
+    [Fact]
     public void AddInfrastructure_MissingConnectionString_ThrowsClearConfigurationError()
     {
         var configuration = new ConfigurationBuilder().Build();
