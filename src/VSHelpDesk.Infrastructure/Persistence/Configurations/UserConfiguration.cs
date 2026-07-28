@@ -18,6 +18,9 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(user => user.PasswordHash).IsRequired();
         builder.Property(user => user.Role).IsRequired().HasConversion<int>();
         builder.Property(user => user.IsActive).IsRequired();
+        builder.Property(user => user.SecurityVersion)
+            .IsRequired()
+            .HasDefaultValue(1);
         builder.Property(user => user.CreatedAt).IsRequired().HasColumnType("timestamp with time zone");
         builder.Property(user => user.LastLoginAt).HasColumnType("timestamp with time zone");
 

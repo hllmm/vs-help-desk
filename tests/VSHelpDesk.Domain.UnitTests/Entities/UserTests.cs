@@ -6,6 +6,36 @@ namespace VSHelpDesk.Domain.UnitTests.Entities;
 public sealed class UserTests
 {
     [Fact]
+    public void AuthRelevantMutations_IncrementSecurityVersion()
+    {
+        var user = CreateUser(UserRole.Support);
+        Assert.Equal(1, user.SecurityVersion);
+
+        user.AssignRole(UserRole.Admin);
+        Assert.Equal(2, user.SecurityVersion);
+
+        user.Deactivate();
+        Assert.Equal(3, user.SecurityVersion);
+
+        user.Activate();
+        Assert.Equal(4, user.SecurityVersion);
+
+        user.ReplacePasswordHash("replacement-hash");
+        Assert.Equal(5, user.SecurityVersion);
+    }
+
+    [Fact]
+    public void ReapplyingRoleOrActiveState_DoesNotIncrementSecurityVersion()
+    {
+        var user = CreateUser(UserRole.Support);
+
+        user.AssignRole(UserRole.Support);
+        user.Activate();
+
+        Assert.Equal(1, user.SecurityVersion);
+    }
+
+    [Fact]
     public void Activate_SetsIsActiveTrue()
     {
         var user = new User("Ada", "ada", "ada@test", "hash", UserRole.Support);
@@ -55,4 +85,7 @@ public sealed class UserTests
         Assert.Equal("email", ex.ParamName);
         Assert.Equal("ada@test", user.Email);
     }
+
+    private static User CreateUser(UserRole role) =>
+        new("Ada", "ada", "ada@test", "hash", role);
 }

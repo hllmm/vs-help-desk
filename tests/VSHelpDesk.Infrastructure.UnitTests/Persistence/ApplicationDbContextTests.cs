@@ -26,6 +26,7 @@ public sealed class ApplicationDbContextTests
         var username = entityType.FindProperty(nameof(User.Username))!;
         var email = entityType.FindProperty(nameof(User.Email))!;
         var passwordHash = entityType.FindProperty(nameof(User.PasswordHash))!;
+        var securityVersion = entityType.FindProperty(nameof(User.SecurityVersion))!;
         var isActive = entityType.FindProperty(nameof(User.IsActive))!;
         var createdAt = entityType.FindProperty(nameof(User.CreatedAt))!;
         var lastLoginAt = entityType.FindProperty(nameof(User.LastLoginAt))!;
@@ -37,6 +38,8 @@ public sealed class ApplicationDbContextTests
         Assert.False(username.IsNullable);
         Assert.False(email.IsNullable);
         Assert.False(passwordHash.IsNullable);
+        Assert.False(securityVersion.IsNullable);
+        Assert.Equal(1, securityVersion.GetDefaultValue());
         Assert.False(isActive.IsNullable);
         Assert.False(createdAt.IsNullable);
         Assert.True(lastLoginAt.IsNullable);
