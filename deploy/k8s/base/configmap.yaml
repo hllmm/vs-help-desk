@@ -24,4 +24,8 @@ data:
   Email__ImapPort: "993"
   Email__ImapSecurityMode: "SslOnConnect"
   Email__ImapFolder: "INBOX"
+  Email__MaxUnreadBatchSize: "25"
+  Email__MaxMessageSizeBytes: "26214400"
+  Email__MaxAttachmentsPerMessage: "10"
+  Email__MaxTotalAttachmentBytesPerMessage: "20971520"
   # Passwords / usernames / account id: Secret vshelpdesk-secrets (Email__* keys)

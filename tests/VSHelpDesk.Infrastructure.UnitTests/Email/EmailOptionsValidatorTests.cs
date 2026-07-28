@@ -70,20 +70,112 @@ public sealed class EmailOptionsValidatorTests
             || result.FailureMessage.Contains("ImapPassword", StringComparison.OrdinalIgnoreCase)
             || result.FailureMessage.Contains("ImapAccountId", StringComparison.OrdinalIgnoreCase)
             || result.FailureMessage.Contains("ImapFolder", StringComparison.OrdinalIgnoreCase)
-            || result.FailureMessage.Contains("Imap", StringComparison.OrdinalIgnoreCase));
+                || result.FailureMessage.Contains("Imap", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_MaxUnreadBatchSizeMustBePositive(int value)
+    {
+        var options = ValidLocalFakeOptions(maxUnreadBatchSize: value);
+
+        var result = CreateValidator("Testing").Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains(
+            "MaxUnreadBatchSize",
+            result.FailureMessage,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_MaxMessageSizeBytesMustBePositive(long value)
+    {
+        var options = ValidLocalFakeOptions(maxMessageSizeBytes: value);
+
+        var result = CreateValidator("Testing").Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains(
+            "MaxMessageSizeBytes",
+            result.FailureMessage,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_MaxAttachmentsPerMessageMustBePositive(int value)
+    {
+        var options = ValidLocalFakeOptions(
+            maxAttachmentsPerMessage: value);
+
+        var result = CreateValidator("Testing").Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains(
+            "MaxAttachmentsPerMessage",
+            result.FailureMessage,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_MaxTotalAttachmentBytesMustBePositive(long value)
+    {
+        var options = ValidLocalFakeOptions(
+            maxTotalAttachmentBytesPerMessage: value);
+
+        var result = CreateValidator("Testing").Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains(
+            "MaxTotalAttachmentBytesPerMessage",
+            result.FailureMessage,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Validate_TotalAttachmentBytesCannotExceedMessageBytes()
+    {
+        var options = ValidLocalFakeOptions(
+            maxMessageSizeBytes: 1024,
+            maxTotalAttachmentBytesPerMessage: 2048);
+
+        var result = CreateValidator("Testing").Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains(
+            result.Failures!,
+            failure => failure.Contains(
+                "MaxTotalAttachmentBytesPerMessage",
+                StringComparison.Ordinal));
     }
 
     private static EmailOptionsValidator CreateValidator(string environmentName) =>
         new(new FixedHostEnvironment { EnvironmentName = environmentName });
 
-    private static EmailOptions ValidLocalFakeOptions() => new()
+    private static EmailOptions ValidLocalFakeOptions(
+        int maxUnreadBatchSize = 25,
+        long maxMessageSizeBytes = 25L * 1024 * 1024,
+        int maxAttachmentsPerMessage = 10,
+        long maxTotalAttachmentBytesPerMessage = 20L * 1024 * 1024) => new()
     {
         ReceiverMode = "Fake",
         SmtpHost = "localhost",
         SmtpPort = 1025,
         SmtpSecurityMode = MailTransportSecurityMode.None,
         SupportMailboxAddress = "support@vshelpdesk.local",
-        SupportMailboxDisplayName = "VS Help Desk"
+        SupportMailboxDisplayName = "VS Help Desk",
+        MaxUnreadBatchSize = maxUnreadBatchSize,
+        MaxMessageSizeBytes = maxMessageSizeBytes,
+        MaxAttachmentsPerMessage = maxAttachmentsPerMessage,
+        MaxTotalAttachmentBytesPerMessage =
+            maxTotalAttachmentBytesPerMessage
     };
 
     private static EmailOptions ValidImapOptions(
