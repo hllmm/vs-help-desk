@@ -6,6 +6,25 @@ namespace VSHelpDesk.Application.UnitTests.Features.MailProcessing;
 public sealed class InboundEmailNormalizerTests
 {
     [Fact]
+    public void BoundaryViolation_IsQuarantinedWithoutInspectingSenderOrBody()
+    {
+        var email = Mail(
+            fromAddress: "customer@example.test",
+            fromDisplayName: "Customer",
+            subject: "Oversized",
+            body: new string('x', 10_000)) with
+        {
+            BoundaryViolation = "message-size-exceeded"
+        };
+
+        var result = InboundEmailNormalizer.Normalize(email);
+
+        Assert.Equal(InboundEmailPolicyOutcome.Quarantine, result.Outcome);
+        Assert.Null(result.Email);
+        Assert.Equal("message-size-exceeded", result.ProcessingNote);
+    }
+
+    [Fact]
     public void MissingSender_IsQuarantinedWithBoundedNote()
     {
         var result = InboundEmailNormalizer.Normalize(Mail(
