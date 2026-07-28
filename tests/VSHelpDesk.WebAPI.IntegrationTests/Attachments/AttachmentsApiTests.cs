@@ -131,6 +131,12 @@ public sealed class AttachmentsApiTests : IClassFixture<CustomWebApplicationFact
             Assert.Equal(HttpStatusCode.OK, downloadResponse.StatusCode);
             Assert.Equal("attachment-body", await downloadResponse.Content.ReadAsStringAsync());
             Assert.Equal(
+                "attachment",
+                downloadResponse.Content.Headers.ContentDisposition?.DispositionType);
+            Assert.Equal(
+                "nosniff",
+                downloadResponse.Headers.GetValues("X-Content-Type-Options").Single());
+            Assert.Equal(
                 "guide.txt",
                 downloadResponse.Content.Headers.ContentDisposition?.FileNameStar
                 ?? downloadResponse.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
