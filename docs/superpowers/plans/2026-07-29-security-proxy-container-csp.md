@@ -436,10 +436,15 @@ git commit -m "chore(containers): pin maintained web and job images"
 **Files:**
 - Modify: `frontend/package.json`
 - Modify: `frontend/package-lock.json`
-- Verify: `frontend/src/**`
+- Modify: `frontend/src/**`
 
 **Interfaces:**
-- Produces: BrowserRouter-compatible `react-router-dom` `7.11.0` without the RSC-only advisory range.
+- Produces: BrowserRouter-compatible `react-router` `8.3.0` without the RSC-only advisory range.
+
+**Execution update (2026-07-29):** npm published additional advisories after
+the initial review, making `7.11.0` vulnerable and leaving `7.18.2` in the
+RSC-only advisory range. React Router 8 removes `react-router-dom`; the
+supported audit-clean migration is therefore direct `react-router` `8.3.0`.
 
 - [ ] **Step 1: Prove no RSC APIs are used**
 
@@ -452,16 +457,20 @@ rg -n 'RSCRouterConfig|routeRSCServerRequest|unstable_RSC|ServerRouter|RSCStatic
 
 Expected: no matches.
 
-- [ ] **Step 2: Pin the non-advisory browser-router release**
+- [ ] **Step 2: Migrate to the non-advisory router release**
 
 Run:
 
 ```bash
 cd frontend
-npm install --save-exact react-router-dom@7.11.0
+npm uninstall react-router-dom
+npm install --save-exact react-router@8.3.0
 ```
 
-Expected: package and lock file select `7.11.0`.
+Replace `react-router-dom` imports with `react-router`.
+
+Expected: package and lock file select `8.3.0`, with no
+`react-router-dom` dependency.
 
 - [ ] **Step 3: Run audit and frontend regressions**
 
@@ -482,8 +491,8 @@ frontend checks pass.
 Run:
 
 ```bash
-git add frontend/package.json frontend/package-lock.json
-git commit -m "chore(frontend): pin browser-only router release"
+git add frontend/package.json frontend/package-lock.json frontend/src
+git commit -m "chore(frontend): migrate to patched router release"
 ```
 
 ### Task 6: Run final security verification
