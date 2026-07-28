@@ -909,11 +909,16 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
 
         public void Reexpose(IncomingEmail email) => pending = email;
 
-        public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
+        public async IAsyncEnumerable<IncomingEmail> ReadUnreadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
             CancellationToken cancellationToken = default)
         {
-            IReadOnlyList<IncomingEmail> batch = pending is null ? [] : [pending];
-            return Task.FromResult(batch);
+            if (pending is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return pending;
+                await Task.Yield();
+            }
         }
 
         public Task MarkAsProcessedAsync(

@@ -399,9 +399,17 @@ public sealed class ProcessIncomingEmailsHandlerTests
         public List<EmailReceiptHandle> Marked { get; } = [];
         public HashSet<string> ThrowOnMarkValues { get; init; } = new(StringComparer.Ordinal);
 
-        public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(messages);
+        public async IAsyncEnumerable<IncomingEmail> ReadUnreadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken = default)
+        {
+            foreach (var message in messages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return message;
+                await Task.Yield();
+            }
+        }
 
         public Task MarkAsProcessedAsync(
             EmailReceiptHandle receiptHandle,

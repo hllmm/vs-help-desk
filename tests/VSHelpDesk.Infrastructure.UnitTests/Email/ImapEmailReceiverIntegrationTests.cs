@@ -59,7 +59,7 @@ public sealed class ImapEmailReceiverIntegrationTests
 
         await receiver.MarkAsProcessedAsync(match.ReceiptHandle);
 
-        var afterMark = await receiver.FetchUnreadAsync();
+        var afterMark = await ReadAllAsync(receiver);
         Assert.DoesNotContain(
             afterMark,
             m => m.ReceiptHandle.Value == match.ReceiptHandle.Value);
@@ -86,7 +86,7 @@ public sealed class ImapEmailReceiverIntegrationTests
         const int maxAttempts = 20;
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            var unread = await receiver.FetchUnreadAsync();
+            var unread = await ReadAllAsync(receiver);
             if (unread.Any(m => m.Subject == subject))
             {
                 return unread;
@@ -97,5 +97,17 @@ public sealed class ImapEmailReceiverIntegrationTests
 
         throw new TimeoutException(
             $"GreenMail did not expose unread message with subject token within timeout.");
+    }
+
+    private static async Task<List<IncomingEmail>> ReadAllAsync(
+        IEmailReceiver receiver)
+    {
+        var items = new List<IncomingEmail>();
+        await foreach (var item in receiver.ReadUnreadAsync())
+        {
+            items.Add(item);
+        }
+
+        return items;
     }
 }

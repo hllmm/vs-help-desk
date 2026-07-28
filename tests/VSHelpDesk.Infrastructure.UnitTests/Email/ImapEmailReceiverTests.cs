@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -35,9 +36,12 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await ReadAllAsync(receiver);
 
         var item = Assert.Single(unread);
+        Assert.Equal(25, client.RequestedMaxCount);
+        Assert.Equal(25L * 1024 * 1024, client.RequestedMaxMessageSizeBytes);
+        Assert.Equal(1, client.MaxSimultaneouslyMaterializedMessages);
         Assert.Null(item.MessageId);
         Assert.Equal(EmailReceiptKind.Imap, item.ReceiptHandle.Kind);
         Assert.Equal(
@@ -73,7 +77,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await ReadAllAsync(receiver);
 
         var item = Assert.Single(unread);
         // Boundary canonicalizes bare MimeKit id into <left@right> for identity.
@@ -104,7 +108,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var item = Assert.Single(await ReadAllAsync(receiver));
 
         Assert.Equal("<html-only@example.test>", item.MessageId);
 
@@ -150,7 +154,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await ReadAllAsync(receiver);
         var item = Assert.Single(unread);
 
         await receiver.MarkAsProcessedAsync(item.ReceiptHandle);
@@ -177,7 +181,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client, maxFileSizeBytes: 1024);
-        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var item = Assert.Single(await ReadAllAsync(receiver));
         var attachment = Assert.Single(item.Attachments);
 
         Assert.Equal("note.txt", attachment.FileName);
@@ -201,9 +205,35 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client, maxFileSizeBytes: 4);
-        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var item = Assert.Single(await ReadAllAsync(receiver));
 
         Assert.Empty(item.Attachments);
+    }
+
+    [Fact]
+    public async Task Receiver_OversizedSummary_YieldsMetadataOnlyViolation()
+    {
+        var client = new FakeImapMailboxClient
+        {
+            Items =
+            [
+                new ImapMailboxItem(
+                    UidValidity: 7u,
+                    Uid: 9u,
+                    Envelope: null,
+                    Message: null,
+                    DeclaredSize: 25L * 1024 * 1024 + 1,
+                    BoundaryViolation: "message-size-exceeded")
+            ]
+        };
+
+        var receiver = CreateReceiver(client);
+
+        var email = Assert.Single(await ReadAllAsync(receiver));
+
+        Assert.Equal("message-size-exceeded", email.BoundaryViolation);
+        Assert.Empty(email.Attachments);
+        Assert.True(string.IsNullOrEmpty(email.Body));
     }
 
     private static MimeMessage BuildMessageWithAttachment(
@@ -262,15 +292,57 @@ public sealed class ImapEmailReceiverTests
             NullLogger<ImapEmailReceiver>.Instance);
     }
 
+    private static async Task<List<IncomingEmail>> ReadAllAsync(
+        IEmailReceiver receiver)
+    {
+        var items = new List<IncomingEmail>();
+        await foreach (var item in receiver.ReadUnreadAsync())
+        {
+            items.Add(item);
+        }
+
+        return items;
+    }
+
     private sealed class FakeImapMailboxClient : IImapMailboxClient
     {
         public List<ImapMailboxItem> Items { get; init; } = [];
 
         public List<(uint ExpectedUidValidity, uint Uid)> Marked { get; } = [];
 
-        public Task<IReadOnlyList<ImapMailboxItem>> FetchUnreadAsync(
-            CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<ImapMailboxItem>>(Items);
+        public int RequestedMaxCount { get; private set; }
+
+        public long RequestedMaxMessageSizeBytes { get; private set; }
+
+        public int MaxSimultaneouslyMaterializedMessages { get; private set; }
+
+        public async IAsyncEnumerable<ImapMailboxItem> ReadUnreadAsync(
+            int maxCount,
+            long maxMessageSizeBytes,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            RequestedMaxCount = maxCount;
+            RequestedMaxMessageSizeBytes = maxMessageSizeBytes;
+            var outstanding = 0;
+            foreach (var item in Items.Take(maxCount))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                outstanding++;
+                MaxSimultaneouslyMaterializedMessages = Math.Max(
+                    MaxSimultaneouslyMaterializedMessages,
+                    outstanding);
+                try
+                {
+                    yield return item;
+                }
+                finally
+                {
+                    outstanding--;
+                }
+
+                await Task.Yield();
+            }
+        }
 
         public Task MarkSeenAsync(
             uint expectedUidValidity,

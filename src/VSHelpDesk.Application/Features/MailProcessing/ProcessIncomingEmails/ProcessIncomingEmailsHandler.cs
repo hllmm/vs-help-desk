@@ -56,23 +56,9 @@ public sealed class ProcessIncomingEmailsHandler(
             // Continue to fetch/process receipts; durable pending rows remain for a later run.
         }
 
-        IReadOnlyList<IncomingEmail> unread;
-        try
-        {
-            unread = await emailReceiver.FetchUnreadAsync(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(
-                ex,
-                "ProcessIncomingEmails fetch failed receiverMode={ReceiverMode}",
-                mode);
-            return Result.Failure<ProcessIncomingEmailsResult>(
-                "Failed to fetch unread emails from the configured receiver.");
-        }
-
         var createdTicketNumbers = new List<string>();
         var failures = new List<ProcessIncomingEmailFailure>();
+        var fetchedCount = 0;
         var createdTickets = 0;
         var customerReplies = 0;
         var reopenedTickets = 0;
@@ -80,8 +66,47 @@ public sealed class ProcessIncomingEmailsHandler(
         var quarantined = 0;
         var retryableFailures = 0;
 
-        foreach (var mail in unread)
+        await using var enumerator = emailReceiver
+            .ReadUnreadAsync(cancellationToken)
+            .GetAsyncEnumerator(cancellationToken);
+
+        while (true)
         {
+            IncomingEmail mail;
+            try
+            {
+                if (!await enumerator.MoveNextAsync())
+                {
+                    break;
+                }
+
+                mail = enumerator.Current;
+                fetchedCount++;
+            }
+            catch (OperationCanceledException)
+                when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "ProcessIncomingEmails fetch failed receiverMode={ReceiverMode}",
+                    mode);
+                if (fetchedCount == 0)
+                {
+                    return Result.Failure<ProcessIncomingEmailsResult>(
+                        "Failed to fetch unread emails from the configured receiver.");
+                }
+
+                failures.Add(
+                    new ProcessIncomingEmailFailure(
+                        "fetch-failed",
+                        string.Empty));
+                break;
+            }
+
             var itemReference = ToItemReference(mail.ReceiptHandle);
 
             InboundEmailItemResult item;
@@ -176,7 +201,7 @@ public sealed class ProcessIncomingEmailsHandler(
         logger.LogInformation(
             "ProcessIncomingEmails finished receiverMode={ReceiverMode} fetched={Fetched} created={Created} replies={Replies} reopened={Reopened} alreadyProcessed={AlreadyProcessed} ackSent={AckSent} ackFailed={AckFailed} quarantined={Quarantined} retryableFailures={RetryableFailures} failures={FailureCount}",
             mode,
-            unread.Count,
+            fetchedCount,
             createdTickets,
             customerReplies,
             reopenedTickets,
@@ -189,7 +214,7 @@ public sealed class ProcessIncomingEmailsHandler(
 
         return Result.Success(new ProcessIncomingEmailsResult(
             mode,
-            unread.Count,
+            fetchedCount,
             createdTickets,
             customerReplies,
             reopenedTickets,
