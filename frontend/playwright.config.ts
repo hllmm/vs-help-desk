@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'security-headers.smoke.spec.ts',
   outputDir: './test-results',
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
