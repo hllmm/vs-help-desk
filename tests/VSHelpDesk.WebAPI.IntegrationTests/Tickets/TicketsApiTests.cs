@@ -11,6 +11,7 @@ using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.AssignTicket;
+using VSHelpDesk.Application.Features.Tickets.ReadModel;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Infrastructure.Persistence;
@@ -732,6 +733,34 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         using (client)
         using (var response = await client.GetAsync(
             $"/api/tickets/{Guid.NewGuid()}/messages?cursor={encodedCursor}"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            Assert.Equal(
+                "invalid-ticket-message-cursor",
+                doc.RootElement.GetProperty("code").GetString());
+            AssertSafeValidationBody(body);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetMessages_DuplicateValidAndEmptyCursorsInEitherOrderReturnSafe400(
+        bool validCursorFirst)
+    {
+        var validCursor = new TicketMessageCursorCodec().Encode(new TicketMessageCursor(
+            new DateTime(2026, 8, 3, 9, 15, 0, DateTimeKind.Utc),
+            Guid.Parse("11111111-1111-1111-1111-111111111111")));
+        var cursorQuery = validCursorFirst
+            ? $"cursor={Uri.EscapeDataString(validCursor)}&cursor="
+            : $"cursor=&cursor={Uri.EscapeDataString(validCursor)}";
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+
+        using (client)
+        using (var response = await client.GetAsync(
+            $"/api/tickets/{Guid.NewGuid()}/messages?{cursorQuery}"))
         {
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
             var body = await response.Content.ReadAsStringAsync();

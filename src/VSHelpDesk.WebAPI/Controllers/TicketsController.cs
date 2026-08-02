@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
 using VSHelpDesk.Application.Features.Tickets.AssignTicket;
 using VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
@@ -73,9 +74,24 @@ public sealed class TicketsController(
         [FromQuery] string? cursor = null,
         CancellationToken cancellationToken = default)
     {
-        var suppliedCursor = Request.Query.ContainsKey("cursor")
-            ? cursor ?? Request.Query["cursor"].ToString()
-            : null;
+        // IQueryCollection drops an empty duplicate when another value is non-empty.
+        // Enumerating the raw query preserves every supplied value and its order.
+        List<string>? cursorValues = null;
+        foreach (var parameter in new QueryStringEnumerable(Request.QueryString.Value ?? string.Empty))
+        {
+            if (parameter.DecodeName().Span.Equals(
+                "cursor".AsSpan(),
+                StringComparison.OrdinalIgnoreCase))
+            {
+                (cursorValues ??= []).Add(parameter.DecodeValue().ToString());
+            }
+        }
+
+        var suppliedCursor = cursorValues is null
+            ? null
+            : cursorValues.Count == 1
+                ? cursorValues[0]
+                : string.Join(',', cursorValues);
         var page = await getTicketMessagesHandler.HandleAsync(
             new GetTicketMessagesQuery(id, pageSize, suppliedCursor),
             cancellationToken);
