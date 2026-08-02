@@ -23,6 +23,27 @@ const ticketFixtures = [
 const LOGIN_API = 'http://127.0.0.1:4173/api/auth/login'
 const ME_API = 'http://127.0.0.1:4173/api/auth/me'
 const TICKETS_API = 'http://127.0.0.1:4173/api/tickets'
+// List reads are cursor-paginated (?pageSize=50&search&status&cursor).
+const TICKETS_LIST_API_PATTERN = /\/api\/tickets(\?.*)?$/
+
+function pagedListPage(items: typeof ticketFixtures) {
+  return {
+    items,
+    nextCursor: null,
+    hasMore: false,
+    counts: {
+      all: items.length,
+      new: items.filter(({ status }) => status === 'New').length,
+      waitingCustomerReply: items.filter(
+        ({ status }) => status === 'WaitingCustomerReply',
+      ).length,
+      customerReplied: items.filter(
+        ({ status }) => status === 'CustomerReplied',
+      ).length,
+      resolved: items.filter(({ status }) => status === 'Resolved').length,
+    },
+  }
+}
 
 const EXPIRY_NOTICE =
   'Oturumunuz sona erdi. Devam etmek için yeniden giriş yapın.'
@@ -120,11 +141,11 @@ async function mockLogoutSuccess(page: Page) {
 }
 
 async function mockTicketsSuccess(page: Page) {
-  await page.route(TICKETS_API, async (route) => {
+  await page.route(TICKETS_LIST_API_PATTERN, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(ticketFixtures),
+      body: JSON.stringify(pagedListPage(ticketFixtures)),
     })
   })
 }
@@ -239,17 +260,11 @@ test('production same-origin responsive smoke', async ({
 
   const viewport = page.viewportSize()
   expect(viewport).not.toBeNull()
-  const tableView = page.locator('.ticket-table-view')
-  const cardList = page.locator('.ticket-card-list')
 
-  // Breakpoint in tickets.css: max-width 47.99rem (~767.84px at 16px root).
-  if (viewport!.width > 767.84) {
-    await expect(tableView).toBeVisible()
-    await expect(cardList).toBeHidden()
-  } else {
-    await expect(cardList).toBeVisible()
-    await expect(tableView).toBeHidden()
-  }
+  // Bounded read path: one <table> representation at every viewport width;
+  // the legacy duplicate mobile card list is removed.
+  await expect(page.locator('.ticket-table-view')).toBeVisible()
+  await expect(page.locator('.ticket-card-list')).toHaveCount(0)
 
   await testInfo.attach(`portal-${testInfo.project.name}`, {
     body: await page.screenshot({ fullPage: true }),
@@ -312,7 +327,7 @@ test('protected 401 clears session and explains expiry', async ({
       body: JSON.stringify({ message: 'Unauthorized' }),
     })
   })
-  await page.route(TICKETS_API, async (route) => {
+  await page.route(TICKETS_LIST_API_PATTERN, async (route) => {
     await route.fulfill({
       status: 401,
       contentType: 'application/json',

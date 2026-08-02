@@ -15,6 +15,27 @@ import type {
 const ORIGIN = 'http://127.0.0.1:4173'
 const LOGIN_API = `${ORIGIN}/api/auth/login`
 const TICKETS_API = `${ORIGIN}/api/tickets`
+// List reads are cursor-paginated (?pageSize=50&search&status&cursor).
+const TICKETS_LIST_API_PATTERN = /\/api\/tickets(\?.*)?$/
+
+function pagedListPage(items: TicketListItem[]) {
+  return {
+    items,
+    nextCursor: null,
+    hasMore: false,
+    counts: {
+      all: items.length,
+      new: items.filter(({ status }) => status === 'New').length,
+      waitingCustomerReply: items.filter(
+        ({ status }) => status === 'WaitingCustomerReply',
+      ).length,
+      customerReplied: items.filter(
+        ({ status }) => status === 'CustomerReplied',
+      ).length,
+      resolved: items.filter(({ status }) => status === 'Resolved').length,
+    },
+  }
+}
 
 const TICKET_ID = '22222222-2222-2222-2222-222222222222'
 const UNKNOWN_TICKET_ID = '99999999-9999-9999-9999-999999999999'
@@ -388,7 +409,7 @@ async function installTicketWorkspaceMocks(
     })
   })
 
-  await page.route(TICKETS_API, async (route) => {
+  await page.route(TICKETS_LIST_API_PATTERN, async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback()
       return
@@ -396,7 +417,7 @@ async function installTicketWorkspaceMocks(
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify([fixture.listItem]),
+      body: JSON.stringify(pagedListPage([fixture.listItem])),
     })
   })
 

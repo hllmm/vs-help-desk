@@ -10,7 +10,20 @@ const ORIGIN = 'http://127.0.0.1:4173'
 const ME_API = `${ORIGIN}/api/auth/me`
 const USERS_API = `${ORIGIN}/api/users`
 const PARAMETERS_API = `${ORIGIN}/api/parameters`
-const TICKETS_API = `${ORIGIN}/api/tickets`
+// List reads are cursor-paginated (?pageSize=50&search&status&cursor).
+const TICKETS_LIST_API_PATTERN = /\/api\/tickets(\?.*)?$/
+const EMPTY_TICKETS_PAGE = JSON.stringify({
+  items: [],
+  nextCursor: null,
+  hasMore: false,
+  counts: {
+    all: 0,
+    new: 0,
+    waitingCustomerReply: 0,
+    customerReplied: 0,
+    resolved: 0,
+  },
+})
 
 const admin = {
   userId: '11111111-1111-1111-1111-111111111111',
@@ -293,11 +306,11 @@ test('Support cookie bootstrap cannot open Admin routes', async ({ page }) => {
       body: JSON.stringify(support),
     })
   })
-  await page.route(TICKETS_API, async (route) => {
+  await page.route(TICKETS_LIST_API_PATTERN, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: '[]',
+      body: EMPTY_TICKETS_PAGE,
     })
   })
 
