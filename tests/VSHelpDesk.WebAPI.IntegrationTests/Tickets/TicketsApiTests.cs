@@ -722,6 +722,27 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         }
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("%20%20%20")]
+    public async Task GetMessages_ExplicitEmptyOrWhitespaceCursorReturnsSafe400WithStableCode(
+        string encodedCursor)
+    {
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        using (var response = await client.GetAsync(
+            $"/api/tickets/{Guid.NewGuid()}/messages?cursor={encodedCursor}"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            Assert.Equal(
+                "invalid-ticket-message-cursor",
+                doc.RootElement.GetProperty("code").GetString());
+            AssertSafeValidationBody(body);
+        }
+    }
+
     [Fact]
     public async Task GetMessages_WithoutTokenReturns401()
     {

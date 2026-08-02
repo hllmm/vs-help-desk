@@ -12,7 +12,7 @@ public sealed class GetTicketMessagesHandler(
         GetTicketMessagesQuery query,
         CancellationToken cancellationToken = default)
     {
-        var cursor = query.Cursor is { Length: > 0 }
+        var cursor = query.Cursor is not null
             ? ticketMessageCursorCodec.Decode(query.Cursor)
             : null;
         var result = await ticketDetailReadRepository.ReadMessagesAsync(

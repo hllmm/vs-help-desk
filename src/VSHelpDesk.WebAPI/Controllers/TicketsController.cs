@@ -73,8 +73,11 @@ public sealed class TicketsController(
         [FromQuery] string? cursor = null,
         CancellationToken cancellationToken = default)
     {
+        var suppliedCursor = Request.Query.ContainsKey("cursor")
+            ? cursor ?? Request.Query["cursor"].ToString()
+            : null;
         var page = await getTicketMessagesHandler.HandleAsync(
-            new GetTicketMessagesQuery(id, pageSize, cursor),
+            new GetTicketMessagesQuery(id, pageSize, suppliedCursor),
             cancellationToken);
         return Ok(page);
     }

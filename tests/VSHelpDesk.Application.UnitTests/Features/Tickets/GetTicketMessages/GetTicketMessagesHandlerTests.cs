@@ -59,6 +59,24 @@ public sealed class GetTicketMessagesHandlerTests
         Assert.Equal(cancellation.Token, repository.CancellationToken);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task HandleAsync_ExplicitEmptyOrWhitespaceCursor_ThrowsStableValidationCode(
+        string cursor)
+    {
+        var repository = new RecordingRepository();
+        var handler = new GetTicketMessagesHandler(repository, new TicketMessageCursorCodec());
+
+        var exception = await Assert.ThrowsAsync<RequestValidationException>(() =>
+            handler.HandleAsync(
+                new GetTicketMessagesQuery(Guid.NewGuid(), Cursor: cursor),
+                CancellationToken.None));
+
+        Assert.Equal("invalid-ticket-message-cursor", exception.Code);
+        Assert.Null(repository.Request);
+    }
+
     [Fact]
     public async Task HandleAsync_RepositoryResult_ReturnsPageAndEncodedNextCursor()
     {
