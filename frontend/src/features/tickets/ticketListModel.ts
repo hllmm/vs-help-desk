@@ -1,5 +1,3 @@
-import type { TicketListItem } from '../../api/types'
-
 export const TICKET_STATUS_FILTERS = [
   'all',
   'New',
@@ -54,62 +52,6 @@ export function getTicketFilterLabel(
   filter: TicketStatusFilter,
 ): string {
   return FILTER_LABELS[filter]
-}
-
-function normalizeSearchText(value: string): string {
-  return value.toLocaleLowerCase('tr-TR')
-}
-
-export function searchTickets(
-  items: readonly TicketListItem[],
-  query: string,
-): TicketListItem[] {
-  const normalizedQuery = normalizeSearchText(query.trim())
-  if (!normalizedQuery) {
-    return [...items]
-  }
-
-  return items.filter((item) => {
-    const haystacks = [
-      item.ticketNumber,
-      item.subject,
-      item.customerName,
-      item.customerEmail,
-    ]
-    return haystacks.some((field) =>
-      normalizeSearchText(field).includes(normalizedQuery),
-    )
-  })
-}
-
-export function filterTicketsByStatus(
-  items: readonly TicketListItem[],
-  status: TicketStatusFilter,
-): TicketListItem[] {
-  if (status === 'all') {
-    return [...items]
-  }
-  return items.filter((item) => item.status === status)
-}
-
-export function countTicketsByStatus(
-  items: readonly TicketListItem[],
-): LifecycleCounts {
-  const counts: LifecycleCounts = {
-    all: items.length,
-    New: 0,
-    WaitingCustomerReply: 0,
-    CustomerReplied: 0,
-    Resolved: 0,
-  }
-
-  for (const item of items) {
-    if (isKnownTicketStatus(item.status)) {
-      counts[item.status] += 1
-    }
-  }
-
-  return counts
 }
 
 const activityFormatter = new Intl.DateTimeFormat('tr-TR', {

@@ -65,7 +65,8 @@ export function TicketListPage(): ReactElement {
       setServerQuery('')
       return
     }
-    if (trimmed.length < 2) {
+    if (trimmed.length < 2 || trimmed.length > 100) {
+      // Out-of-contract lengths stay local (hint copy lives in TicketFilters).
       return
     }
 

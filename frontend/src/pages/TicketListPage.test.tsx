@@ -163,6 +163,39 @@ describe('TicketListPage', () => {
     expect(screen.getByText('87 sonuç')).toBeInTheDocument()
   })
 
+  it('holds over-long search locally with a hint instead of hitting the server', async () => {
+    fetchTickets.mockResolvedValueOnce(page(sampleTickets))
+    renderTicketsPage()
+    await screen.findByRole('table')
+    const user = userEvent.setup()
+    const search = screen.getByLabelText('Taleplerde ara')
+
+    await user.type(search, 'x'.repeat(101))
+    expect(
+      screen.getByText('Aramak için en fazla 100 karakter girin.'),
+    ).toBeInTheDocument()
+    await new Promise((resolve) => window.setTimeout(resolve, 350))
+    expect(fetchTickets).toHaveBeenCalledTimes(1)
+
+    await user.clear(search)
+    await user.type(search, 'y'.repeat(100))
+    await waitFor(
+      () => {
+        expect(fetchTickets).toHaveBeenCalledTimes(2)
+      },
+      { timeout: 800 },
+    )
+    expect(fetchTickets.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ search: 'y'.repeat(100), pageSize: 50 }),
+    )
+    expect(
+      screen.queryByText('Aramak için en fazla 100 karakter girin.'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Aramak için en az 2 karakter girin.'),
+    ).not.toBeInTheDocument()
+  })
+
   it('keeps controls mounted and search focused through server replacements', async () => {
     const searchResult = deferred<TicketListPage>()
     const statusResult = deferred<TicketListPage>()

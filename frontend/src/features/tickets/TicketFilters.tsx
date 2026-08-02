@@ -26,6 +26,7 @@ export function TicketFilters(props: TicketFiltersProps): ReactElement {
     onRefresh,
   } = props
   const showMinimumQueryHint = query.trim().length === 1
+  const showMaximumQueryHint = query.trim().length > 100
 
   function handleStatusChange(event: ChangeEvent<HTMLSelectElement>) {
     onStatusChange(event.target.value as TicketStatusFilter)
@@ -44,12 +45,19 @@ export function TicketFilters(props: TicketFiltersProps): ReactElement {
             placeholder="Numara, konu veya müşteri ara"
             autoComplete="off"
             aria-describedby={
-              showMinimumQueryHint ? 'ticket-search-hint' : undefined
+              showMinimumQueryHint || showMaximumQueryHint
+                ? 'ticket-search-hint'
+                : undefined
             }
           />
           {showMinimumQueryHint ? (
             <span id="ticket-search-hint" className="ticket-field__hint">
               Aramak için en az 2 karakter girin.
+            </span>
+          ) : null}
+          {showMaximumQueryHint ? (
+            <span id="ticket-search-hint" className="ticket-field__hint">
+              Aramak için en fazla 100 karakter girin.
             </span>
           ) : null}
         </label>
