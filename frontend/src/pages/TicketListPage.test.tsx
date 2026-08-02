@@ -252,10 +252,29 @@ describe('TicketListPage', () => {
     fetchTickets
       .mockResolvedValueOnce(page([], { counts: { ...counts, all: 0 } }))
       .mockReturnValueOnce(refresh.promise)
+    renderTicketsPage()
+    await screen.findByText('Henüz destek talebi yok.')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Yenile' }))
+
+    expect(screen.getByLabelText('Taleplerde ara')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Yenileniyor…' })).toBeDisabled()
+    expect(
+      screen.queryByText('Destek talepleri yükleniyor…'),
+    ).not.toBeInTheDocument()
+
+    refresh.reject(new Error('Server boom'))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Destek talepleri güncellenemedi.')
+    expect(within(alert).getByRole('button', { name: 'Yeniden dene' })).toBeEnabled()
+    expect(screen.getByLabelText('Taleplerde ara')).toBeInTheDocument()
+    expect(alert).not.toHaveTextContent(
+      'Destek talepleri yüklenemedi. Lütfen yeniden deneyin.',
+    )
   })
 
   it('explains loaded counts and clears search and status together', async () => {
-    fetchTickets.mockResolvedValueOnce(page(sampleTickets))
+    fetchTickets.mockResolvedValue(page(sampleTickets))
     renderTicketsPage()
     const user = userEvent.setup()
 
@@ -280,26 +299,6 @@ describe('TicketListPage', () => {
       screen.queryByRole('button', { name: 'Filtreleri temizle' }),
     ).not.toBeInTheDocument()
     expect(screen.getByRole('table')).toBeInTheDocument()
-  })
-    renderTicketsPage()
-    await screen.findByText('Henüz destek talebi yok.')
-
-    await userEvent.click(screen.getByRole('button', { name: 'Yenile' }))
-
-    expect(screen.getByLabelText('Taleplerde ara')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Yenileniyor…' })).toBeDisabled()
-    expect(
-      screen.queryByText('Destek talepleri yükleniyor…'),
-    ).not.toBeInTheDocument()
-
-    refresh.reject(new Error('Server boom'))
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('Destek talepleri güncellenemedi.')
-    expect(within(alert).getByRole('button', { name: 'Yeniden dene' })).toBeEnabled()
-    expect(screen.getByLabelText('Taleplerde ara')).toBeInTheDocument()
-    expect(alert).not.toHaveTextContent(
-      'Destek talepleri yüklenemedi. Lütfen yeniden deneyin.',
-    )
   })
 
   it('loads more only when available and disables the action while appending', async () => {

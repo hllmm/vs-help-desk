@@ -87,7 +87,7 @@
   cursor: pointer;
   font-weight: 600;
   font-size: 1.05rem;
-  list-style-position: outside;
+  list-style-position: inside;
 }
 
 .parameters-audit__empty {
