@@ -14,6 +14,7 @@ import { RESOLUTION_COPY } from '../features/ticket-details/useResolveTicket'
 import { REPLY_OUTCOME_MESSAGES } from '../features/ticket-details/useTicketReply'
 
 const fetchTicketDetails = vi.hoisted(() => vi.fn())
+const fetchTicketMessages = vi.hoisted(() => vi.fn())
 const fetchTickets = vi.hoisted(() => vi.fn())
 const replyToTicket = vi.hoisted(() => vi.fn())
 const resolveTicket = vi.hoisted(() => vi.fn())
@@ -23,6 +24,7 @@ const downloadAttachment = vi.hoisted(() => vi.fn())
 
 vi.mock('../api/ticketsApi', () => ({
   fetchTicketDetails,
+  fetchTicketMessages,
   fetchTickets,
   replyToTicket,
   resolveTicket,
@@ -93,6 +95,8 @@ function sampleDetail(overrides: Partial<TicketDetails> = {}): TicketDetails {
     waitingCustomerSince: null,
     resolvedAt: null,
     closedByUserId: null,
+    nextMessageCursor: null,
+    hasMoreMessages: false,
     messages: [
       {
         id: 'msg-1',
@@ -207,6 +211,7 @@ function sampleResolve(
 describe('TicketDetailPage', () => {
   beforeEach(() => {
     fetchTicketDetails.mockReset()
+    fetchTicketMessages.mockReset()
     fetchTickets.mockReset()
     replyToTicket.mockReset()
     resolveTicket.mockReset()
@@ -841,5 +846,179 @@ describe('TicketDetailPage', () => {
       screen.getByRole('link', { name: 'Destek taleplerine dön' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Çıkış yap' })).toBeEnabled()
+  })
+
+  describe('older message history', () => {
+    function pagedDetail() {
+      return sampleDetail({
+        nextMessageCursor: 'cursor-1',
+        hasMoreMessages: true,
+      })
+    }
+
+    const olderPage = {
+      messages: [
+        {
+          id: 'msg-0',
+          senderType: 'Customer',
+          userId: null,
+          content: 'En eski müşteri mesajı',
+          isHtml: false,
+          createdAt: '2026-07-20T08:00:00.000Z',
+        },
+      ],
+      attachments: [
+        {
+          id: 'att-0',
+          ticketMessageId: 'msg-0',
+          fileName: 'eski-log.txt',
+          contentType: 'text/plain',
+          fileSize: 512,
+          createdAt: '2026-07-20T08:00:01.000Z',
+        },
+      ],
+      nextCursor: 'cursor-2',
+      hasMore: true,
+    }
+
+    const finalOlderPage = {
+      messages: [
+        {
+          id: 'msg-minus-1',
+          senderType: 'Support',
+          userId: 'user-1',
+          content: 'İlk karşılama mesajı',
+          isHtml: false,
+          createdAt: '2026-07-19T18:00:00.000Z',
+        },
+      ],
+      attachments: [],
+      nextCursor: null,
+      hasMore: false,
+    }
+
+    it('hides the older-history control when the first page already holds everything', async () => {
+      fetchTicketDetails.mockResolvedValueOnce(sampleDetail())
+      renderDetail()
+
+      await screen.findByRole('heading', { name: 'Mesaj geçmişi' })
+      expect(
+        screen.queryByRole('button', { name: 'Daha eski mesajları yükle' }),
+      ).not.toBeInTheDocument()
+      expect(fetchTicketMessages).not.toHaveBeenCalled()
+    })
+
+    it('loads older messages before the timeline on demand and keeps focus on the control', async () => {
+      fetchTicketDetails.mockResolvedValueOnce(pagedDetail())
+      renderDetail()
+
+      const loadOlder = await screen.findByRole('button', {
+        name: 'Daha eski mesajları yükle',
+      })
+      const timeline = screen.getByRole('list', { name: 'Mesaj geçmişi' })
+      expect(
+        loadOlder.compareDocumentPosition(timeline) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
+
+      const pending = deferred<typeof olderPage>()
+      fetchTicketMessages.mockReturnValueOnce(pending.promise)
+
+      const user = userEvent.setup()
+      await user.click(loadOlder)
+
+      expect(fetchTicketMessages).toHaveBeenCalledWith('ticket-1', {
+        pageSize: 100,
+        cursor: 'cursor-1',
+        signal: expect.any(AbortSignal),
+      })
+      const busy = screen.getByRole('button', {
+        name: 'Eski mesajlar yükleniyor…',
+      })
+      expect(busy).toBeDisabled()
+      expect(busy).toHaveAttribute('aria-busy', 'true')
+
+      pending.resolve(olderPage)
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('En eski müşteri mesajı'),
+        ).toBeInTheDocument()
+      })
+
+      const articles = within(
+        screen.getByRole('list', { name: 'Mesaj geçmişi' }),
+      ).getAllByRole('article')
+      expect(articles).toHaveLength(3)
+      expect(within(articles[0]!).getByText('En eski müşteri mesajı')).toBeInTheDocument()
+      expect(within(articles[0]!).getByText('Müşteri')).toBeInTheDocument()
+      expect(within(articles[0]!).getByRole('button', { name: /eski-log\.txt/ })).toBeInTheDocument()
+      expect(within(articles[1]!).getByText('Merhaba, şifremi unuttum.')).toBeInTheDocument()
+      expect(
+        within(articles[2]!).getByText('Merhaba, yardımcı oluyoruz.'),
+      ).toBeInTheDocument()
+
+      const afterAppend = screen.getByRole('button', {
+        name: 'Daha eski mesajları yükle',
+      })
+      expect(afterAppend).toBeEnabled()
+      expect(afterAppend).toHaveFocus()
+    })
+
+    it('hides the control after the final older page arrives', async () => {
+      fetchTicketDetails.mockResolvedValueOnce(pagedDetail())
+      renderDetail()
+      await screen.findByRole('button', { name: 'Daha eski mesajları yükle' })
+
+      fetchTicketMessages.mockResolvedValueOnce(finalOlderPage)
+      const user = userEvent.setup()
+      await user.click(
+        screen.getByRole('button', { name: 'Daha eski mesajları yükle' }),
+      )
+
+      await screen.findByText('İlk karşılama mesajı')
+      expect(
+        screen.queryByRole('button', { name: 'Daha eski mesajları yükle' }),
+      ).not.toBeInTheDocument()
+
+      const articles = within(
+        screen.getByRole('list', { name: 'Mesaj geçmişi' }),
+      ).getAllByRole('article')
+      expect(articles).toHaveLength(3)
+      expect(within(articles[0]!).getByText('İlk karşılama mesajı')).toBeInTheDocument()
+      expect(within(articles[0]!).getByText('Destek ekibi')).toBeInTheDocument()
+    })
+
+    it('keeps the loaded timeline on an older-page failure and offers an accessible retry', async () => {
+      fetchTicketDetails.mockResolvedValueOnce(pagedDetail())
+      renderDetail()
+      await screen.findByRole('button', { name: 'Daha eski mesajları yükle' })
+
+      fetchTicketMessages.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      const user = userEvent.setup()
+      await user.click(
+        screen.getByRole('button', { name: 'Daha eski mesajları yükle' }),
+      )
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(
+        'Daha eski mesajlar yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.',
+      )
+      expect(screen.getByText('Merhaba, şifremi unuttum.')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Daha eski mesajları yükle' }),
+      ).not.toBeInTheDocument()
+
+      fetchTicketMessages.mockResolvedValueOnce(olderPage)
+      await user.click(
+        within(alert).getByRole('button', { name: 'Yeniden dene' }),
+      )
+
+      await screen.findByText('En eski müşteri mesajı')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: 'Daha eski mesajları yükle' }),
+      ).toBeInTheDocument()
+    })
   })
 })

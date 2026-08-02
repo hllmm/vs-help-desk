@@ -36,6 +36,15 @@ function downloadErrorMessage(
   }
 }
 
+function olderMessagesErrorMessage(kind: 'network' | 'server'): string {
+  switch (kind) {
+    case 'network':
+      return 'Daha eski mesajlar yüklenemedi. Bağlantınızı kontrol edip yeniden deneyin.'
+    case 'server':
+      return 'Daha eski mesajlar yüklenemedi. Lütfen yeniden deneyin.'
+  }
+}
+
 export function TicketDetailPage(): ReactElement {
   const { ticketId } = useParams<{ ticketId: string }>()
   const {
@@ -43,8 +52,11 @@ export function TicketDetailPage(): ReactElement {
     hasLoaded,
     isInitialLoading,
     isRefreshing,
+    isLoadingOlder,
     error,
+    olderMessagesError,
     refresh,
+    loadOlderMessages,
     applyResolvedTicket,
     applyAssignment,
   } = useTicketDetails(ticketId)
@@ -174,6 +186,34 @@ export function TicketDetailPage(): ReactElement {
               aria-labelledby="ticket-timeline-heading"
             >
               <h2 id="ticket-timeline-heading">Mesaj geçmişi</h2>
+              {olderMessagesError ? (
+                <div className="ticket-detail__older" role="alert">
+                  <p className="notice notice--error">
+                    {olderMessagesErrorMessage(olderMessagesError.kind)}
+                  </p>
+                  <button
+                    type="button"
+                    className="button button--quiet"
+                    onClick={() => void loadOlderMessages()}
+                  >
+                    Yeniden dene
+                  </button>
+                </div>
+              ) : detail.hasMoreMessages ? (
+                <div className="ticket-detail__older">
+                  <button
+                    type="button"
+                    className="button button--quiet"
+                    disabled={isLoadingOlder}
+                    aria-busy={isLoadingOlder}
+                    onClick={() => void loadOlderMessages()}
+                  >
+                    {isLoadingOlder
+                      ? 'Eski mesajlar yükleniyor…'
+                      : 'Daha eski mesajları yükle'}
+                  </button>
+                </div>
+              ) : null}
               <TicketTimeline
                 messages={detail.messages}
                 attachmentsByMessage={attachmentsByMessage}

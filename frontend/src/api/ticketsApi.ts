@@ -6,6 +6,7 @@ import type {
   SupportReplyResult,
   TicketDetails,
   TicketListPage,
+  TicketMessagePage,
   TicketStatus,
 } from './types'
 
@@ -14,6 +15,12 @@ export type FetchTicketsOptions = {
   pageSize?: number
   search?: string
   status?: TicketStatus
+  cursor?: string
+}
+
+export type FetchTicketMessagesOptions = {
+  signal?: AbortSignal
+  pageSize?: number
   cursor?: string
 }
 
@@ -50,6 +57,25 @@ export function fetchTicketDetails(
 ): Promise<TicketDetails> {
   return apiRequest<TicketDetails>(
     `/api/tickets/${encodeURIComponent(ticketId)}`,
+    { signal: options.signal },
+  )
+}
+
+export function fetchTicketMessages(
+  ticketId: string,
+  options: FetchTicketMessagesOptions = {},
+): Promise<TicketMessagePage> {
+  const params = new URLSearchParams()
+  if (options.pageSize !== undefined) {
+    params.set('pageSize', String(options.pageSize))
+  }
+  if (options.cursor) {
+    params.set('cursor', options.cursor)
+  }
+  const query = params.toString()
+
+  return apiRequest<TicketMessagePage>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/messages${query ? `?${query}` : ''}`,
     { signal: options.signal },
   )
 }

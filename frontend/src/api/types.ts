@@ -89,6 +89,16 @@ export type TicketDetails = {
   closedByUserId: string | null
   messages: TicketMessageItem[]
   attachments: TicketAttachmentMeta[]
+  nextMessageCursor: string | null
+  hasMoreMessages: boolean
+}
+
+/** GET /api/tickets/{id}/messages — older bounded UC-004 history page. */
+export type TicketMessagePage = {
+  messages: TicketMessageItem[]
+  attachments: TicketAttachmentMeta[]
+  nextCursor: string | null
+  hasMore: boolean
 }
 
 /** Active internal user eligible for BR-011 ticket assignment. */

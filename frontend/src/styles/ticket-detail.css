@@ -164,6 +164,34 @@
   font-size: 1.1rem;
 }
 
+.ticket-detail__older {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  min-inline-size: 0;
+}
+
+.ticket-detail__older .button {
+  min-inline-size: min(100%, 14rem);
+}
+
+.ticket-detail__older .notice {
+  margin: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 22.5rem) {
+  .ticket-detail__older {
+    justify-items: stretch;
+  }
+
+  .ticket-detail__older .button {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+}
+
 .ticket-detail__reply-slot {
   display: grid;
   gap: 1rem;
