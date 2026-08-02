@@ -41,6 +41,7 @@ public sealed class ExceptionHandlingMiddleware
         // Client titles stay stable/non-sensitive; full detail is logged server-side.
         var (statusCode, title) = exception switch
         {
+            RequestValidationException => (HttpStatusCode.BadRequest, "The request was invalid."),
             NotFoundException => (HttpStatusCode.NotFound, "The requested resource was not found."),
             UnauthorizedApplicationException => (HttpStatusCode.Unauthorized, "Unauthorized."),
             ConflictApplicationException =>
@@ -49,7 +50,14 @@ public sealed class ExceptionHandlingMiddleware
             _ => (HttpStatusCode.InternalServerError, "An unexpected error occurred.")
         };
 
-        if (statusCode == HttpStatusCode.InternalServerError)
+        if (exception is RequestValidationException requestValidationException)
+        {
+            _logger.LogInformation(
+                "Request validation failed path={RequestPath} code={Code}",
+                context.Request.Path,
+                requestValidationException.Code);
+        }
+        else if (statusCode == HttpStatusCode.InternalServerError)
         {
             _logger.LogError(exception, "Unhandled exception");
         }
@@ -66,18 +74,26 @@ public sealed class ExceptionHandlingMiddleware
         context.Response.StatusCode = (int)statusCode;
 
         // DomainException.Message carries stable machine codes (e.g. last-admin-required).
-        object payload = exception is DomainException
-            ? new
+        object payload = exception switch
+        {
+            RequestValidationException validationException => new
+            {
+                status = (int)statusCode,
+                title,
+                code = validationException.Code
+            },
+            DomainException => new
             {
                 status = (int)statusCode,
                 title,
                 code = exception.Message
-            }
-            : new
+            },
+            _ => new
             {
                 status = (int)statusCode,
                 title
-            };
+            }
+        };
 
         await context.Response.WriteAsync(JsonSerializer.Serialize(payload, JsonOptions));
     }

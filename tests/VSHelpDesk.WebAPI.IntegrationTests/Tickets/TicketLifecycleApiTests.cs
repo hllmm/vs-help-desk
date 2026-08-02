@@ -606,12 +606,13 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 using var listResponse = await client.SendAsync(listRequest);
                 Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
                 using var listDoc = JsonDocument.Parse(await listResponse.Content.ReadAsStringAsync());
-                Assert.Equal(JsonValueKind.Array, listDoc.RootElement.ValueKind);
+                Assert.Equal(JsonValueKind.Object, listDoc.RootElement.ValueKind);
+                var listItems = listDoc.RootElement.GetProperty("items");
 
                 JsonElement? match = null;
                 var index = 0;
                 var matchIndex = -1;
-                foreach (var item in listDoc.RootElement.EnumerateArray())
+                foreach (var item in listItems.EnumerateArray())
                 {
                     if (item.GetProperty("id").GetGuid() == ticketId)
                     {
@@ -637,7 +638,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 // Newest LastActivityAt first: any preceding row must be >= this ticket's activity.
                 if (matchIndex > 0)
                 {
-                    var previous = listDoc.RootElement[matchIndex - 1];
+                    var previous = listItems[matchIndex - 1];
                     var previousActivity = DateTime.SpecifyKind(
                         previous.GetProperty("lastActivityAt").GetDateTime(),
                         DateTimeKind.Utc);
@@ -646,9 +647,9 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                         "List must be sorted by LastActivityAt descending.");
                 }
 
-                if (matchIndex + 1 < listDoc.RootElement.GetArrayLength())
+                if (matchIndex + 1 < listItems.GetArrayLength())
                 {
-                    var next = listDoc.RootElement[matchIndex + 1];
+                    var next = listItems[matchIndex + 1];
                     var nextActivity = DateTime.SpecifyKind(
                         next.GetProperty("lastActivityAt").GetDateTime(),
                         DateTimeKind.Utc);

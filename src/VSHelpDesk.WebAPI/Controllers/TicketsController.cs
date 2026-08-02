@@ -37,13 +37,20 @@ public sealed class TicketsController(
     /// <summary>GET api/tickets — UC-003</summary>
     [HttpGet]
     public async Task<IActionResult> GetList(
-        [FromQuery] TicketStatus? status,
-        CancellationToken cancellationToken)
+        [FromQuery] TicketStatus? status = null,
+        [FromQuery] string? search = null,
+        [FromQuery] int pageSize = 50,
+        [FromQuery] string? cursor = null,
+        CancellationToken cancellationToken = default)
     {
-        var items = await getTicketListHandler.HandleAsync(
-            new GetTicketListQuery(status),
+        var page = await getTicketListHandler.HandleAsync(
+            new GetTicketListQuery(
+                Status: status,
+                Search: search,
+                PageSize: pageSize,
+                Cursor: cursor),
             cancellationToken);
-        return Ok(items);
+        return Ok(page);
     }
 
     /// <summary>GET api/tickets/{id} — UC-004</summary>

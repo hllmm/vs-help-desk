@@ -52,31 +52,220 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     }
 
     [Fact]
-    public async Task UC003_GetTickets_WithAuthCookie_Returns200Array()
+    public async Task UC003_GetTickets_OmittedQueryParameters_ReturnsDefaultPageAndCounts()
     {
+        var tickets = await SeedOrderedListTicketsAsync(53);
+        try
+        {
+            var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
+            using (var response = await client.GetAsync("/api/tickets"))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                var root = doc.RootElement;
+
+                Assert.Equal(JsonValueKind.Object, root.ValueKind);
+                Assert.Equal(50, root.GetProperty("items").GetArrayLength());
+                Assert.True(root.GetProperty("hasMore").GetBoolean());
+                var cursor = root.GetProperty("nextCursor").GetString();
+                Assert.False(string.IsNullOrWhiteSpace(cursor));
+                Assert.DoesNotContain("VS-", cursor, StringComparison.Ordinal);
+
+                var counts = root.GetProperty("counts");
+                Assert.Equal(
+                    ["all", "customerReplied", "new", "resolved", "waitingCustomerReply"],
+                    counts.EnumerateObject().Select(property => property.Name).Order().ToArray());
+                Assert.True(counts.GetProperty("all").GetInt32() >= tickets.Count);
+            }
+        }
+        finally
+        {
+            await DeleteTicketsAsync(tickets.Select(ticket => ticket.Id));
+        }
+    }
+
+    [Fact]
+    public async Task UC003_GetTickets_FollowingCursorReturnsRemainingTicketsWithoutOverlap()
+    {
+        var searchToken = $"page{Guid.NewGuid():N}";
+        var tickets = await SeedOrderedListTicketsAsync(53, searchToken);
+        try
+        {
+            var expectedIds = tickets.Select(ticket => ticket.Id).ToArray();
+            var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
+            {
+                using var firstResponse = await client.GetAsync(
+                    $"/api/tickets?search={Uri.EscapeDataString(searchToken)}");
+                Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+                using var firstDoc = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync());
+                var firstIds = firstDoc.RootElement.GetProperty("items")
+                    .EnumerateArray()
+                    .Select(item => item.GetProperty("id").GetGuid())
+                    .ToArray();
+                var cursor = firstDoc.RootElement.GetProperty("nextCursor").GetString();
+
+                Assert.Equal(expectedIds[..50], firstIds);
+                Assert.True(firstDoc.RootElement.GetProperty("hasMore").GetBoolean());
+                Assert.False(string.IsNullOrWhiteSpace(cursor));
+
+                using var nextResponse = await client.GetAsync(
+                    $"/api/tickets?search={Uri.EscapeDataString(searchToken)}&cursor={Uri.EscapeDataString(cursor!)}");
+                Assert.Equal(HttpStatusCode.OK, nextResponse.StatusCode);
+                using var nextDoc = JsonDocument.Parse(await nextResponse.Content.ReadAsStringAsync());
+                var nextIds = nextDoc.RootElement.GetProperty("items")
+                    .EnumerateArray()
+                    .Select(item => item.GetProperty("id").GetGuid())
+                    .ToArray();
+
+                Assert.Equal(expectedIds[50..], nextIds);
+                Assert.False(nextDoc.RootElement.GetProperty("hasMore").GetBoolean());
+                Assert.Equal(JsonValueKind.Null, nextDoc.RootElement.GetProperty("nextCursor").ValueKind);
+                Assert.Empty(firstIds.Intersect(nextIds));
+            }
+        }
+        finally
+        {
+            await DeleteTicketsAsync(tickets.Select(ticket => ticket.Id));
+        }
+    }
+
+    [Fact]
+    public async Task UC003_GetTickets_PageSizeAboveMaximumIsCappedAt100()
+    {
+        var searchToken = $"cap{Guid.NewGuid():N}";
+        var tickets = await SeedOrderedListTicketsAsync(101, searchToken);
+        try
+        {
+            var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
+            using (var response = await client.GetAsync(
+                $"/api/tickets?search={Uri.EscapeDataString(searchToken)}&pageSize=500"))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                Assert.Equal(100, doc.RootElement.GetProperty("items").GetArrayLength());
+                Assert.True(doc.RootElement.GetProperty("hasMore").GetBoolean());
+            }
+        }
+        finally
+        {
+            await DeleteTicketsAsync(tickets.Select(ticket => ticket.Id));
+        }
+    }
+
+    [Fact]
+    public async Task UC003_GetTickets_StatusFiltersItemsButCountsPrecedeStatusAndSearchMatchesFields()
+    {
+        var groupToken = $"group{Guid.NewGuid():N}";
+        var emailToken = $"email{Guid.NewGuid():N}";
+        var subjectToken = $"subject{Guid.NewGuid():N}";
+        List<Ticket> tickets;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-            var stamp = DateTime.UtcNow;
-            db.Add(Ticket.Create(
-                UniqueSeedTicketNumber("VS-T"),
-                "List seed",
-                "Seed Customer",
-                "seed@example.test",
-                stamp));
+            var closerId = await GetSeedUserIdAsync(db);
+            var stamp = DateTime.UtcNow.AddYears(20);
+            var newTicket = Ticket.Create(
+                UniqueSeedTicketNumber("VS-LN"),
+                $"New {groupToken}",
+                groupToken,
+                $"{emailToken}@example.test",
+                stamp);
+            var waitingTicket = Ticket.Create(
+                UniqueSeedTicketNumber("VS-LW"),
+                $"Waiting {groupToken}",
+                groupToken,
+                $"waiting-{groupToken}@example.test",
+                stamp.AddMinutes(-1));
+            waitingTicket.MarkAsWaitingCustomerReply(stamp.AddMinutes(-1));
+            var repliedTicket = Ticket.Create(
+                UniqueSeedTicketNumber("VS-LC"),
+                $"Replied {groupToken}",
+                groupToken,
+                $"replied-{groupToken}@example.test",
+                stamp.AddMinutes(-2));
+            repliedTicket.MarkAsCustomerReplied(stamp.AddMinutes(-2));
+            var resolvedTicket = Ticket.Create(
+                UniqueSeedTicketNumber("VS-LR"),
+                $"{subjectToken} {groupToken}",
+                groupToken,
+                $"resolved-{groupToken}@example.test",
+                stamp.AddMinutes(-3));
+            Assert.True(resolvedTicket.ResolveManually(stamp.AddMinutes(-3), closerId));
+            tickets = [newTicket, waitingTicket, repliedTicket, resolvedTicket];
+            db.AddRange(tickets);
             await db.SaveChangesAsync();
         }
 
+        try
+        {
+            var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
+            {
+                using var statusResponse = await client.GetAsync(
+                    $"/api/tickets?status=Resolved&search={Uri.EscapeDataString(groupToken)}");
+                Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
+                using var statusDoc = JsonDocument.Parse(await statusResponse.Content.ReadAsStringAsync());
+                var root = statusDoc.RootElement;
+                var item = Assert.Single(root.GetProperty("items").EnumerateArray());
+                Assert.Equal("Resolved", item.GetProperty("status").GetString());
+                var counts = root.GetProperty("counts");
+                Assert.Equal(4, counts.GetProperty("all").GetInt32());
+                Assert.Equal(1, counts.GetProperty("new").GetInt32());
+                Assert.Equal(1, counts.GetProperty("waitingCustomerReply").GetInt32());
+                Assert.Equal(1, counts.GetProperty("customerReplied").GetInt32());
+                Assert.Equal(1, counts.GetProperty("resolved").GetInt32());
+
+                using var emailResponse = await client.GetAsync(
+                    $"/api/tickets?search={Uri.EscapeDataString(emailToken)}");
+                Assert.Equal(HttpStatusCode.OK, emailResponse.StatusCode);
+                using var emailDoc = JsonDocument.Parse(await emailResponse.Content.ReadAsStringAsync());
+                Assert.Equal(
+                    tickets[0].Id,
+                    Assert.Single(emailDoc.RootElement.GetProperty("items").EnumerateArray())
+                        .GetProperty("id").GetGuid());
+
+                using var subjectResponse = await client.GetAsync(
+                    $"/api/tickets?search={Uri.EscapeDataString(subjectToken)}");
+                Assert.Equal(HttpStatusCode.OK, subjectResponse.StatusCode);
+                using var subjectDoc = JsonDocument.Parse(await subjectResponse.Content.ReadAsStringAsync());
+                Assert.Equal(
+                    tickets[3].Id,
+                    Assert.Single(subjectDoc.RootElement.GetProperty("items").EnumerateArray())
+                        .GetProperty("id").GetGuid());
+            }
+        }
+        finally
+        {
+            await DeleteTicketsAsync(tickets.Select(ticket => ticket.Id));
+        }
+    }
+
+    [Theory]
+    [InlineData("/api/tickets?search=x", "ticket-search-too-short")]
+    [InlineData("/api/tickets?search=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "ticket-search-too-long")]
+    [InlineData("/api/tickets?cursor=not-a-valid-cursor", "invalid-ticket-list-cursor")]
+    public async Task UC003_GetTickets_InvalidQueryReturnsSafe400WithStableCode(
+        string path,
+        string expectedCode)
+    {
         var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
         using (client)
+        using (var response = await client.GetAsync(path))
         {
-            using var response = await client.GetAsync("/api/tickets");
-
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var json = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(json);
-            Assert.Equal(JsonValueKind.Array, doc.RootElement.ValueKind);
-            Assert.True(doc.RootElement.GetArrayLength() >= 1);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("application/json", response.Content.Headers.ContentType?.MediaType);
+            var body = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            Assert.Equal(
+                ["code", "status", "title"],
+                doc.RootElement.EnumerateObject().Select(property => property.Name).Order().ToArray());
+            Assert.Equal(400, doc.RootElement.GetProperty("status").GetInt32());
+            Assert.False(string.IsNullOrWhiteSpace(doc.RootElement.GetProperty("title").GetString()));
+            Assert.Equal(expectedCode, doc.RootElement.GetProperty("code").GetString());
+            AssertSafeValidationBody(body);
         }
     }
 
@@ -1067,6 +1256,53 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal(1, conflictDb.SaveCallCount);
         Assert.Equal(0, conflictDb.ClearTrackedCallCount);
+    }
+
+    private async Task<List<Ticket>> SeedOrderedListTicketsAsync(
+        int count,
+        string? searchToken = null)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var stamp = DateTime.UtcNow.AddYears(20);
+        var tickets = Enumerable.Range(0, count)
+            .Select(index => Ticket.Create(
+                UniqueSeedTicketNumber("VS-LP"),
+                searchToken is null ? $"Paged ticket {index}" : $"{searchToken} ticket {index}",
+                "Paged Customer",
+                searchToken is null
+                    ? $"paged-{Guid.NewGuid():N}@example.test"
+                    : $"{searchToken}-{index}@example.test",
+                stamp.AddMinutes(-index)))
+            .ToList();
+        db.AddRange(tickets);
+        await db.SaveChangesAsync();
+        return tickets;
+    }
+
+    private async Task DeleteTicketsAsync(IEnumerable<Guid> ticketIds)
+    {
+        var ids = ticketIds.ToArray();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await db.Tickets.Where(ticket => ids.Contains(ticket.Id)).ExecuteDeleteAsync();
+    }
+
+    private static void AssertSafeValidationBody(string body)
+    {
+        Assert.DoesNotContain("RequestValidationException", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Exception", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("StackTrace", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Host=", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Database=", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Password=", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ConnectionString", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Npgsql", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SQL", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SELECT ", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("INSERT ", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("UPDATE ", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("DELETE ", body, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
