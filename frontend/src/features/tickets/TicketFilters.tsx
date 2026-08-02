@@ -25,6 +25,7 @@ export function TicketFilters(props: TicketFiltersProps): ReactElement {
     onStatusChange,
     onRefresh,
   } = props
+  const showMinimumQueryHint = query.trim().length === 1
 
   function handleStatusChange(event: ChangeEvent<HTMLSelectElement>) {
     onStatusChange(event.target.value as TicketStatusFilter)
@@ -42,7 +43,15 @@ export function TicketFilters(props: TicketFiltersProps): ReactElement {
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Numara, konu veya müşteri ara"
             autoComplete="off"
+            aria-describedby={
+              showMinimumQueryHint ? 'ticket-search-hint' : undefined
+            }
           />
+          {showMinimumQueryHint ? (
+            <span id="ticket-search-hint" className="ticket-field__hint">
+              Aramak için en az 2 karakter girin.
+            </span>
+          ) : null}
         </label>
       </div>
 

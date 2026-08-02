@@ -1,18 +1,18 @@
-import { useState, type ReactElement } from 'react'
-import { TicketCardList } from '../features/tickets/TicketCardList'
+import { useEffect, useState, type ReactElement } from 'react'
 import { TicketFilters } from '../features/tickets/TicketFilters'
 import { TicketLifecycleRail } from '../features/tickets/TicketLifecycleRail'
-import {
-  countTicketsByStatus,
-  filterTicketsByStatus,
-  searchTickets,
-  type TicketStatusFilter,
+import type {
+  LifecycleCounts,
+  TicketStatusFilter,
 } from '../features/tickets/ticketListModel'
 import { TicketTable } from '../features/tickets/TicketTable'
-import { useTickets } from '../features/tickets/useTickets'
+import {
+  useTickets,
+  type TicketLoadErrorKind,
+} from '../features/tickets/useTickets'
 
-function errorMessage(
-  kind: 'network' | 'server',
+function listErrorMessage(
+  kind: TicketLoadErrorKind,
   hasRows: boolean,
 ): string {
   if (hasRows) {
@@ -26,40 +26,67 @@ function errorMessage(
     : 'Destek talepleri yüklenemedi. Lütfen yeniden deneyin.'
 }
 
+function countForStatus(
+  counts: LifecycleCounts,
+  status: TicketStatusFilter,
+): number {
+  return counts[status]
+}
+
 export function TicketListPage(): ReactElement {
-  const {
-    tickets,
-    hasLoaded,
-    isInitialLoading,
-    isRefreshing,
-    error,
-    refresh,
-  } = useTickets()
   const [query, setQuery] = useState('')
+  const [serverQuery, setServerQuery] = useState('')
   const [selectedStatus, setSelectedStatus] =
     useState<TicketStatusFilter>('all')
+  const {
+    tickets,
+    counts,
+    hasMore,
+    isLoading,
+    isLoadingMore,
+    error,
+    loadMore,
+    refresh,
+  } = useTickets({
+    query: serverQuery,
+    status: selectedStatus === 'all' ? 'All' : selectedStatus,
+  })
 
-  const searchedTickets = searchTickets(tickets, query)
-  const lifecycleCounts = countTicketsByStatus(searchedTickets)
-  const visibleTickets = filterTicketsByStatus(
-    searchedTickets,
-    selectedStatus,
-  )
+  useEffect(() => {
+    const trimmed = query.trim()
+    if (trimmed.length === 0) {
+      setServerQuery('')
+      return
+    }
+    if (trimmed.length < 2) {
+      return
+    }
 
-  const isBusy = isInitialLoading || isRefreshing
+    const timeout = window.setTimeout(() => {
+      setServerQuery(trimmed)
+    }, 300)
+    return () => window.clearTimeout(timeout)
+  }, [query])
+
+  const lifecycleCounts: LifecycleCounts = {
+    all: counts.all,
+    New: counts.new,
+    WaitingCustomerReply: counts.waitingCustomerReply,
+    CustomerReplied: counts.customerReplied,
+    Resolved: counts.resolved,
+  }
   const hasRows = tickets.length > 0
-  const showWorkspaceControls = (hasLoaded && error === null) || hasRows
+  const isInitialLoading = isLoading && !hasRows
+  const isBusy = isLoading || isLoadingMore
+  const showInitialError = error?.source === 'list' && !hasRows
+  const showRefreshError = error?.source === 'list' && hasRows
+  const showLoadMoreError = error?.source === 'loadMore'
+  const showControls = !isInitialLoading && !showInitialError
+  const hasServerFilter = serverQuery.length >= 2 || selectedStatus !== 'all'
   const showTrueEmpty =
-    hasLoaded && error === null && tickets.length === 0
+    !isLoading && error === null && !hasRows && !hasServerFilter
   const showFilterEmpty =
-    hasLoaded &&
-    error === null &&
-    tickets.length > 0 &&
-    visibleTickets.length === 0
-  const showResults =
-    hasLoaded && (error === null || hasRows) && visibleTickets.length > 0
-  const showInitialError = hasLoaded && error !== null && !hasRows
-  const showRefreshError = error !== null && hasRows
+    !isLoading && error === null && !hasRows && hasServerFilter
 
   return (
     <section
@@ -85,7 +112,7 @@ export function TicketListPage(): ReactElement {
 
       {showInitialError && error ? (
         <div className="ticket-state ticket-state--error" role="alert">
-          <p>{errorMessage(error, false)}</p>
+          <p>{listErrorMessage(error.kind, false)}</p>
           <button
             type="button"
             className="button button--primary"
@@ -96,12 +123,12 @@ export function TicketListPage(): ReactElement {
         </div>
       ) : null}
 
-      {showWorkspaceControls ? (
+      {showControls ? (
         <>
           <TicketFilters
             query={query}
             status={selectedStatus}
-            resultCount={visibleTickets.length}
+            resultCount={countForStatus(lifecycleCounts, selectedStatus)}
             isBusy={isBusy}
             onQueryChange={setQuery}
             onStatusChange={setSelectedStatus}
@@ -120,7 +147,14 @@ export function TicketListPage(): ReactElement {
 
       {showRefreshError && error ? (
         <div className="ticket-state ticket-state--error" role="alert">
-          <p>{errorMessage(error, true)}</p>
+          <p>{listErrorMessage(error.kind, true)}</p>
+          <button
+            type="button"
+            className="button button--quiet"
+            onClick={() => void refresh()}
+          >
+            Yeniden dene
+          </button>
         </div>
       ) : null}
 
@@ -142,10 +176,36 @@ export function TicketListPage(): ReactElement {
         </div>
       ) : null}
 
-      {showResults ? (
+      {hasRows ? (
         <div className="ticket-results">
-          <TicketTable tickets={visibleTickets} />
-          <TicketCardList tickets={visibleTickets} />
+          <TicketTable tickets={tickets} />
+
+          {showLoadMoreError ? (
+            <div
+              className="ticket-state ticket-state--error ticket-pagination"
+              role="alert"
+            >
+              <p>Daha fazla destek talebi yüklenemedi. Mevcut liste korunuyor.</p>
+              <button
+                type="button"
+                className="button button--quiet"
+                onClick={() => void loadMore()}
+              >
+                Yeniden dene
+              </button>
+            </div>
+          ) : hasMore ? (
+            <div className="ticket-pagination">
+              <button
+                type="button"
+                className="button button--quiet"
+                disabled={isLoadingMore}
+                onClick={() => void loadMore()}
+              >
+                {isLoadingMore ? 'Yükleniyor…' : 'Daha fazla yükle'}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>

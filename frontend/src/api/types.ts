@@ -34,6 +34,27 @@ export type TicketListItem = {
   assignedUserId: string | null
 }
 
+export type TicketStatus =
+  | 'New'
+  | 'WaitingCustomerReply'
+  | 'CustomerReplied'
+  | 'Resolved'
+
+export type TicketStatusCounts = {
+  all: number
+  new: number
+  waitingCustomerReply: number
+  customerReplied: number
+  resolved: number
+}
+
+export type TicketListPage = {
+  items: TicketListItem[]
+  nextCursor: string | null
+  hasMore: boolean
+  counts: TicketStatusCounts
+}
+
 export type TicketMessageItem = {
   id: string
   senderType: string

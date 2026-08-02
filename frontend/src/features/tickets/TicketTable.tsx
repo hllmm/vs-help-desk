@@ -33,7 +33,7 @@ export function TicketTable(props: TicketTableProps): ReactElement {
             const path = detailPath(ticket.id)
             return (
               <tr key={ticket.id}>
-                <td className="ticket-number">
+                <td className="ticket-number" data-label="Numara">
                   <Link
                     to={path}
                     className="ticket-link"
@@ -42,7 +42,7 @@ export function TicketTable(props: TicketTableProps): ReactElement {
                     {ticket.ticketNumber}
                   </Link>
                 </td>
-                <td>
+                <td data-label="Konu">
                   <Link
                     to={path}
                     className="ticket-link"
@@ -51,16 +51,18 @@ export function TicketTable(props: TicketTableProps): ReactElement {
                     {ticket.subject}
                   </Link>
                 </td>
-                <td>
-                  <strong>{ticket.customerName}</strong>
-                  <span className="ticket-customer-email">
-                    {ticket.customerEmail}
+                <td data-label="Müşteri">
+                  <span className="ticket-customer">
+                    <strong>{ticket.customerName}</strong>
+                    <span className="ticket-customer-email">
+                      {ticket.customerEmail}
+                    </span>
                   </span>
                 </td>
-                <td>
+                <td data-label="Durum">
                   <TicketStatusBadge status={ticket.status} />
                 </td>
-                <td>
+                <td data-label="Son hareket">
                   <time dateTime={ticket.lastActivityAt}>
                     {formatTicketActivity(ticket.lastActivityAt)}
                   </time>

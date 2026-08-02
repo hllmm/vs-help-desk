@@ -48,6 +48,11 @@
   color: var(--color-muted);
 }
 
+.ticket-field__hint {
+  color: var(--color-amber);
+  font-size: 0.82rem;
+}
+
 .ticket-field input,
 .ticket-field select {
   width: 100%;
@@ -226,8 +231,7 @@
   background: color-mix(in srgb, var(--color-petrol-soft) 55%, white);
 }
 
-.ticket-table td,
-.ticket-card {
+.ticket-table td {
   overflow-wrap: anywhere;
 }
 
@@ -238,52 +242,34 @@
   color: var(--color-night);
 }
 
-.ticket-customer-email,
-.ticket-card__email {
+.ticket-customer-email {
   display: block;
   margin-block-start: 0.15rem;
   color: var(--color-muted);
   font-size: 0.9rem;
 }
 
-.ticket-table time,
-.ticket-card time {
+.ticket-customer {
+  min-inline-size: 0;
+}
+
+.ticket-customer > strong {
+  display: block;
+}
+
+.ticket-table time {
   color: var(--color-muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.ticket-card-list {
-  display: none;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.ticket-card {
-  display: grid;
-  gap: 0.4rem;
-  padding: 1rem;
-  background: var(--color-paper);
-  border: 1px solid var(--color-line);
-  border-radius: calc(var(--radius-control) + 0.1rem);
-}
-
-.ticket-card__meta {
+.ticket-pagination {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  justify-content: center;
 }
 
-.ticket-card h2 {
-  margin: 0;
-  font-size: 1.05rem;
-}
-
-.ticket-card p {
-  margin: 0;
+.ticket-pagination.ticket-state {
+  justify-items: center;
 }
 
 .ticket-status-badge {
@@ -391,12 +377,103 @@
 
 @media (max-width: 47.99rem) {
   .ticket-table-view {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .ticket-table,
+  .ticket-table tbody {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .ticket-table thead {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .ticket-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'number status'
+      'subject subject'
+      'customer customer'
+      'activity activity';
+    padding: 0.4rem 0.85rem 0.7rem;
+    background: var(--color-paper);
+    border: 1px solid var(--color-line);
+    border-radius: calc(var(--radius-control) + 0.1rem);
+  }
+
+  .ticket-table td {
+    display: grid;
+    grid-template-columns: minmax(5.75rem, 0.42fr) minmax(0, 1fr);
+    gap: 0.65rem;
+    align-items: start;
+    min-inline-size: 0;
+    padding: 0.45rem 0;
+    border-block-end: 1px solid var(--color-line);
+  }
+
+  .ticket-table td::before {
+    content: attr(data-label);
+    color: var(--color-muted);
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
+  .ticket-table .ticket-number {
+    grid-area: number;
+    display: flex;
+    align-items: center;
+    border-block-end: 1px solid var(--color-line);
+  }
+
+  .ticket-table .ticket-number::before,
+  .ticket-table td:nth-child(4)::before {
     display: none;
   }
 
-  .ticket-card-list {
-    display: grid;
-    gap: 0.75rem;
+  .ticket-table td:nth-child(2) {
+    grid-area: subject;
+  }
+
+  .ticket-table td:nth-child(3) {
+    grid-area: customer;
+  }
+
+  .ticket-table td:nth-child(4) {
+    grid-area: status;
+    display: flex;
+    align-items: center;
+    justify-content: end;
+    border-block-end: 1px solid var(--color-line);
+  }
+
+  .ticket-table td:nth-child(5) {
+    grid-area: activity;
+    border-block-end: 0;
+  }
+
+  .ticket-table .ticket-number .ticket-link,
+  .ticket-table td:nth-child(2) .ticket-link {
+    display: inline-flex;
+    align-items: center;
+    min-block-size: var(--control-min-height);
+  }
+
+  .ticket-table time {
+    white-space: normal;
   }
 
   .ticket-toolbar {

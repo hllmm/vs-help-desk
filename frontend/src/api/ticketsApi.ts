@@ -5,11 +5,16 @@ import type {
   ResolveTicketResult,
   SupportReplyResult,
   TicketDetails,
-  TicketListItem,
+  TicketListPage,
+  TicketStatus,
 } from './types'
 
 export type FetchTicketsOptions = {
   signal?: AbortSignal
+  pageSize?: number
+  search?: string
+  status?: TicketStatus
+  cursor?: string
 }
 
 export type TicketMutationOptions = {
@@ -18,8 +23,23 @@ export type TicketMutationOptions = {
 
 export function fetchTickets(
   options: FetchTicketsOptions = {},
-): Promise<TicketListItem[]> {
-  return apiRequest<TicketListItem[]>('/api/tickets', {
+): Promise<TicketListPage> {
+  const params = new URLSearchParams()
+  if (options.pageSize !== undefined) {
+    params.set('pageSize', String(options.pageSize))
+  }
+  if (options.search) {
+    params.set('search', options.search)
+  }
+  if (options.status) {
+    params.set('status', options.status)
+  }
+  if (options.cursor) {
+    params.set('cursor', options.cursor)
+  }
+  const query = params.toString()
+
+  return apiRequest<TicketListPage>(`/api/tickets${query ? `?${query}` : ''}`, {
     signal: options.signal,
   })
 }

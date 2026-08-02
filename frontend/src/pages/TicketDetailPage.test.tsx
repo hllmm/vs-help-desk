@@ -7,6 +7,7 @@ import type {
   SupportReplyResult,
   TicketDetails,
   TicketListItem,
+  TicketListPage,
 } from '../api/types'
 import { setStoredUser } from '../auth/tokenStorage'
 import { RESOLUTION_COPY } from '../features/ticket-details/useResolveTicket'
@@ -138,6 +139,25 @@ function listTicket(
     lastActivityAt: '2026-07-20T10:00:00.000Z',
     assignedUserId: null,
     ...overrides,
+  }
+}
+
+function listPage(items: TicketListItem[]): TicketListPage {
+  return {
+    items,
+    nextCursor: null,
+    hasMore: false,
+    counts: {
+      all: items.length,
+      new: items.filter(({ status }) => status === 'New').length,
+      waitingCustomerReply: items.filter(
+        ({ status }) => status === 'WaitingCustomerReply',
+      ).length,
+      customerReplied: items.filter(
+        ({ status }) => status === 'CustomerReplied',
+      ).length,
+      resolved: items.filter(({ status }) => status === 'Resolved').length,
+    },
   }
 }
 
@@ -457,9 +477,11 @@ describe('TicketDetailPage', () => {
   })
 
   it('links desktop table number and subject to the encoded detail route', async () => {
-    fetchTickets.mockResolvedValueOnce([
-      listTicket({ id: 'id/with spaces', ticketNumber: 'VS-000042' }),
-    ])
+    fetchTickets.mockResolvedValueOnce(
+      listPage([
+        listTicket({ id: 'id/with spaces', ticketNumber: 'VS-000042' }),
+      ]),
+    )
     fetchTicketDetails.mockResolvedValueOnce(
       sampleDetail({ id: 'id/with spaces' }),
     )
@@ -477,18 +499,22 @@ describe('TicketDetailPage', () => {
     expect(subjectLink).toHaveAttribute('href', expectedHref)
   })
 
-  it('exposes one descriptive primary detail link on each mobile card', async () => {
-    fetchTickets.mockResolvedValueOnce([listTicket({ id: 'ticket-1' })])
+  it('keeps one table representation and ticket-number link on mobile', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 320,
+    })
+    fetchTickets.mockResolvedValueOnce(
+      listPage([listTicket({ id: 'ticket-1' })]),
+    )
     renderList()
 
-    const list = await screen.findByRole('list', { name: 'Destek talepleri' })
-    const card = within(list).getByRole('article')
-    const links = within(card).getAllByRole('link')
-    expect(links).toHaveLength(1)
-    expect(links[0]).toHaveAttribute('href', '/tickets/ticket-1')
-    expect(links[0]).toHaveAccessibleName(
-      expect.stringMatching(/VS-000042[\s\S]*Şifre sıfırlama|Şifre sıfırlama[\s\S]*VS-000042/),
-    )
+    const table = await screen.findByRole('table', { name: 'Destek talepleri' })
+    expect(screen.queryByRole('list', { name: 'Destek talepleri' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('VS-000042')).toHaveLength(1)
+    expect(
+      within(table).getByRole('link', { name: 'VS-000042 talebini aç' }),
+    ).toHaveAttribute('href', '/tickets/ticket-1')
   })
 
   it('contains no implementation jargon on the detail page', async () => {

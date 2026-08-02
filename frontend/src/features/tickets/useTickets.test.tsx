@@ -1,14 +1,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError } from '../../api/client'
-import type { TicketListItem } from '../../api/types'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type {
+  TicketListItem,
+  TicketListPage,
+  TicketStatusCounts,
+} from '../../api/types'
 import { useTickets } from './useTickets'
-
-const fetchTickets = vi.hoisted(() => vi.fn())
-
-vi.mock('../../api/ticketsApi', () => ({
-  fetchTickets,
-}))
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -20,239 +17,339 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-const sampleTickets: TicketListItem[] = [
-  {
-    id: '1',
-    ticketNumber: 'VS-000001',
-    subject: 'İlk talep',
-    customerName: 'Ayşe',
-    customerEmail: 'ayse@example.com',
+function ticket(id: string): TicketListItem {
+  return {
+    id,
+    ticketNumber: `VS-${id.padStart(6, '0')}`,
+    subject: `Konu ${id}`,
+    customerName: `Müşteri ${id}`,
+    customerEmail: `musteri${id}@example.com`,
     status: 'New',
-    lastActivityAt: '2026-07-20T09:00:00.000Z',
+    lastActivityAt: '2026-08-02T08:00:00.000Z',
     assignedUserId: null,
-  },
-]
+  }
+}
 
-const refreshedTickets: TicketListItem[] = [
-  {
-    ...sampleTickets[0]!,
-    id: '2',
-    ticketNumber: 'VS-000002',
-    subject: 'İkinci talep',
-  },
-]
+const counts: TicketStatusCounts = {
+  all: 4,
+  new: 1,
+  waitingCustomerReply: 1,
+  customerReplied: 1,
+  resolved: 1,
+}
+
+function page(
+  items: TicketListItem[],
+  options: Partial<Omit<TicketListPage, 'items'>> = {},
+): TicketListPage {
+  return {
+    items,
+    nextCursor: null,
+    hasMore: false,
+    counts,
+    ...options,
+  }
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+function requestUrl(callIndex: number): string {
+  return String(vi.mocked(fetch).mock.calls[callIndex]?.[0])
+}
+
+function requestSignal(callIndex: number): AbortSignal {
+  return vi.mocked(fetch).mock.calls[callIndex]?.[1]?.signal as AbortSignal
+}
 
 describe('useTickets', () => {
   beforeEach(() => {
-    fetchTickets.mockReset()
+    vi.stubGlobal('fetch', vi.fn())
   })
 
-  it('moves from initial loading to loaded data', async () => {
-    const pending = deferred<TicketListItem[]>()
-    fetchTickets.mockReturnValueOnce(pending.promise)
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
 
-    const { result } = renderHook(() => useTickets())
+  it('requests the first bounded page without empty filters or cursor', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(page([ticket('1')])))
 
-    expect(result.current.isInitialLoading).toBe(true)
-    expect(result.current.isRefreshing).toBe(false)
-    expect(result.current.hasLoaded).toBe(false)
-    expect(result.current.tickets).toEqual([])
-    expect(result.current.error).toBeNull()
-
-    await act(async () => {
-      pending.resolve(sampleTickets)
-    })
+    const { result } = renderHook(() =>
+      useTickets({ query: '   ', status: 'All' }),
+    )
 
     await waitFor(() => {
-      expect(result.current.hasLoaded).toBe(true)
+      expect(result.current.isLoading).toBe(false)
     })
 
-    expect(result.current.isInitialLoading).toBe(false)
-    expect(result.current.isRefreshing).toBe(false)
-    expect(result.current.tickets).toEqual(sampleTickets)
+    expect(requestUrl(0)).toBe('/api/tickets?pageSize=50')
+    expect(result.current.tickets).toEqual([ticket('1')])
+    expect(result.current.counts).toEqual(counts)
+    expect(result.current.hasMore).toBe(false)
     expect(result.current.error).toBeNull()
   })
 
-  it('treats an empty response as a completed load', async () => {
-    fetchTickets.mockResolvedValueOnce([])
+  it('trims and URL-encodes a valid search and sends a selected status', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(page([])))
+      .mockResolvedValueOnce(jsonResponse(page([])))
 
-    const { result } = renderHook(() => useTickets())
+    const { result, rerender } = renderHook(
+      ({ query, status }: { query: string; status: 'All' | 'New' }) =>
+        useTickets({ query, status }),
+      {
+        initialProps: {
+          query: '  İş  ',
+          status: 'All' as 'All' | 'New',
+        },
+      },
+    )
 
     await waitFor(() => {
-      expect(result.current.hasLoaded).toBe(true)
+      expect(result.current.isLoading).toBe(false)
+    })
+    expect(requestUrl(0)).toBe('/api/tickets?pageSize=50&search=%C4%B0%C5%9F')
+
+    rerender({ query: '', status: 'New' })
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+    expect(requestUrl(1)).toBe('/api/tickets?pageSize=50&status=New')
+  })
+
+  it('follows the active cursor, preserves server order, and deduplicates ids', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse(
+          page([ticket('1'), ticket('2')], {
+            nextCursor: 'son hareket/+id==',
+            hasMore: true,
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(page([ticket('2'), ticket('3')], { counts })),
+      )
+
+    const { result } = renderHook(() =>
+      useTickets({ query: '', status: 'All' }),
+    )
+    await waitFor(() => {
+      expect(result.current.hasMore).toBe(true)
     })
 
+    await act(async () => {
+      await result.current.loadMore()
+    })
+
+    expect(requestUrl(1)).toBe(
+      '/api/tickets?pageSize=50&cursor=son+hareket%2F%2Bid%3D%3D',
+    )
+    expect(result.current.tickets.map(({ id }) => id)).toEqual(['1', '2', '3'])
+    expect(result.current.hasMore).toBe(false)
+    expect(result.current.isLoadingMore).toBe(false)
+  })
+
+  it('refresh replaces accumulated pages and drops the old cursor', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse(
+          page([ticket('1')], { nextCursor: 'old-cursor', hasMore: true }),
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          page([ticket('2')], { nextCursor: 'next-cursor', hasMore: true }),
+        ),
+      )
+      .mockResolvedValueOnce(jsonResponse(page([ticket('9')])))
+
+    const { result } = renderHook(() =>
+      useTickets({ query: '', status: 'All' }),
+    )
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
+    await act(async () => result.current.loadMore())
+    expect(result.current.tickets.map(({ id }) => id)).toEqual(['1', '2'])
+
+    await act(async () => result.current.refresh())
+
+    expect(requestUrl(2)).toBe('/api/tickets?pageSize=50')
+    expect(result.current.tickets.map(({ id }) => id)).toEqual(['9'])
+    expect(result.current.hasMore).toBe(false)
+  })
+
+  it('aborts and clears accumulated pages when query or status changes', async () => {
+    const stale = deferred<Response>()
+    const queryPending = deferred<Response>()
+    const statusPending = deferred<Response>()
+    vi.mocked(fetch)
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(queryPending.promise)
+      .mockReturnValueOnce(statusPending.promise)
+
+    const { result, rerender } = renderHook(
+      ({ query, status }: { query: string; status: 'All' | 'Resolved' }) =>
+        useTickets({ query, status }),
+      {
+        initialProps: {
+          query: '',
+          status: 'All' as 'All' | 'Resolved',
+        },
+      },
+    )
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    const staleSignal = requestSignal(0)
+
+    rerender({ query: 'yazıcı', status: 'All' })
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    expect(staleSignal.aborted).toBe(true)
     expect(result.current.tickets).toEqual([])
-    expect(result.current.isInitialLoading).toBe(false)
+    await act(async () => {
+      queryPending.resolve(jsonResponse(page([ticket('2')])))
+    })
+    await waitFor(() => expect(result.current.tickets).toEqual([ticket('2')]))
+
+    rerender({ query: 'yazıcı', status: 'Resolved' })
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
+    expect(result.current.tickets).toEqual([])
+    await act(async () => {
+      statusPending.resolve(jsonResponse(page([ticket('3')])))
+    })
+    await waitFor(() => expect(result.current.tickets).toEqual([ticket('3')]))
+
+    await act(async () => {
+      stale.resolve(jsonResponse(page([ticket('1')])))
+    })
+    expect(result.current.tickets).toEqual([ticket('3')])
+  })
+
+  it('distinguishes replace and append failures and retries without losing rows', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse({ message: 'bozuk' }, 500))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          page([ticket('1')], { nextCursor: 'retry-cursor', hasMore: true }),
+        ),
+      )
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(jsonResponse(page([ticket('2')])))
+
+    const { result } = renderHook(() =>
+      useTickets({ query: '', status: 'All' }),
+    )
+    await waitFor(() => {
+      expect(result.current.error).toEqual({ kind: 'server', source: 'list' })
+    })
+
+    await act(async () => result.current.refresh())
     expect(result.current.error).toBeNull()
+    expect(result.current.tickets).toEqual([ticket('1')])
+
+    await act(async () => result.current.loadMore())
+    expect(result.current.error).toEqual({ kind: 'network', source: 'loadMore' })
+    expect(result.current.tickets).toEqual([ticket('1')])
+    expect(result.current.hasMore).toBe(true)
+
+    await act(async () => result.current.loadMore())
+    expect(requestUrl(3)).toContain('cursor=retry-cursor')
+    expect(result.current.error).toBeNull()
+    expect(result.current.tickets.map(({ id }) => id)).toEqual(['1', '2'])
   })
 
-  it('preserves old rows while refreshing', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
+  it('ignores an append response after a replacement starts', async () => {
+    const append = deferred<Response>()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse(page([ticket('1')], { nextCursor: 'cursor', hasMore: true })),
+      )
+      .mockReturnValueOnce(append.promise)
+      .mockResolvedValueOnce(jsonResponse(page([ticket('9')])))
 
-    const { result } = renderHook(() => useTickets())
-
-    await waitFor(() => {
-      expect(result.current.hasLoaded).toBe(true)
-    })
-
-    const refreshPending = deferred<TicketListItem[]>()
-    fetchTickets.mockReturnValueOnce(refreshPending.promise)
-
-    let refreshPromise: Promise<void>
+    const { result } = renderHook(() =>
+      useTickets({ query: '', status: 'All' }),
+    )
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
     act(() => {
-      refreshPromise = result.current.refresh()
+      void result.current.loadMore()
     })
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    const appendSignal = requestSignal(1)
 
-    await waitFor(() => {
-      expect(result.current.isRefreshing).toBe(true)
-    })
-
-    expect(result.current.isInitialLoading).toBe(false)
-    expect(result.current.tickets).toEqual(sampleTickets)
+    await act(async () => result.current.refresh())
+    expect(appendSignal.aborted).toBe(true)
+    expect(result.current.tickets).toEqual([ticket('9')])
 
     await act(async () => {
-      refreshPending.resolve(refreshedTickets)
-      await refreshPromise!
+      append.resolve(jsonResponse(page([ticket('2')])))
     })
-
-    expect(result.current.tickets).toEqual(refreshedTickets)
-    expect(result.current.isRefreshing).toBe(false)
+    expect(result.current.tickets).toEqual([ticket('9')])
   })
 
-  it('aborts the previous request before refresh', async () => {
-    const first = deferred<TicketListItem[]>()
-    fetchTickets.mockReturnValueOnce(first.promise)
+  it('does not let a stale append release a newer append guard', async () => {
+    const staleAppend = deferred<Response>()
+    const activeAppend = deferred<Response>()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        jsonResponse(
+          page([ticket('1')], { nextCursor: 'old-cursor', hasMore: true }),
+        ),
+      )
+      .mockReturnValueOnce(staleAppend.promise)
+      .mockResolvedValueOnce(
+        jsonResponse(
+          page([ticket('9')], { nextCursor: 'new-cursor', hasMore: true }),
+        ),
+      )
+      .mockReturnValueOnce(activeAppend.promise)
 
-    const { result } = renderHook(() => useTickets())
-
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalledTimes(1)
-    })
-
-    const firstSignal = fetchTickets.mock.calls[0]?.[0]?.signal as AbortSignal
-    expect(firstSignal.aborted).toBe(false)
-
-    const second = deferred<TicketListItem[]>()
-    fetchTickets.mockReturnValueOnce(second.promise)
-
+    const { result } = renderHook(() =>
+      useTickets({ query: '', status: 'All' }),
+    )
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
     act(() => {
-      void result.current.refresh()
+      void result.current.loadMore()
     })
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
 
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalledTimes(2)
-    })
-
-    expect(firstSignal.aborted).toBe(true)
-    const secondSignal = fetchTickets.mock.calls[1]?.[0]?.signal as
-      | AbortSignal
-      | undefined
-    expect(secondSignal?.aborted).toBe(false)
-
-    await act(async () => {
-      second.resolve(sampleTickets)
-    })
-  })
-
-  it('prevents a stale promise that ignores abort from committing', async () => {
-    const first = deferred<TicketListItem[]>()
-    fetchTickets.mockReturnValueOnce(first.promise)
-
-    const { result } = renderHook(() => useTickets())
-
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalledTimes(1)
-    })
-
-    const second = deferred<TicketListItem[]>()
-    fetchTickets.mockReturnValueOnce(second.promise)
-
+    await act(async () => result.current.refresh())
     act(() => {
-      void result.current.refresh()
+      void result.current.loadMore()
     })
-
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalledTimes(2)
-    })
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(4))
 
     await act(async () => {
-      second.resolve(refreshedTickets)
+      staleAppend.resolve(jsonResponse(page([ticket('2')])))
     })
-
-    await waitFor(() => {
-      expect(result.current.tickets).toEqual(refreshedTickets)
+    act(() => {
+      void result.current.loadMore()
     })
-
-    await act(async () => {
-      first.resolve(sampleTickets)
-    })
-
-    expect(result.current.tickets).toEqual(refreshedTickets)
-  })
-
-  it('aborts and invalidates sequence on unmount', async () => {
-    const pending = deferred<TicketListItem[]>()
-    fetchTickets.mockReturnValueOnce(pending.promise)
-
-    const { result, unmount } = renderHook(() => useTickets())
-
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalledTimes(1)
-    })
-
-    const signal = fetchTickets.mock.calls[0]?.[0]?.signal as AbortSignal
-    unmount()
-
-    expect(signal.aborted).toBe(true)
-
-    await act(async () => {
-      pending.resolve(sampleTickets)
-    })
-
-    // Unmounted: no further assertions on result state, but resolve must not throw.
-    expect(result.current.tickets).toEqual([])
-  })
-
-  it('classifies TypeError as network and ApiError as server', async () => {
-    fetchTickets.mockRejectedValueOnce(new TypeError('Failed to fetch'))
-
-    const { result, rerender } = renderHook(() => useTickets())
-
-    await waitFor(() => {
-      expect(result.current.error).toBe('network')
-    })
-    expect(result.current.hasLoaded).toBe(true)
-    expect(result.current.isInitialLoading).toBe(false)
-
-    fetchTickets.mockRejectedValueOnce(new ApiError(500, 'Server exploded'))
-
-    await act(async () => {
-      await result.current.refresh()
-    })
-    rerender()
-
-    await waitFor(() => {
-      expect(result.current.error).toBe('server')
-    })
-  })
-
-  it('does not expose protected 401 as a page error', async () => {
-    fetchTickets.mockRejectedValueOnce(new ApiError(401, 'Unauthorized'))
-
-    const { result } = renderHook(() => useTickets())
-
-    await waitFor(() => {
-      expect(fetchTickets).toHaveBeenCalled()
-    })
-
-    // Allow microtasks from the catch path to settle.
     await act(async () => {
       await Promise.resolve()
     })
 
-    expect(result.current.error).toBeNull()
-    expect(result.current.isInitialLoading).toBe(true)
-    expect(result.current.hasLoaded).toBe(false)
+    expect(fetch).toHaveBeenCalledTimes(4)
+
+    await act(async () => {
+      activeAppend.resolve(jsonResponse(page([ticket('10')])))
+    })
+  })
+
+  it('aborts the active request on unmount', async () => {
+    const pending = deferred<Response>()
+    vi.mocked(fetch).mockReturnValueOnce(pending.promise)
+
+    const { unmount } = renderHook(() =>
+      useTickets({ query: '', status: 'All' }),
+    )
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+    const signal = requestSignal(0)
+
+    unmount()
+
+    expect(signal.aborted).toBe(true)
   })
 })

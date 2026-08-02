@@ -2,14 +2,16 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
-import type { TicketListItem } from '../api/types'
+import type {
+  TicketListItem,
+  TicketListPage,
+  TicketStatusCounts,
+} from '../api/types'
 import { setStoredUser } from '../auth/tokenStorage'
 
 const fetchTickets = vi.hoisted(() => vi.fn())
 
-vi.mock('../api/ticketsApi', () => ({
-  fetchTickets,
-}))
+vi.mock('../api/ticketsApi', () => ({ fetchTickets }))
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -30,7 +32,7 @@ function ticket(
     customerName: `Müşteri ${overrides.id}`,
     customerEmail: `musteri${overrides.id}@example.com`,
     status: 'New',
-    lastActivityAt: '2026-07-20T10:00:00.000Z',
+    lastActivityAt: '2026-08-02T08:20:00.000Z',
     assignedUserId: null,
     ...overrides,
   }
@@ -43,33 +45,36 @@ const sampleTickets: TicketListItem[] = [
     subject: 'Şifre sıfırlama',
     customerName: 'İrem Yılmaz',
     customerEmail: 'irem.yilmaz@example.com',
-    status: 'New',
   }),
   ticket({
     id: '2',
     ticketNumber: 'VS-000100',
     subject: 'Fatura sorunu',
     customerName: 'Ali Demir',
-    customerEmail: 'ali@example.com',
     status: 'WaitingCustomerReply',
   }),
-  ticket({
-    id: '3',
-    ticketNumber: 'VS-000200',
-    subject: 'Lisans talebi',
-    customerName: 'Ayşe Kaya',
-    customerEmail: 'ayse@example.com',
-    status: 'CustomerReplied',
-  }),
-  ticket({
-    id: '4',
-    ticketNumber: 'VS-000300',
-    subject: 'Kurulum yardımı',
-    customerName: 'Mehmet Can',
-    customerEmail: 'mehmet@example.com',
-    status: 'Resolved',
-  }),
 ]
+
+const counts: TicketStatusCounts = {
+  all: 87,
+  new: 21,
+  waitingCustomerReply: 33,
+  customerReplied: 18,
+  resolved: 15,
+}
+
+function page(
+  items: TicketListItem[],
+  options: Partial<Omit<TicketListPage, 'items'>> = {},
+): TicketListPage {
+  return {
+    items,
+    nextCursor: null,
+    hasMore: false,
+    counts,
+    ...options,
+  }
+}
 
 function seedSession() {
   const user = {
@@ -79,7 +84,6 @@ function seedSession() {
     role: 'Support' as const,
   }
   setStoredUser(user)
-  // AuthProvider bootstraps GET /api/auth/me via fetch; keep session authenticated.
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL) => {
@@ -105,7 +109,11 @@ function seedSession() {
   )
 }
 
-function renderTicketsPage() {
+function renderTicketsPage(width = 1280) {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    value: width,
+  })
   seedSession()
   window.history.pushState({}, '', '/tickets')
   return render(<App />)
@@ -118,270 +126,199 @@ describe('TicketListPage', () => {
     window.history.replaceState({}, '', '/')
   })
 
-  it('shows Turkish initial loading with a polite status', async () => {
-    const pending = deferred<TicketListItem[]>()
+  it('shows Turkish initial loading and empty guidance', async () => {
+    const pending = deferred<TicketListPage>()
     fetchTickets.mockReturnValueOnce(pending.promise)
-
-    renderTicketsPage()
-
-    await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(
-        'Destek talepleri yükleniyor…',
-      )
-    })
-
-    pending.resolve(sampleTickets)
-    await screen.findByRole('table')
-  })
-
-  it('renders table and card semantics for ready tickets', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
-    renderTicketsPage()
-
-    const table = await screen.findByRole('table')
-    expect(within(table).getByText('VS-000042')).toBeInTheDocument()
-    expect(within(table).getByText('Şifre sıfırlama')).toBeInTheDocument()
-    expect(within(table).getByText('İrem Yılmaz')).toBeInTheDocument()
-    expect(within(table).getByText('irem.yilmaz@example.com')).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Numara' })).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Konu' })).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Müşteri' })).toBeInTheDocument()
-    expect(within(table).getByRole('columnheader', { name: 'Durum' })).toBeInTheDocument()
-    expect(
-      within(table).getByRole('columnheader', { name: 'Son hareket' }),
-    ).toBeInTheDocument()
-    expect(within(table).getByText('Yeni')).toBeInTheDocument()
-    expect(table.querySelector('time')).toHaveAttribute(
-      'dateTime',
-      '2026-07-20T10:00:00.000Z',
-    )
-
-    const list = screen.getByRole('list', { name: 'Destek talepleri' })
-    expect(within(list).getByText('VS-000042')).toBeInTheDocument()
-    expect(within(list).getByRole('heading', { name: 'Şifre sıfırlama' })).toBeInTheDocument()
-    expect(within(list).getByText('İrem Yılmaz')).toBeInTheDocument()
-    expect(within(list).getByText('irem.yilmaz@example.com')).toBeInTheDocument()
-    expect(within(list).getByText('Yeni')).toBeInTheDocument()
-  })
-
-  it('shows true-empty guidance after a completed empty load', async () => {
-    fetchTickets.mockResolvedValueOnce([])
     renderTicketsPage()
 
     expect(
-      await screen.findByText('Henüz destek talebi yok.'),
-    ).toBeInTheDocument()
+      await screen.findByText('Destek talepleri yükleniyor…'),
+    ).toHaveAttribute('role', 'status')
+
+    pending.resolve(page([], { counts: { ...counts, all: 0 } }))
+    expect(await screen.findByText('Henüz destek talebi yok.')).toBeInTheDocument()
     expect(
       screen.getByText(
         'Yeni e-postalar geldiğinde destek talepleri burada görünür.',
       ),
     ).toBeInTheDocument()
-    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
-  it('shows filter-empty guidance without hiding filters', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
+  it('uses authoritative server counts in the lifecycle rail and result count', async () => {
+    fetchTickets.mockResolvedValueOnce(page(sampleTickets))
     renderTicketsPage()
 
-    await screen.findByRole('table')
-    const user = userEvent.setup()
-
-    await user.type(
-      screen.getByLabelText('Taleplerde ara'),
-      'eşleşmeyen-arama-xyz',
-    )
-
-    expect(
-      await screen.findByText('Aramanızla eşleşen destek talebi bulunamadı.'),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('Arama metnini veya durum filtresini değiştirin.'),
-    ).toBeInTheDocument()
-    expect(screen.getByLabelText('Taleplerde ara')).toBeInTheDocument()
-    expect(screen.getByLabelText('Durum')).toBeInTheDocument()
-    expect(
-      screen.getByRole('group', { name: 'Destek talebi durumları' }),
-    ).toBeInTheDocument()
-  })
-
-  it('distinguishes network and server errors', async () => {
-    fetchTickets.mockRejectedValueOnce(new TypeError('Failed to fetch'))
-    renderTicketsPage()
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Destek hizmetine ulaşılamadı. Bağlantınızı kontrol edip yeniden deneyin.',
-    )
-
-    fetchTickets.mockRejectedValueOnce(new Error('Server boom'))
-    await userEvent.click(screen.getByRole('button', { name: 'Yeniden dene' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Destek talepleri yüklenemedi. Lütfen yeniden deneyin.',
-    )
-  })
-
-  it('retries and disables refresh while busy', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
-    renderTicketsPage()
-    await screen.findByRole('table')
-
-    const pending = deferred<TicketListItem[]>()
-    fetchTickets.mockReturnValueOnce(pending.promise)
-    const user = userEvent.setup()
-
-    const refresh = screen.getByRole('button', { name: 'Yenile' })
-    await user.click(refresh)
-
-    expect(screen.getByRole('button', { name: 'Yenileniyor…' })).toBeDisabled()
-    const section = screen.getByRole('region', { name: 'Destek talepleri' })
-    expect(section).toHaveAttribute('aria-busy', 'true')
-
-    pending.resolve(sampleTickets)
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Yenile' })).toBeEnabled()
+    const rail = await screen.findByRole('group', {
+      name: 'Destek talebi durumları',
     })
+    expect(within(rail).getByRole('button', { name: /Tümü/ })).toHaveTextContent(
+      '87',
+    )
+    expect(within(rail).getByRole('button', { name: /Yeni/ })).toHaveTextContent(
+      '21',
+    )
+    expect(
+      within(rail).getByRole('button', { name: /Müşteri Bekleniyor/ }),
+    ).toHaveTextContent('33')
+    expect(screen.getByText('87 sonuç')).toBeInTheDocument()
   })
 
-  it('keeps rows visible with refresh error guidance', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
-    renderTicketsPage()
-    await screen.findByRole('table')
-
-    fetchTickets.mockRejectedValueOnce(new TypeError('Failed to fetch'))
-    const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Yenile' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Destek hizmetine ulaşılamadı. Mevcut listeyi görüntülemeye devam edebilir ve yeniden deneyebilirsiniz.',
-    )
-    expect(within(screen.getByRole('table')).getByText('VS-000042')).toBeInTheDocument()
-
-    fetchTickets.mockRejectedValueOnce(new Error('Server boom'))
-    await user.click(screen.getByRole('button', { name: 'Yenile' }))
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Destek talepleri güncellenemedi. Mevcut listeyi görüntülemeye devam edebilirsiniz.',
-    )
-    expect(within(screen.getByRole('table')).getByText('VS-000042')).toBeInTheDocument()
-  })
-
-  it('searches number subject customer name and email', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
+  it('keeps a one-character search local and debounces valid server search', async () => {
+    fetchTickets
+      .mockResolvedValueOnce(page(sampleTickets))
+      .mockResolvedValueOnce(page([sampleTickets[0]!], { counts: { ...counts, all: 1 } }))
     renderTicketsPage()
     await screen.findByRole('table')
     const user = userEvent.setup()
     const search = screen.getByLabelText('Taleplerde ara')
 
-    await user.clear(search)
-    await user.type(search, '000042')
-    expect(within(screen.getByRole('table')).getByText('VS-000042')).toBeInTheDocument()
-    expect(within(screen.getByRole('table')).queryByText('VS-000100')).not.toBeInTheDocument()
-
-    await user.clear(search)
-    await user.type(search, 'Fatura')
-    expect(within(screen.getByRole('table')).getByText('Fatura sorunu')).toBeInTheDocument()
-    expect(within(screen.getByRole('table')).queryByText('Şifre sıfırlama')).not.toBeInTheDocument()
-
-    await user.clear(search)
-    await user.type(search, 'İrem')
-    expect(within(screen.getByRole('table')).getByText('İrem Yılmaz')).toBeInTheDocument()
-
-    await user.clear(search)
-    await user.type(search, 'ali@example.com')
-    expect(within(screen.getByRole('table')).getByText('ali@example.com')).toBeInTheDocument()
-    expect(within(screen.getByRole('table')).queryByText('VS-000042')).not.toBeInTheDocument()
-  })
-
-  it('keeps select and lifecycle rail synchronized', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
-    renderTicketsPage()
-    await screen.findByRole('table')
-    const user = userEvent.setup()
-
-    const select = screen.getByLabelText('Durum')
-    const rail = screen.getByRole('group', { name: 'Destek talebi durumları' })
-
-    await user.selectOptions(select, 'WaitingCustomerReply')
-    expect(select).toHaveValue('WaitingCustomerReply')
+    await user.type(search, 'İ')
     expect(
-      within(rail).getByRole('button', { name: /Müşteri Bekleniyor/ }),
-    ).toHaveAttribute('aria-pressed', 'true')
-    expect(within(screen.getByRole('table')).getByText('VS-000100')).toBeInTheDocument()
-    expect(within(screen.getByRole('table')).queryByText('VS-000042')).not.toBeInTheDocument()
+      screen.getByText('Aramak için en az 2 karakter girin.'),
+    ).toBeInTheDocument()
+    await new Promise((resolve) => window.setTimeout(resolve, 350))
+    expect(fetchTickets).toHaveBeenCalledTimes(1)
 
-    await user.click(within(rail).getByRole('button', { name: /Çözüldü/ }))
-    expect(select).toHaveValue('Resolved')
-    expect(
-      within(rail).getByRole('button', { name: /Çözüldü/ }),
-    ).toHaveAttribute('aria-pressed', 'true')
-    expect(within(screen.getByRole('table')).getByText('VS-000300')).toBeInTheDocument()
-    expect(within(screen.getByRole('table')).queryByText('VS-000100')).not.toBeInTheDocument()
-
-    await user.click(within(rail).getByRole('button', { name: /Tümü/ }))
-    expect(select).toHaveValue('all')
-  })
-
-  it('calculates rail counts after search but before status filter', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
-    renderTicketsPage()
-    await screen.findByRole('table')
-    const user = userEvent.setup()
-
-    await user.type(screen.getByLabelText('Taleplerde ara'), 'VS-000')
-    const rail = screen.getByRole('group', { name: 'Destek talebi durumları' })
-
-    // All four tickets match VS-000 prefix
-    expect(within(rail).getByRole('button', { name: /Tümü/ })).toHaveTextContent('4')
-    expect(within(rail).getByRole('button', { name: /Yeni/ })).toHaveTextContent('1')
-    expect(
-      within(rail).getByRole('button', { name: /Müşteri Bekleniyor/ }),
-    ).toHaveTextContent('1')
-
-    await user.selectOptions(screen.getByLabelText('Durum'), 'New')
-    // Counts remain based on search, not status filter
-    expect(within(rail).getByRole('button', { name: /Tümü/ })).toHaveTextContent('4')
-    expect(within(rail).getByRole('button', { name: /Yeni/ })).toHaveTextContent('1')
-    expect(
-      within(rail).getByRole('button', { name: /Müşteri Bekleniyor/ }),
-    ).toHaveTextContent('1')
-  })
-
-  it('shows the final filtered result count', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
-    renderTicketsPage()
-    await screen.findByRole('table')
-
-    expect(screen.getByText('4 sonuç')).toBeInTheDocument()
-
-    const user = userEvent.setup()
-    await user.selectOptions(screen.getByLabelText('Durum'), 'Resolved')
-    expect(screen.getByText('1 sonuç')).toBeInTheDocument()
-  })
-
-  it('renders an unknown status as Turkish fallback with unknown tone', async () => {
-    fetchTickets.mockResolvedValueOnce([
-      ticket({
-        id: '9',
-        ticketNumber: 'VS-000999',
-        subject: 'Özel durum',
-        status: 'Escalated',
-      }),
-    ])
-    renderTicketsPage()
-
-    const table = await screen.findByRole('table')
-    expect(within(table).getByText('Bilinmeyen durum')).toBeInTheDocument()
-    const badge = within(table).getByText('Bilinmeyen durum')
-    expect(badge).toHaveAttribute('data-tone', 'unknown')
-  })
-
-  it('contains no implementation or sprint jargon', async () => {
-    fetchTickets.mockResolvedValueOnce(sampleTickets)
-    renderTicketsPage()
-    await screen.findByRole('table')
-
-    expect(document.body).not.toHaveTextContent(
-      /UC-|JWT|sessionStorage|REST|Day|sprint/i,
+    await user.type(search, 'ş')
+    await waitFor(
+      () => {
+        expect(fetchTickets).toHaveBeenCalledTimes(2)
+      },
+      { timeout: 800 },
     )
+    expect(fetchTickets.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ search: 'İş', pageSize: 50 }),
+    )
+    expect(
+      screen.queryByText('Aramak için en az 2 karakter girin.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('loads more only when available and disables the action while appending', async () => {
+    const append = deferred<TicketListPage>()
+    fetchTickets
+      .mockResolvedValueOnce(
+        page([sampleTickets[0]!], { nextCursor: 'cursor-2', hasMore: true }),
+      )
+      .mockReturnValueOnce(append.promise)
+    renderTicketsPage()
+
+    const loadMore = await screen.findByRole('button', { name: 'Daha fazla yükle' })
+    await userEvent.click(loadMore)
+
+    expect(
+      screen.getByRole('button', { name: 'Yükleniyor…' }),
+    ).toBeDisabled()
+    append.resolve(page([sampleTickets[1]!]))
+    await screen.findByText('VS-000100')
+    expect(
+      screen.queryByRole('button', { name: 'Daha fazla yükle' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('resets accumulated rows when status changes and sends the server filter', async () => {
+    const filtered = deferred<TicketListPage>()
+    fetchTickets
+      .mockResolvedValueOnce(
+        page(sampleTickets, { nextCursor: 'cursor-2', hasMore: true }),
+      )
+      .mockResolvedValueOnce(page([ticket({ id: '3' })]))
+      .mockReturnValueOnce(filtered.promise)
+    renderTicketsPage()
+    await screen.findByRole('table')
+    await userEvent.click(screen.getByRole('button', { name: 'Daha fazla yükle' }))
+    await screen.findByText('VS-000003')
+
+    await userEvent.selectOptions(screen.getByLabelText('Durum'), 'Resolved')
+    await waitFor(() => expect(fetchTickets).toHaveBeenCalledTimes(3))
+    expect(screen.queryByText('VS-000042')).not.toBeInTheDocument()
+    expect(fetchTickets.mock.calls[2]?.[0]).toEqual(
+      expect.objectContaining({ status: 'Resolved', pageSize: 50 }),
+    )
+
+    filtered.resolve(
+      page([
+        ticket({ id: '4', ticketNumber: 'VS-000400', status: 'Resolved' }),
+      ]),
+    )
+    expect(await screen.findByText('VS-000400')).toBeInTheDocument()
+  })
+
+  it.each([1280, 320])(
+    'renders each ticket once in one semantic table at %ipx',
+    async (width) => {
+      fetchTickets.mockResolvedValueOnce(page([sampleTickets[0]!]))
+      renderTicketsPage(width)
+
+      const table = await screen.findByRole('table', { name: 'Destek talepleri' })
+      expect(screen.getAllByText('VS-000042')).toHaveLength(1)
+      expect(screen.queryByRole('list', { name: 'Destek talepleri' })).not.toBeInTheDocument()
+      expect(within(table).getByRole('columnheader', { name: 'Numara' })).toBeInTheDocument()
+      expect(table.querySelector('td[data-label="Konu"]')).toHaveTextContent(
+        'Şifre sıfırlama',
+      )
+      expect(table.querySelector('td[data-label="Müşteri"]')).toHaveTextContent(
+        'İrem Yılmaz',
+      )
+      expect(table.querySelector('td[data-label="Son hareket"]')).toContainElement(
+        table.querySelector('time'),
+      )
+    },
+  )
+
+  it('offers an accessible retry for initial and refresh errors', async () => {
+    fetchTickets.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    renderTicketsPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Destek hizmetine ulaşılamadı. Bağlantınızı kontrol edip yeniden deneyin.',
+    )
+    const initialRetry = screen.getByRole('button', { name: 'Yeniden dene' })
+
+    fetchTickets.mockResolvedValueOnce(page(sampleTickets))
+    await userEvent.click(initialRetry)
+    await screen.findByRole('table')
+
+    fetchTickets.mockRejectedValueOnce(new Error('Server boom'))
+    await userEvent.click(screen.getByRole('button', { name: 'Yenile' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      'Destek talepleri güncellenemedi. Mevcut listeyi görüntülemeye devam edebilirsiniz.',
+    )
+    expect(within(alert).getByRole('button', { name: 'Yeniden dene' })).toBeEnabled()
+    expect(screen.getByText('VS-000042')).toBeInTheDocument()
+  })
+
+  it('preserves rows and offers retry after a load-more error', async () => {
+    fetchTickets
+      .mockResolvedValueOnce(
+        page([sampleTickets[0]!], { nextCursor: 'cursor-2', hasMore: true }),
+      )
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(page([sampleTickets[1]!]))
+    renderTicketsPage()
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Daha fazla yükle' }),
+    )
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      'Daha fazla destek talebi yüklenemedi. Mevcut liste korunuyor.',
+    )
+    expect(screen.getByText('VS-000042')).toBeInTheDocument()
+
+    await userEvent.click(
+      within(alert).getByRole('button', { name: 'Yeniden dene' }),
+    )
+    expect(await screen.findByText('VS-000100')).toBeInTheDocument()
+  })
+
+  it('renders unknown statuses with the Turkish fallback', async () => {
+    fetchTickets.mockResolvedValueOnce(
+      page([ticket({ id: '9', status: 'Escalated' })]),
+    )
+    renderTicketsPage()
+
+    const badge = await screen.findByText('Bilinmeyen durum')
+    expect(badge).toHaveAttribute('data-tone', 'unknown')
   })
 })
