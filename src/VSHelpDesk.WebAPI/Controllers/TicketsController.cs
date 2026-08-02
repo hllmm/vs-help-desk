@@ -4,6 +4,7 @@ using VSHelpDesk.Application.Features.Tickets.AssignTicket;
 using VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
+using VSHelpDesk.Application.Features.Tickets.GetTicketMessages;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Application.Features.Tickets.ResolveTicket;
 using VSHelpDesk.Domain.Enums;
@@ -22,6 +23,7 @@ public sealed class TicketsController(
     AssignTicketHandler assignTicketHandler,
     GetTicketListHandler getTicketListHandler,
     GetTicketDetailsHandler getTicketDetailsHandler,
+    GetTicketMessagesHandler getTicketMessagesHandler,
     SupportReplyToTicketHandler supportReplyToTicketHandler,
     ResolveTicketHandler resolveTicketHandler) : ControllerBase
 {
@@ -61,6 +63,20 @@ public sealed class TicketsController(
             new GetTicketDetailsQuery(id),
             cancellationToken);
         return Ok(details);
+    }
+
+    /// <summary>GET api/tickets/{id}/messages — older bounded UC-004 history.</summary>
+    [HttpGet("{id:guid}/messages")]
+    public async Task<IActionResult> GetMessages(
+        Guid id,
+        [FromQuery] int pageSize = 100,
+        [FromQuery] string? cursor = null,
+        CancellationToken cancellationToken = default)
+    {
+        var page = await getTicketMessagesHandler.HandleAsync(
+            new GetTicketMessagesQuery(id, pageSize, cursor),
+            cancellationToken);
+        return Ok(page);
     }
 
     /// <summary>PUT api/tickets/{id}/assignee — assign, reassign or clear BR-011 owner.</summary>

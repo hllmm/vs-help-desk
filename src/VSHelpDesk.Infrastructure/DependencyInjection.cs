@@ -42,6 +42,7 @@ public static class DependencyInjection
         services.AddScoped<IApplicationDbContext>(
             serviceProvider => serviceProvider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<ITicketListReadRepository, EfTicketListReadRepository>();
+        services.AddScoped<ITicketDetailReadRepository, EfTicketDetailReadRepository>();
         services.AddScoped<IApplicationParameterReader, ApplicationParameterReader>();
         services.AddOptions<SeedUserOptions>()
             .Bind(configuration.GetSection(SeedUserOptions.SectionName));

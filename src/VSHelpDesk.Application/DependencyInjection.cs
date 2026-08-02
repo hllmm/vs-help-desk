@@ -14,6 +14,7 @@ using VSHelpDesk.Application.Features.Tickets.AssignTicket;
 using VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
+using VSHelpDesk.Application.Features.Tickets.GetTicketMessages;
 using VSHelpDesk.Application.Features.Tickets.ReadModel;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
@@ -34,6 +35,7 @@ public static class DependencyInjection
     {
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<TicketListCursorCodec>();
+        services.AddSingleton<TicketMessageCursorCodec>();
         services.AddScoped<LoginHandler>();
         services.AddScoped<CreateTicketHandler>();
         services.AddScoped<AssignTicketHandler>();
@@ -49,6 +51,7 @@ public static class DependencyInjection
         services.AddScoped<ResolveInactiveTicketsHandler>();
         services.AddScoped<GetTicketListHandler>();
         services.AddScoped<GetTicketDetailsHandler>();
+        services.AddScoped<GetTicketMessagesHandler>();
         services.AddScoped<UploadAttachmentHandler>();
         services.AddScoped<GetAttachmentHandler>();
         services.AddScoped<GetParametersHandler>();

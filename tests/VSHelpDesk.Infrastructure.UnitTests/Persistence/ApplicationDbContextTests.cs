@@ -95,7 +95,11 @@ public sealed class ApplicationDbContextTests
         Assert.Contains(
             messageType.GetIndexes(),
             index => index.Properties.Select(property => property.Name)
-                .SequenceEqual([nameof(TicketMessage.TicketId), nameof(TicketMessage.CreatedAt)]));
+                .SequenceEqual([
+                    nameof(TicketMessage.TicketId),
+                    nameof(TicketMessage.CreatedAt),
+                    nameof(TicketMessage.Id)
+                ]));
 
         var processedType = context.Model.FindEntityType(typeof(ProcessedEmailMessage));
         Assert.NotNull(processedType);
@@ -206,6 +210,37 @@ public sealed class ApplicationDbContextTests
     }
 
     [Fact]
+    public void Model_ConfiguresTicketDetailReadIndexesWithoutRedundantPrefixIndexes()
+    {
+        using var context = CreateMetadataContext();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        var messageType = model.FindEntityType(typeof(TicketMessage))!;
+        AssertIndex(
+            messageType,
+            "IX_TicketMessages_TicketId_CreatedAt_Id",
+            [nameof(TicketMessage.TicketId), nameof(TicketMessage.CreatedAt), nameof(TicketMessage.Id)],
+            [false, true, true]);
+        Assert.DoesNotContain(
+            messageType.GetIndexes(),
+            index => index.GetDatabaseName() == "IX_TicketMessages_TicketId_CreatedAt");
+
+        var attachmentType = model.FindEntityType(typeof(TicketAttachment))!;
+        AssertIndex(
+            attachmentType,
+            "IX_TicketAttachments_TicketMessageId_CreatedAt_Id",
+            [
+                nameof(TicketAttachment.TicketMessageId),
+                nameof(TicketAttachment.CreatedAt),
+                nameof(TicketAttachment.Id)
+            ],
+            [false, false, false]);
+        Assert.DoesNotContain(
+            attachmentType.GetIndexes(),
+            index => index.GetDatabaseName() == "IX_TicketAttachments_TicketMessageId");
+    }
+
+    [Fact]
     public void AddInfrastructure_MissingConnectionString_ThrowsClearConfigurationError()
     {
         var configuration = new ConfigurationBuilder().Build();
@@ -257,6 +292,30 @@ public sealed class ApplicationDbContextTests
         var otherScope = secondScope.ServiceProvider.GetRequiredService<ITicketListReadRepository>();
 
         Assert.IsType<EfTicketListReadRepository>(first);
+        Assert.Same(first, sameScope);
+        Assert.NotSame(first, otherScope);
+    }
+
+    [Fact]
+    public void AddInfrastructure_RegistersTicketDetailReadRepositoryAsScoped()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=metadata_test;Username=test_user"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddInfrastructure(configuration);
+        using var serviceProvider = services.BuildServiceProvider();
+        using var firstScope = serviceProvider.CreateScope();
+        using var secondScope = serviceProvider.CreateScope();
+
+        var first = firstScope.ServiceProvider.GetRequiredService<ITicketDetailReadRepository>();
+        var sameScope = firstScope.ServiceProvider.GetRequiredService<ITicketDetailReadRepository>();
+        var otherScope = secondScope.ServiceProvider.GetRequiredService<ITicketDetailReadRepository>();
+
+        Assert.IsType<EfTicketDetailReadRepository>(first);
         Assert.Same(first, sameScope);
         Assert.NotSame(first, otherScope);
     }

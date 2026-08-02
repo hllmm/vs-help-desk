@@ -1,8 +1,6 @@
-using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
-using VSHelpDesk.Domain.Entities;
-using VSHelpDesk.Domain.Enums;
+using VSHelpDesk.Application.Features.Tickets.ReadModel;
 
 namespace VSHelpDesk.Application.UnitTests.Features.Tickets.GetTicketDetails;
 
@@ -11,84 +9,95 @@ public sealed class GetTicketDetailsHandlerTests
     private static readonly DateTime T0 = new(2026, 8, 3, 10, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public async Task UC004_ReturnsTicketWithMessagesInChronologicalOrder()
+    public async Task HandleAsync_ExistingTicket_RequestsNewest100MessagesAndReturnsEncodedCursor()
     {
-        var ticket = Ticket.Create("VS-000020", "Subject locked", "Ada", "ada@t.com", T0);
-        var later = new TicketMessage(
-            ticket.Id,
-            MessageSenderType.Support,
-            "Second",
-            createdAtUtc: T0.AddMinutes(10));
-        var earlier = new TicketMessage(
-            ticket.Id,
-            MessageSenderType.Customer,
-            "First",
-            createdAtUtc: T0.AddMinutes(1));
-        var handler = new GetTicketDetailsHandler(new FakeDb(ticket, earlier, later));
+        var ticketId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var nextCursor = new TicketMessageCursor(
+            T0.AddMinutes(-100),
+            Guid.Parse("22222222-2222-2222-2222-222222222222"));
+        var message = new TicketMessageDto(
+            Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            "Customer",
+            null,
+            "Literal <strong>message</strong>",
+            false,
+            T0);
+        var repository = new RecordingRepository(new TicketDetailsReadResult(
+            CreateDetails(ticketId, [message]),
+            nextCursor,
+            true));
+        var codec = new TicketMessageCursorCodec();
+        var handler = new GetTicketDetailsHandler(repository, codec);
+        using var cancellation = new CancellationTokenSource();
 
-        var details = await handler.HandleAsync(new GetTicketDetailsQuery(ticket.Id), CancellationToken.None);
+        var details = await handler.HandleAsync(
+            new GetTicketDetailsQuery(ticketId),
+            cancellation.Token);
 
-        Assert.Equal(ticket.Id, details.Id);
-        Assert.Equal("Subject locked", details.Subject);
-        Assert.Equal(2, details.Messages.Count);
-        Assert.Equal("First", details.Messages[0].Content);
-        Assert.Equal("Second", details.Messages[1].Content);
-        Assert.Empty(details.Attachments);
+        Assert.Equal(ticketId, repository.DetailTicketId);
+        Assert.Equal(100, repository.DetailMessagePageSize);
+        Assert.Equal(cancellation.Token, repository.CancellationToken);
+        Assert.Equal([message], details.Messages);
+        Assert.Equal("Literal <strong>message</strong>", details.Messages[0].Content);
+        Assert.True(details.HasMoreMessages);
+        Assert.Equal(nextCursor, codec.Decode(details.NextMessageCursor!));
     }
 
     [Fact]
-    public async Task UC004_UnknownId_ThrowsNotFoundException()
+    public async Task HandleAsync_UnknownId_ThrowsNotFoundException()
     {
-        var handler = new GetTicketDetailsHandler(new FakeDb());
+        var handler = new GetTicketDetailsHandler(
+            new RecordingRepository(detailResult: null),
+            new TicketMessageCursorCodec());
 
         await Assert.ThrowsAsync<NotFoundException>(() =>
             handler.HandleAsync(new GetTicketDetailsQuery(Guid.NewGuid()), CancellationToken.None));
     }
 
-    private sealed class FakeDb : IApplicationDbContext
+    private static TicketDetailsDto CreateDetails(
+        Guid ticketId,
+        IReadOnlyList<TicketMessageDto>? messages = null) =>
+        new(
+            ticketId,
+            "VS-000020",
+            "Subject locked",
+            "Ada",
+            "ada@example.test",
+            "New",
+            null,
+            T0,
+            T0,
+            T0,
+            null,
+            null,
+            null,
+            messages ?? [],
+            [],
+            null,
+            false);
+
+    private sealed class RecordingRepository(TicketDetailsReadResult? detailResult)
+        : ITicketDetailReadRepository
     {
-        private readonly List<Ticket> tickets;
-        private readonly List<TicketMessage> messages;
-        private readonly List<TicketAttachment> attachments;
+        public Guid? DetailTicketId { get; private set; }
+        public int? DetailMessagePageSize { get; private set; }
+        public CancellationToken CancellationToken { get; private set; }
 
-        public FakeDb(
-            Ticket? ticket = null,
-            TicketMessage[]? ticketMessages = null,
-            TicketAttachment[]? ticketAttachments = null)
+        public Task<TicketDetailsReadResult?> ReadDetailsAsync(
+            Guid ticketId,
+            int messagePageSize,
+            CancellationToken cancellationToken)
         {
-            tickets = ticket is null ? [] : [ticket];
-            messages = ticketMessages?.ToList() ?? [];
-            attachments = ticketAttachments?.ToList() ?? [];
+            DetailTicketId = ticketId;
+            DetailMessagePageSize = messagePageSize;
+            CancellationToken = cancellationToken;
+            return Task.FromResult(detailResult);
         }
 
-        public FakeDb(Ticket ticket, params TicketMessage[] ticketMessages)
-            : this(ticket, ticketMessages, null)
-        {
-        }
-
-        public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
-        public IQueryable<Ticket> Tickets => tickets.AsQueryable();
-        public IQueryable<TicketMessage> TicketMessages => messages.AsQueryable();
-        public IQueryable<TicketAttachment> TicketAttachments => attachments.AsQueryable();
-        public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
-            Array.Empty<ProcessedEmailMessage>().AsQueryable();
-
-        public IQueryable<ApplicationParameter> ApplicationParameters =>
-            Array.Empty<ApplicationParameter>().AsQueryable();
-
-        public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
-            Array.Empty<ParameterChangeLog>().AsQueryable();
-
-        public void Add<TEntity>(TEntity entity) where TEntity : class
-        {
-        }
-
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(0);
-
-        public void ClearTrackedChanges()
-        {
-        }
-
+        public Task<TicketMessageReadResult?> ReadMessagesAsync(
+            Guid ticketId,
+            TicketMessageReadRequest request,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 }

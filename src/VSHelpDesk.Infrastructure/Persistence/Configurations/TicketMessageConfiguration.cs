@@ -18,7 +18,9 @@ public sealed class TicketMessageConfiguration : IEntityTypeConfiguration<Ticket
         builder.Property(message => message.IsHtml).IsRequired();
         builder.Property(message => message.CreatedAt).IsRequired().HasColumnType("timestamp with time zone");
 
-        builder.HasIndex(message => new { message.TicketId, message.CreatedAt });
+        builder.HasIndex(message => new { message.TicketId, message.CreatedAt, message.Id })
+            .HasDatabaseName("IX_TicketMessages_TicketId_CreatedAt_Id")
+            .IsDescending(false, true, true);
 
         builder.HasOne<Ticket>()
             .WithMany()

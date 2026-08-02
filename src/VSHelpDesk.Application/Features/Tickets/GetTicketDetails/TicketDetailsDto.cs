@@ -15,7 +15,9 @@ public sealed record TicketDetailsDto(
     DateTime? ResolvedAt,
     Guid? ClosedByUserId,
     IReadOnlyList<TicketMessageDto> Messages,
-    IReadOnlyList<TicketAttachmentMetaDto> Attachments);
+    IReadOnlyList<TicketAttachmentMetaDto> Attachments,
+    string? NextMessageCursor,
+    bool HasMoreMessages);
 
 public sealed record TicketMessageDto(
     Guid Id,

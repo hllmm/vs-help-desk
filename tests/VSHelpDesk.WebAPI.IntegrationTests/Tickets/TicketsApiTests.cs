@@ -507,6 +507,230 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         }
     }
 
+    [Fact]
+    public async Task GetById_LongHistoryReturnsBoundedInitialPageAndOlderPagesWithoutOverlap()
+    {
+        var fixture = await SeedMessageHistoryAsync(205, [1, 100, 101, 205]);
+
+        try
+        {
+            var storageOrder = fixture.Messages
+                .OrderByDescending(message => message.CreatedAt)
+                .ThenByDescending(message => message.Id)
+                .ToList();
+            var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
+            {
+                using var detailResponse = await client.GetAsync($"/api/tickets/{fixture.Ticket.Id}");
+                Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
+                using var detailDoc = JsonDocument.Parse(
+                    await detailResponse.Content.ReadAsStringAsync());
+                var detail = detailDoc.RootElement;
+                var firstIds = detail.GetProperty("messages")
+                    .EnumerateArray()
+                    .Select(message => message.GetProperty("id").GetGuid())
+                    .ToArray();
+                var firstCursor = detail.GetProperty("nextMessageCursor").GetString();
+
+                Assert.Equal(
+                    storageOrder.Take(100).Reverse().Select(message => message.Id),
+                    firstIds);
+                Assert.True(detail.GetProperty("hasMoreMessages").GetBoolean());
+                Assert.False(string.IsNullOrWhiteSpace(firstCursor));
+                Assert.All(
+                    detail.GetProperty("attachments").EnumerateArray(),
+                    attachment => Assert.Contains(
+                        attachment.GetProperty("ticketMessageId").GetGuid(),
+                        firstIds));
+
+                using var secondResponse = await client.GetAsync(
+                    $"/api/tickets/{fixture.Ticket.Id}/messages?pageSize=100&cursor={Uri.EscapeDataString(firstCursor!)}");
+                Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
+                using var secondDoc = JsonDocument.Parse(
+                    await secondResponse.Content.ReadAsStringAsync());
+                var second = secondDoc.RootElement;
+                var secondIds = second.GetProperty("messages")
+                    .EnumerateArray()
+                    .Select(message => message.GetProperty("id").GetGuid())
+                    .ToArray();
+                var secondCursor = second.GetProperty("nextCursor").GetString();
+
+                Assert.Equal(
+                    storageOrder.Skip(100).Take(100).Reverse().Select(message => message.Id),
+                    secondIds);
+                Assert.True(second.GetProperty("hasMore").GetBoolean());
+                Assert.False(string.IsNullOrWhiteSpace(secondCursor));
+
+                using var thirdResponse = await client.GetAsync(
+                    $"/api/tickets/{fixture.Ticket.Id}/messages?pageSize=100&cursor={Uri.EscapeDataString(secondCursor!)}");
+                Assert.Equal(HttpStatusCode.OK, thirdResponse.StatusCode);
+                using var thirdDoc = JsonDocument.Parse(
+                    await thirdResponse.Content.ReadAsStringAsync());
+                var third = thirdDoc.RootElement;
+                var thirdIds = third.GetProperty("messages")
+                    .EnumerateArray()
+                    .Select(message => message.GetProperty("id").GetGuid())
+                    .ToArray();
+
+                Assert.Equal(
+                    storageOrder.Skip(200).Take(5).Reverse().Select(message => message.Id),
+                    thirdIds);
+                Assert.False(third.GetProperty("hasMore").GetBoolean());
+                Assert.Equal(JsonValueKind.Null, third.GetProperty("nextCursor").ValueKind);
+                Assert.Equal(
+                    205,
+                    firstIds.Concat(secondIds).Concat(thirdIds).Distinct().Count());
+            }
+        }
+        finally
+        {
+            await DeleteTicketHistoryAsync(fixture.Ticket.Id);
+        }
+    }
+
+    [Fact]
+    public async Task GetMessages_ExistingTicketReturnsExactPageFieldsAndMetadataOnly()
+    {
+        var fixture = await SeedMessageHistoryAsync(3, [3]);
+
+        try
+        {
+            var storageOrder = fixture.Messages
+                .OrderByDescending(message => message.CreatedAt)
+                .ThenByDescending(message => message.Id)
+                .ToList();
+            var expectedIds = storageOrder.Take(2).Reverse().Select(message => message.Id).ToArray();
+            var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
+            using (var response = await client.GetAsync(
+                $"/api/tickets/{fixture.Ticket.Id}/messages?pageSize=2"))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                var root = doc.RootElement;
+
+                Assert.Equal(
+                    ["attachments", "hasMore", "messages", "nextCursor"],
+                    root.EnumerateObject().Select(property => property.Name).Order().ToArray());
+                Assert.Equal(
+                    expectedIds,
+                    root.GetProperty("messages")
+                        .EnumerateArray()
+                        .Select(message => message.GetProperty("id").GetGuid()));
+                Assert.All(
+                    root.GetProperty("messages").EnumerateArray(),
+                    message =>
+                    {
+                        Assert.Equal(
+                            ["content", "createdAt", "id", "isHtml", "senderType", "userId"],
+                            message.EnumerateObject().Select(property => property.Name).Order().ToArray());
+                        Assert.Contains("<tag>", message.GetProperty("content").GetString());
+                    });
+                var attachment = Assert.Single(root.GetProperty("attachments").EnumerateArray());
+                Assert.Equal(
+                    ["contentType", "createdAt", "fileName", "fileSize", "id", "ticketMessageId"],
+                    attachment.EnumerateObject().Select(property => property.Name).Order().ToArray());
+                Assert.Contains(attachment.GetProperty("ticketMessageId").GetGuid(), expectedIds);
+                Assert.False(attachment.TryGetProperty("filePath", out _));
+                Assert.False(attachment.TryGetProperty("storedFileName", out _));
+                Assert.True(root.GetProperty("hasMore").GetBoolean());
+                Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("nextCursor").GetString()));
+            }
+        }
+        finally
+        {
+            await DeleteTicketHistoryAsync(fixture.Ticket.Id);
+        }
+    }
+
+    [Fact]
+    public async Task GetMessages_PageSizeIsCappedAt200AndAdvertisedCursorCanReachEmptyFinalPage()
+    {
+        var fixture = await SeedMessageHistoryAsync(201);
+
+        try
+        {
+            var storageOrder = fixture.Messages
+                .OrderByDescending(message => message.CreatedAt)
+                .ThenByDescending(message => message.Id)
+                .ToList();
+            var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+            using (client)
+            {
+                using var firstResponse = await client.GetAsync(
+                    $"/api/tickets/{fixture.Ticket.Id}/messages?pageSize=500");
+                Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+                using var firstDoc = JsonDocument.Parse(await firstResponse.Content.ReadAsStringAsync());
+                var first = firstDoc.RootElement;
+                var cursor = first.GetProperty("nextCursor").GetString();
+
+                Assert.Equal(200, first.GetProperty("messages").GetArrayLength());
+                Assert.True(first.GetProperty("hasMore").GetBoolean());
+                Assert.False(string.IsNullOrWhiteSpace(cursor));
+
+                await using (var scope = factory.Services.CreateAsyncScope())
+                {
+                    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                    await db.TicketMessages
+                        .Where(message => message.Id == storageOrder[200].Id)
+                        .ExecuteDeleteAsync();
+                }
+
+                using var finalResponse = await client.GetAsync(
+                    $"/api/tickets/{fixture.Ticket.Id}/messages?pageSize=500&cursor={Uri.EscapeDataString(cursor!)}");
+                Assert.Equal(HttpStatusCode.OK, finalResponse.StatusCode);
+                using var finalDoc = JsonDocument.Parse(await finalResponse.Content.ReadAsStringAsync());
+                Assert.Empty(finalDoc.RootElement.GetProperty("messages").EnumerateArray());
+                Assert.Empty(finalDoc.RootElement.GetProperty("attachments").EnumerateArray());
+                Assert.False(finalDoc.RootElement.GetProperty("hasMore").GetBoolean());
+                Assert.Equal(JsonValueKind.Null, finalDoc.RootElement.GetProperty("nextCursor").ValueKind);
+            }
+        }
+        finally
+        {
+            await DeleteTicketHistoryAsync(fixture.Ticket.Id);
+        }
+    }
+
+    [Fact]
+    public async Task GetMessages_UnknownTicketReturnsSafe404()
+    {
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        using (var response = await client.GetAsync($"/api/tickets/{Guid.NewGuid()}/messages"))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            AssertSafeMissingResourceBody(await response.Content.ReadAsStringAsync());
+        }
+    }
+
+    [Fact]
+    public async Task GetMessages_InvalidCursorReturnsSafe400WithStableCode()
+    {
+        var (client, _, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        using (var response = await client.GetAsync(
+            $"/api/tickets/{Guid.NewGuid()}/messages?cursor=not-a-valid-cursor"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            Assert.Equal(
+                "invalid-ticket-message-cursor",
+                doc.RootElement.GetProperty("code").GetString());
+            AssertSafeValidationBody(body);
+        }
+    }
+
+    [Fact]
+    public async Task GetMessages_WithoutTokenReturns401()
+    {
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync($"/api/tickets/{Guid.NewGuid()}/messages");
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
     private static void AssertSafeMissingResourceBody(string body)
     {
         Assert.DoesNotContain("NotFoundException", body, StringComparison.Ordinal);
@@ -1280,6 +1504,64 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         return tickets;
     }
 
+    private async Task<TicketHistoryFixture> SeedMessageHistoryAsync(
+        int messageCount,
+        IReadOnlyCollection<int>? attachmentMessageIndexes = null)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var stamp = new DateTime(2026, 8, 6, 8, 0, 0, DateTimeKind.Utc);
+        var ticket = Ticket.Create(
+            UniqueSeedTicketNumber("VS-MP"),
+            "Paged message history",
+            "Ada",
+            $"paged-history-{Guid.NewGuid():N}@example.test",
+            stamp);
+        var messages = Enumerable.Range(1, messageCount)
+            .Select(index => new TicketMessage(
+                ticket.Id,
+                index % 2 == 0 ? MessageSenderType.Support : MessageSenderType.Customer,
+                $"Literal message {index} <tag>",
+                createdAtUtc: stamp.AddMinutes((index - 1) / 2)))
+            .ToList();
+        var attachments = (attachmentMessageIndexes ?? [])
+            .Select(index => new TicketAttachment(
+                messages[index - 1].Id,
+                $"message-{index}.txt",
+                $"stored-{Guid.NewGuid():N}.txt",
+                $"/tmp/vshd-api-{Guid.NewGuid():N}.txt",
+                "text/plain",
+                index,
+                messages[index - 1].CreatedAt.AddSeconds(1)))
+            .ToList();
+
+        db.Add(ticket);
+        db.AddRange(messages);
+        db.AddRange(attachments);
+        await db.SaveChangesAsync();
+
+        return new TicketHistoryFixture(ticket, messages);
+    }
+
+    private async Task DeleteTicketHistoryAsync(Guid ticketId)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var messageIds = await db.TicketMessages
+            .Where(message => message.TicketId == ticketId)
+            .Select(message => message.Id)
+            .ToArrayAsync();
+        await db.TicketAttachments
+            .Where(attachment => messageIds.Contains(attachment.TicketMessageId))
+            .ExecuteDeleteAsync();
+        await db.TicketMessages
+            .Where(message => message.TicketId == ticketId)
+            .ExecuteDeleteAsync();
+        await db.Tickets
+            .Where(ticket => ticket.Id == ticketId)
+            .ExecuteDeleteAsync();
+    }
+
     private async Task DeleteTicketsAsync(IEnumerable<Guid> ticketIds)
     {
         var ids = ticketIds.ToArray();
@@ -1342,6 +1624,10 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             return Task.CompletedTask;
         }
     }
+
+    private sealed record TicketHistoryFixture(
+        Ticket Ticket,
+        IReadOnlyList<TicketMessage> Messages);
 
     private sealed class ConflictOnSaveDbContext(Ticket ticket) : IApplicationDbContext
     {
