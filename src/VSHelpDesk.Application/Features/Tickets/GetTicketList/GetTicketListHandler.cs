@@ -1,37 +1,47 @@
-using VSHelpDesk.Application.Abstractions.Persistence;
-using VSHelpDesk.Domain.Enums;
+using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Features.Tickets.ReadModel;
 
 namespace VSHelpDesk.Application.Features.Tickets.GetTicketList;
 
-public sealed class GetTicketListHandler(IApplicationDbContext applicationDbContext)
+public sealed class GetTicketListHandler(
+    ITicketListReadRepository ticketListReadRepository,
+    TicketListCursorCodec ticketListCursorCodec)
 {
-    public Task<IReadOnlyList<TicketListItemDto>> HandleAsync(
+    public async Task<TicketListPageDto> HandleAsync(
         GetTicketListQuery query,
         CancellationToken cancellationToken = default)
     {
-        _ = cancellationToken;
-        IQueryable<Domain.Entities.Ticket> tickets = applicationDbContext.Tickets;
-
-        if (query.Status is { } status)
+        var search = query.Search?.Trim();
+        if (string.IsNullOrEmpty(search))
         {
-            tickets = tickets.Where(ticket => ticket.Status == status);
+            search = null;
         }
 
-        // Projection-only: no full entity materialization for list (BR-014 consumers get DTO only).
-        var items = tickets
-            .OrderByDescending(ticket => ticket.LastActivityAt)
-            .ThenBy(ticket => ticket.TicketNumber)
-            .Select(ticket => new TicketListItemDto(
-                ticket.Id,
-                ticket.TicketNumber,
-                ticket.Subject,
-                ticket.CustomerName,
-                ticket.CustomerEmail,
-                ticket.Status.ToString(),
-                ticket.LastActivityAt,
-                ticket.AssignedUserId))
-            .ToList();
+        if (search is { Length: < 2 })
+        {
+            throw new RequestValidationException("ticket-search-too-short");
+        }
 
-        return Task.FromResult<IReadOnlyList<TicketListItemDto>>(items);
+        if (search is { Length: > 100 })
+        {
+            throw new RequestValidationException("ticket-search-too-long");
+        }
+
+        var cursor = query.Cursor is { Length: > 0 }
+            ? ticketListCursorCodec.Decode(query.Cursor)
+            : null;
+        var result = await ticketListReadRepository.ReadAsync(
+            new TicketListReadRequest(
+                query.Status,
+                search,
+                Math.Clamp(query.PageSize, 1, 100),
+                cursor),
+            cancellationToken);
+
+        return new TicketListPageDto(
+            result.Items,
+            result.NextCursor is null ? null : ticketListCursorCodec.Encode(result.NextCursor),
+            result.HasMore,
+            result.Counts);
     }
 }

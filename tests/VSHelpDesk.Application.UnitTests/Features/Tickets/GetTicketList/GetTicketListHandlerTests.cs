@@ -1,6 +1,6 @@
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
-using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Application.Features.Tickets.ReadModel;
 using VSHelpDesk.Domain.Enums;
 
 namespace VSHelpDesk.Application.UnitTests.Features.Tickets.GetTicketList;
@@ -10,69 +10,110 @@ public sealed class GetTicketListHandlerTests
     private static readonly DateTime T0 = new(2026, 8, 3, 9, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public async Task UC003_ReturnsTicketsOrderedByLastActivityDescending()
+    public async Task HandleAsync_DefaultQuery_UsesDefaultPageSize()
     {
-        var older = Ticket.Create("VS-000001", "Older", "A", "a@t.com", T0);
-        older.RecordMessageActivity(T0.AddHours(1));
-        var newer = Ticket.Create("VS-000002", "Newer", "B", "b@t.com", T0);
-        newer.RecordMessageActivity(T0.AddHours(2));
-        var handler = new GetTicketListHandler(new FakeDb(older, newer));
+        var repository = new RecordingRepository();
+        var handler = new GetTicketListHandler(repository, new TicketListCursorCodec());
 
-        var items = await handler.HandleAsync(new GetTicketListQuery(), CancellationToken.None);
+        await handler.HandleAsync(new GetTicketListQuery(), CancellationToken.None);
 
-        Assert.Equal(2, items.Count);
-        Assert.Equal("VS-000002", items[0].TicketNumber);
-        Assert.Equal("VS-000001", items[1].TicketNumber);
-        Assert.Equal("Newer", items[0].Subject);
-        Assert.Equal("B", items[0].CustomerName);
+        Assert.Equal(50, repository.Request!.PageSize);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(101, 100)]
+    public async Task HandleAsync_OutOfRangePageSize_ClampsToListBounds(int pageSize, int expectedPageSize)
+    {
+        var repository = new RecordingRepository();
+        var handler = new GetTicketListHandler(repository, new TicketListCursorCodec());
+
+        await handler.HandleAsync(new GetTicketListQuery(PageSize: pageSize), CancellationToken.None);
+
+        Assert.Equal(expectedPageSize, repository.Request!.PageSize);
     }
 
     [Fact]
-    public async Task UC003_StatusFilter_ReturnsOnlyMatching()
+    public async Task HandleAsync_WhitespaceSearch_ForwardsNullSearch()
     {
-        var open = Ticket.Create("VS-000010", "Open", "A", "a@t.com", T0);
-        var resolved = Ticket.Create("VS-000011", "Done", "B", "b@t.com", T0);
-        resolved.ResolveManually(
-            T0.AddHours(1),
-            Guid.Parse("11111111-1111-1111-1111-111111111111"));
-        var handler = new GetTicketListHandler(new FakeDb(open, resolved));
+        var repository = new RecordingRepository();
+        var handler = new GetTicketListHandler(repository, new TicketListCursorCodec());
 
-        var items = await handler.HandleAsync(
-            new GetTicketListQuery(TicketStatus.Resolved),
-            CancellationToken.None);
+        await handler.HandleAsync(new GetTicketListQuery(Search: "  \t  "), CancellationToken.None);
 
-        Assert.Single(items);
-        Assert.Equal("VS-000011", items[0].TicketNumber);
-        Assert.Equal(nameof(TicketStatus.Resolved), items[0].Status);
+        Assert.Null(repository.Request!.Search);
     }
 
-    private sealed class FakeDb(params Ticket[] tickets) : IApplicationDbContext
+    [Theory]
+    [InlineData("a", "ticket-search-too-short")]
+    [InlineData("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "ticket-search-too-long")]
+    public async Task HandleAsync_InvalidSearch_ThrowsStableValidationCode(string search, string expectedCode)
     {
-        public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
-        public IQueryable<Ticket> Tickets { get; } = tickets.AsQueryable();
-        public IQueryable<TicketMessage> TicketMessages => Array.Empty<TicketMessage>().AsQueryable();
-        public IQueryable<TicketAttachment> TicketAttachments =>
-            Array.Empty<TicketAttachment>().AsQueryable();
+        var handler = new GetTicketListHandler(new RecordingRepository(), new TicketListCursorCodec());
 
-        public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
-            Array.Empty<ProcessedEmailMessage>().AsQueryable();
+        var exception = await Assert.ThrowsAsync<RequestValidationException>(
+            () => handler.HandleAsync(new GetTicketListQuery(Search: search), CancellationToken.None));
 
-        public IQueryable<ApplicationParameter> ApplicationParameters =>
-            Array.Empty<ApplicationParameter>().AsQueryable();
+        Assert.Equal(expectedCode, exception.Code);
+    }
 
-        public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
-            Array.Empty<ParameterChangeLog>().AsQueryable();
+    [Fact]
+    public async Task HandleAsync_ValidCursor_DecodesAndForwardsItToRepository()
+    {
+        var repository = new RecordingRepository();
+        var codec = new TicketListCursorCodec();
+        var expectedCursor = new TicketListCursor(T0, "VS-000123");
+        var handler = new GetTicketListHandler(repository, codec);
 
-        public void Add<TEntity>(TEntity entity) where TEntity : class
+        await handler.HandleAsync(
+            new GetTicketListQuery(Status: TicketStatus.Resolved, Cursor: codec.Encode(expectedCursor)),
+            CancellationToken.None);
+
+        Assert.Equal(TicketStatus.Resolved, repository.Request!.Status);
+        Assert.Equal(expectedCursor, repository.Request.Cursor);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RepositoryResult_ReturnsItemsCountsAndEncodedNextCursor()
+    {
+        var nextCursor = new TicketListCursor(T0.AddMinutes(-1), "VS-000122");
+        var expectedItem = new TicketListItemDto(
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            "VS-000123",
+            "Cannot sign in",
+            "Ada Lovelace",
+            "ada@example.com",
+            nameof(TicketStatus.CustomerReplied),
+            T0,
+            null);
+        var expectedCounts = new TicketStatusCountsDto(10, 2, 3, 4, 1);
+        var repository = new RecordingRepository(
+            new TicketListReadResult([expectedItem], nextCursor, true, expectedCounts));
+        var codec = new TicketListCursorCodec();
+        var handler = new GetTicketListHandler(repository, codec);
+
+        var result = await handler.HandleAsync(new GetTicketListQuery(), CancellationToken.None);
+
+        Assert.Equal([expectedItem], result.Items);
+        Assert.True(result.HasMore);
+        Assert.Equal(expectedCounts, result.Counts);
+        Assert.Equal(nextCursor, codec.Decode(result.NextCursor!));
+    }
+
+    private sealed class RecordingRepository(TicketListReadResult? result = null) : ITicketListReadRepository
+    {
+        public TicketListReadRequest? Request { get; private set; }
+
+        public Task<TicketListReadResult> ReadAsync(
+            TicketListReadRequest request,
+            CancellationToken cancellationToken)
         {
+            Request = request;
+            return Task.FromResult(result ?? new TicketListReadResult(
+                [],
+                null,
+                false,
+                new TicketStatusCountsDto(0, 0, 0, 0, 0)));
         }
-
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(0);
-
-        public void ClearTrackedChanges()
-        {
-        }
-
     }
 }
