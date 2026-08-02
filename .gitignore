@@ -495,5 +495,5 @@ deploy/k8s/**/secrets.local.yaml
 **/secrets.local.yaml
 
 # Performance evidence artifacts (regenerable locally or via CI)
-performance/compose-stats.ndjson
+performance/compose-stats*.ndjson
 performance/ticket-read-performance.json

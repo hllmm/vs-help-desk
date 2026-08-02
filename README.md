@@ -83,7 +83,7 @@ cd frontend
 npm ci
 npm run lint
 npm test
-env -u VITE_API_BASE_URL npm run build
+env -u VITE_API_BASE_URL npm run build:budget   # üretim build'i + JS/CSS gzip bütçe kapısı
 npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 ```
 
@@ -93,7 +93,9 @@ npx playwright test   # Week 2 + 3 + 4, dört viewport projesi
 - `VITE_API_BASE_URL` is an optional build-time override (avoid for cookie auth — cross-origin cookies need extra CORS/`SameSite` setup).
 - Production bundle: relative `/api/...` behind same-origin reverse proxy.
 - Auth: login sets HttpOnly `vshd.auth` + readable `vshd.csrf`; SPA uses `credentials: 'include'` and `X-CSRF-Token` on mutations; **no** JWT in sessionStorage/localStorage; bootstrap via `GET /api/auth/me`.
-- Routes: `/login`, `/tickets` (list), `/tickets/:ticketId` (detail + timeline + assignment + reply + resolve), `/users` (Admin user management), `/parameters` (UC-010 list/edit allowlisted keys + change history — **Admin** only; Support has no nav/route access for Admin pages).
+- Routes: `/login`, `/tickets` (list — sunucu sayfalı, sayfa başına 50 / tavan 100, `Daha fazla yükle`), `/tickets/:ticketId` (detail + timeline — ilk 100 mesaj, `Daha eski mesajları yükle` + assignment + reply + resolve), `/users` (Admin user management), `/parameters` (UC-010 list/edit allowlisted keys + change history — **Admin** only; Support has no nav/route access for Admin pages).
+- Ticket read API sözleşmesi: liste `{ items, nextCursor, hasMore, counts }`; eski mesajlar `GET /api/tickets/{id}/messages?cursor=...` → `{ messages, attachments, nextCursor, hasMore }` (bkz. [docs/architecture.md](docs/architecture.md) § Sınırlı ticket okuma yolu).
+- Performans kanıtı ve yeniden üretim: [docs/performance-evidence/ticket-read-baseline.md](docs/performance-evidence/ticket-read-baseline.md) · [performance/README.md](performance/README.md).
 - Detail messages render as literal text; attachments download via authenticated Blob + cookies (no token in URL). Portal upload and **inbound IMAP/Fake** attachments share the same storage path and download UX.
 
 - Support reply: `POST /api/tickets/{id}/replies` with `{ content }` only; max **65,536** characters; saved-vs-delivered outcomes include SMTP failure warning without status change.
