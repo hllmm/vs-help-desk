@@ -227,6 +227,48 @@ describe('useTickets', () => {
     expect(result.current.tickets).toEqual([ticket('3')])
   })
 
+  it('keeps successful initialization through replacement and empty refresh failure', async () => {
+    const replacement = deferred<Response>()
+    const refresh = deferred<Response>()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(page([])))
+      .mockReturnValueOnce(replacement.promise)
+      .mockReturnValueOnce(refresh.promise)
+
+    const { result, rerender } = renderHook(
+      ({ query }) => useTickets({ query, status: 'All' }),
+      { initialProps: { query: '' } },
+    )
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.hasInitialized).toBe(true)
+
+    rerender({ query: 'yazıcı' })
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+    expect(result.current.isLoading).toBe(true)
+    expect(result.current.tickets).toEqual([])
+    expect(result.current.hasInitialized).toBe(true)
+
+    await act(async () => {
+      replacement.resolve(jsonResponse(page([])))
+    })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    act(() => {
+      void result.current.refresh()
+    })
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
+    expect(result.current.isLoading).toBe(true)
+    expect(result.current.hasInitialized).toBe(true)
+
+    await act(async () => {
+      refresh.reject(new Error('Server boom'))
+    })
+    await waitFor(() => {
+      expect(result.current.error).toEqual({ kind: 'server', source: 'list' })
+    })
+    expect(result.current.hasInitialized).toBe(true)
+  })
+
   it('distinguishes replace and append failures and retries without losing rows', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(jsonResponse({ message: 'bozuk' }, 500))

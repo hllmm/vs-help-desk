@@ -13,12 +13,18 @@ import {
 
 function listErrorMessage(
   kind: TicketLoadErrorKind,
-  hasRows: boolean,
+  phase: 'initial' | 'replacement',
+  hasRows = false,
 ): string {
-  if (hasRows) {
+  if (phase === 'replacement') {
+    if (hasRows) {
+      return kind === 'network'
+        ? 'Destek hizmetine ulaşılamadı. Mevcut listeyi görüntülemeye devam edebilir ve yeniden deneyebilirsiniz.'
+        : 'Destek talepleri güncellenemedi. Mevcut listeyi görüntülemeye devam edebilirsiniz.'
+    }
     return kind === 'network'
-      ? 'Destek hizmetine ulaşılamadı. Mevcut listeyi görüntülemeye devam edebilir ve yeniden deneyebilirsiniz.'
-      : 'Destek talepleri güncellenemedi. Mevcut listeyi görüntülemeye devam edebilirsiniz.'
+      ? 'Destek hizmetine ulaşılamadı. Yeniden deneyebilirsiniz.'
+      : 'Destek talepleri güncellenemedi. Yeniden deneyebilirsiniz.'
   }
 
   return kind === 'network'
@@ -42,6 +48,7 @@ export function TicketListPage(): ReactElement {
     tickets,
     counts,
     hasMore,
+    hasInitialized,
     isLoading,
     isLoadingMore,
     error,
@@ -76,17 +83,25 @@ export function TicketListPage(): ReactElement {
     Resolved: counts.resolved,
   }
   const hasRows = tickets.length > 0
-  const isInitialLoading = isLoading && !hasRows
+  const isInitialLoading = isLoading && !hasInitialized
   const isBusy = isLoading || isLoadingMore
-  const showInitialError = error?.source === 'list' && !hasRows
-  const showRefreshError = error?.source === 'list' && hasRows
+  const showInitialError = error?.source === 'list' && !hasInitialized
+  const showRefreshError = error?.source === 'list' && hasInitialized
   const showLoadMoreError = error?.source === 'loadMore'
-  const showControls = !isInitialLoading && !showInitialError
+  const showControls = hasInitialized
   const hasServerFilter = serverQuery.length >= 2 || selectedStatus !== 'all'
   const showTrueEmpty =
-    !isLoading && error === null && !hasRows && !hasServerFilter
+    hasInitialized &&
+    !isLoading &&
+    error === null &&
+    !hasRows &&
+    !hasServerFilter
   const showFilterEmpty =
-    !isLoading && error === null && !hasRows && hasServerFilter
+    hasInitialized &&
+    !isLoading &&
+    error === null &&
+    !hasRows &&
+    hasServerFilter
 
   return (
     <section
@@ -112,7 +127,7 @@ export function TicketListPage(): ReactElement {
 
       {showInitialError && error ? (
         <div className="ticket-state ticket-state--error" role="alert">
-          <p>{listErrorMessage(error.kind, false)}</p>
+          <p>{listErrorMessage(error.kind, 'initial')}</p>
           <button
             type="button"
             className="button button--primary"
@@ -147,7 +162,7 @@ export function TicketListPage(): ReactElement {
 
       {showRefreshError && error ? (
         <div className="ticket-state ticket-state--error" role="alert">
-          <p>{listErrorMessage(error.kind, true)}</p>
+          <p>{listErrorMessage(error.kind, 'replacement', hasRows)}</p>
           <button
             type="button"
             className="button button--quiet"

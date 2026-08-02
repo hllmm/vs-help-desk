@@ -163,10 +163,13 @@ describe('TicketListPage', () => {
     expect(screen.getByText('87 sonuç')).toBeInTheDocument()
   })
 
-  it('keeps a one-character search local and debounces valid server search', async () => {
+  it('keeps controls mounted and search focused through server replacements', async () => {
+    const searchResult = deferred<TicketListPage>()
+    const statusResult = deferred<TicketListPage>()
     fetchTickets
       .mockResolvedValueOnce(page(sampleTickets))
-      .mockResolvedValueOnce(page([sampleTickets[0]!], { counts: { ...counts, all: 1 } }))
+      .mockReturnValueOnce(searchResult.promise)
+      .mockReturnValueOnce(statusResult.promise)
     renderTicketsPage()
     await screen.findByRole('table')
     const user = userEvent.setup()
@@ -189,9 +192,52 @@ describe('TicketListPage', () => {
     expect(fetchTickets.mock.calls[1]?.[0]).toEqual(
       expect.objectContaining({ search: 'İş', pageSize: 50 }),
     )
+    expect(screen.getByLabelText('Taleplerde ara')).toBe(search)
+    expect(search).toHaveFocus()
     expect(
       screen.queryByText('Aramak için en az 2 karakter girin.'),
     ).not.toBeInTheDocument()
+
+    searchResult.resolve(
+      page([sampleTickets[0]!], { counts: { ...counts, all: 1 } }),
+    )
+    await screen.findByText('VS-000042')
+
+    await user.selectOptions(screen.getByLabelText('Durum'), 'Resolved')
+    await waitFor(() => expect(fetchTickets).toHaveBeenCalledTimes(3))
+    expect(screen.getByLabelText('Taleplerde ara')).toBeInTheDocument()
+    expect(screen.getByLabelText('Durum')).toHaveValue('Resolved')
+
+    statusResult.resolve(page([], { counts: { ...counts, resolved: 0 } }))
+    expect(
+      await screen.findByText('Aramanızla eşleşen destek talebi bulunamadı.'),
+    ).toBeInTheDocument()
+  })
+
+  it('treats refresh after a successful empty page as post-initialization', async () => {
+    const refresh = deferred<TicketListPage>()
+    fetchTickets
+      .mockResolvedValueOnce(page([], { counts: { ...counts, all: 0 } }))
+      .mockReturnValueOnce(refresh.promise)
+    renderTicketsPage()
+    await screen.findByText('Henüz destek talebi yok.')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Yenile' }))
+
+    expect(screen.getByLabelText('Taleplerde ara')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Yenileniyor…' })).toBeDisabled()
+    expect(
+      screen.queryByText('Destek talepleri yükleniyor…'),
+    ).not.toBeInTheDocument()
+
+    refresh.reject(new Error('Server boom'))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Destek talepleri güncellenemedi.')
+    expect(within(alert).getByRole('button', { name: 'Yeniden dene' })).toBeEnabled()
+    expect(screen.getByLabelText('Taleplerde ara')).toBeInTheDocument()
+    expect(alert).not.toHaveTextContent(
+      'Destek talepleri yüklenemedi. Lütfen yeniden deneyin.',
+    )
   })
 
   it('loads more only when available and disables the action while appending', async () => {

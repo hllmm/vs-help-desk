@@ -22,6 +22,7 @@ export type UseTicketsResult = {
   tickets: readonly TicketListItem[]
   counts: TicketStatusCounts
   hasMore: boolean
+  hasInitialized: boolean
   isLoading: boolean
   isLoadingMore: boolean
   error: TicketLoadError | null
@@ -33,6 +34,7 @@ type TicketRequestState = {
   tickets: TicketListItem[]
   counts: TicketStatusCounts
   hasMore: boolean
+  hasInitialized: boolean
   isLoading: boolean
   isLoadingMore: boolean
   error: TicketLoadError | null
@@ -69,6 +71,7 @@ export function useTickets(options: UseTicketsOptions): UseTicketsResult {
     tickets: [],
     counts: EMPTY_COUNTS,
     hasMore: false,
+    hasInitialized: false,
     isLoading: true,
     isLoadingMore: false,
     error: null,
@@ -90,6 +93,7 @@ export function useTickets(options: UseTicketsOptions): UseTicketsResult {
         tickets: preserveTickets ? current.tickets : [],
         counts: preserveTickets ? current.counts : EMPTY_COUNTS,
         hasMore: false,
+        hasInitialized: current.hasInitialized,
         isLoading: true,
         isLoadingMore: false,
         error: null,
@@ -110,6 +114,7 @@ export function useTickets(options: UseTicketsOptions): UseTicketsResult {
           tickets: page.items,
           counts: page.counts,
           hasMore: page.hasMore,
+          hasInitialized: true,
           isLoading: false,
           isLoadingMore: false,
           error: null,
@@ -194,6 +199,7 @@ export function useTickets(options: UseTicketsOptions): UseTicketsResult {
           tickets: [...current.tickets, ...uniqueItems],
           counts: page.counts,
           hasMore: page.hasMore,
+          hasInitialized: current.hasInitialized,
           isLoading: false,
           isLoadingMore: false,
           error: null,
@@ -231,6 +237,7 @@ export function useTickets(options: UseTicketsOptions): UseTicketsResult {
     tickets: state.tickets,
     counts: state.counts,
     hasMore: state.hasMore,
+    hasInitialized: state.hasInitialized,
     isLoading: state.isLoading,
     isLoadingMore: state.isLoadingMore,
     error: state.error,
