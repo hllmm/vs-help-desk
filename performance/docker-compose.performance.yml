@@ -1,0 +1,26 @@
+# Performance override for docker-compose.prod.yml (VS_HelpDesk_Perf fixture).
+# Usage: docker compose --env-file performance/.env \
+#          -f docker-compose.prod.yml -f performance/docker-compose.performance.yml up -d --build
+name: vshelpdesk-perf
+
+services:
+  db:
+    environment:
+      POSTGRES_USER: vs_help_desk
+      POSTGRES_PASSWORD: local-perf-only
+      POSTGRES_DB: VS_HelpDesk_Perf
+    # Exposed only on loopback so migrations and the guarded seed can run from the host.
+    ports:
+      - "127.0.0.1:55432:5432"
+
+  api:
+    environment:
+      ConnectionStrings__DefaultConnection: >-
+        Host=db;Port=5432;Database=VS_HelpDesk_Perf;Username=vs_help_desk;Password=local-perf-only
+      # Non-secret placeholder: the read-path load test never sends mail.
+      Email__SupportMailboxAddress: perf-support@example.invalid
+
+  web:
+    # Replace (not append) the published nginx port, loopback only.
+    ports: !override
+      - "127.0.0.1:18080:80"
