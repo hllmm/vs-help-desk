@@ -63,10 +63,31 @@ public sealed class TicketListCursorCodecTests
     }
 
     [Fact]
+    public void Decode_UnexpectedJsonMember_ThrowsStableValidationCode()
+    {
+        var exception = Assert.Throws<RequestValidationException>(
+            () => codec.Decode(Base64Url(
+                "{\"lastActivityAt\":\"2026-08-03T09:15:00Z\",\"ticketNumber\":\"VS-000123\",\"extra\":\"value\"}")));
+
+        Assert.Equal(InvalidCursorCode, exception.Code);
+    }
+
+    [Fact]
     public void Decode_NonUtcTimestamp_ThrowsStableValidationCode()
     {
         var exception = Assert.Throws<RequestValidationException>(
             () => codec.Decode(Base64Url("{\"lastActivityAt\":\"2026-08-03T09:15:00\",\"ticketNumber\":\"VS-000123\"}")));
+
+        Assert.Equal(InvalidCursorCode, exception.Code);
+    }
+
+    [Fact]
+    public void Encode_OversizedCursorOutput_ThrowsStableValidationCode()
+    {
+        var exception = Assert.Throws<RequestValidationException>(() => codec.Encode(
+            new TicketListCursor(
+                new DateTime(2026, 8, 3, 9, 15, 0, DateTimeKind.Utc),
+                new string('A', 400))));
 
         Assert.Equal(InvalidCursorCode, exception.Code);
     }

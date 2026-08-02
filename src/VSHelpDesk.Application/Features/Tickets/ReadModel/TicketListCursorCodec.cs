@@ -10,6 +10,10 @@ public sealed class TicketListCursorCodec
     private const int MaxCursorLength = 512;
     private const string InvalidCursorCode = "invalid-ticket-list-cursor";
     private static readonly UTF8Encoding Utf8 = new(false, true);
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
+    };
 
     public string Encode(TicketListCursor cursor)
     {
@@ -23,10 +27,17 @@ public sealed class TicketListCursorCodec
             cursor.LastActivityAt,
             cursor.TicketNumber));
 
-        return Convert.ToBase64String(payload)
+        var encoded = Convert.ToBase64String(payload)
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');
+
+        if (encoded.Length > MaxCursorLength)
+        {
+            throw InvalidCursor();
+        }
+
+        return encoded;
     }
 
     public TicketListCursor Decode(string cursor)
@@ -49,7 +60,8 @@ public sealed class TicketListCursorCodec
             };
 
             var payload = JsonSerializer.Deserialize<CursorPayload>(
-                Utf8.GetString(Convert.FromBase64String(base64)));
+                Utf8.GetString(Convert.FromBase64String(base64)),
+                JsonOptions);
 
             if (payload is null || string.IsNullOrEmpty(payload.TicketNumber) ||
                 payload.LastActivityAt.Kind != DateTimeKind.Utc)
