@@ -1,10 +1,15 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Features.Tickets.ReadModel;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Persistence;
+using VSHelpDesk.Infrastructure.Persistence.ReadModel;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Persistence;
 
@@ -69,6 +74,7 @@ public sealed class ApplicationDbContextTests
         Assert.Contains(
             ticketType.GetIndexes(),
             index => index.IsUnique &&
+                index.GetDatabaseName() == "IX_Tickets_TicketNumber" &&
                 index.Properties.Select(property => property.Name)
                     .SequenceEqual([nameof(Ticket.TicketNumber)]));
 
@@ -167,6 +173,39 @@ public sealed class ApplicationDbContextTests
     }
 
     [Fact]
+    public void Model_ConfiguresTicketReadIndexesAndTrigramExtension()
+    {
+        using var context = CreateMetadataContext();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        Assert.Contains(
+            model.GetPostgresExtensions(),
+            extension => extension.Name == "pg_trgm");
+
+        var ticketType = model.FindEntityType(typeof(Ticket))!;
+        AssertIndex(
+            ticketType,
+            "IX_Tickets_LastActivityAt_TicketNumber",
+            [nameof(Ticket.LastActivityAt), nameof(Ticket.TicketNumber)],
+            [true, false]);
+        AssertIndex(
+            ticketType,
+            "IX_Tickets_Status_LastActivityAt_TicketNumber",
+            [nameof(Ticket.Status), nameof(Ticket.LastActivityAt), nameof(Ticket.TicketNumber)],
+            [false, true, false]);
+        AssertIndex(
+            ticketType,
+            "IX_Tickets_Status_WaitingCustomerSince_Id",
+            [nameof(Ticket.Status), nameof(Ticket.WaitingCustomerSince), nameof(Ticket.Id)],
+            [false, false, false]);
+
+        AssertTrigramIndex(ticketType, "IX_Tickets_TicketNumber_Trgm", nameof(Ticket.TicketNumber));
+        AssertTrigramIndex(ticketType, "IX_Tickets_Subject_Trgm", nameof(Ticket.Subject));
+        AssertTrigramIndex(ticketType, "IX_Tickets_CustomerName_Trgm", nameof(Ticket.CustomerName));
+        AssertTrigramIndex(ticketType, "IX_Tickets_CustomerEmail_Trgm", nameof(Ticket.CustomerEmail));
+    }
+
+    [Fact]
     public void AddInfrastructure_MissingConnectionString_ThrowsClearConfigurationError()
     {
         var configuration = new ConfigurationBuilder().Build();
@@ -199,6 +238,30 @@ public sealed class ApplicationDbContextTests
     }
 
     [Fact]
+    public void AddInfrastructure_RegistersTicketListReadRepositoryAsScoped()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=metadata_test;Username=test_user"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddInfrastructure(configuration);
+        using var serviceProvider = services.BuildServiceProvider();
+        using var firstScope = serviceProvider.CreateScope();
+        using var secondScope = serviceProvider.CreateScope();
+
+        var first = firstScope.ServiceProvider.GetRequiredService<ITicketListReadRepository>();
+        var sameScope = firstScope.ServiceProvider.GetRequiredService<ITicketListReadRepository>();
+        var otherScope = secondScope.ServiceProvider.GetRequiredService<ITicketListReadRepository>();
+
+        Assert.IsType<EfTicketListReadRepository>(first);
+        Assert.Same(first, sameScope);
+        Assert.NotSame(first, otherScope);
+    }
+
+    [Fact]
     public void ApplicationDbContextFactory_MissingEnvironmentConnection_ThrowsClearConfigurationError()
     {
         const string environmentKey = "ConnectionStrings__DefaultConnection";
@@ -226,5 +289,36 @@ public sealed class ApplicationDbContextTests
             .UseNpgsql("Host=localhost;Database=metadata_test;Username=test_user")
             .Options;
         return new ApplicationDbContext(options);
+    }
+
+    private static void AssertIndex(
+        Microsoft.EntityFrameworkCore.Metadata.IEntityType entityType,
+        string databaseName,
+        IReadOnlyList<string> properties,
+        IReadOnlyList<bool> descending)
+    {
+        var index = Assert.Single(
+            entityType.GetIndexes(),
+            candidate => candidate.GetDatabaseName() == databaseName);
+
+        Assert.Equal(properties, index.Properties.Select(property => property.Name));
+        Assert.Equal(
+            descending,
+            index.IsDescending ?? Enumerable.Repeat(false, index.Properties.Count).ToArray());
+    }
+
+    private static void AssertTrigramIndex(
+        Microsoft.EntityFrameworkCore.Metadata.IEntityType entityType,
+        string databaseName,
+        string property)
+    {
+        var index = Assert.Single(
+            entityType.GetIndexes(),
+            candidate => candidate.GetDatabaseName() == databaseName);
+
+        Assert.Equal([property], index.Properties.Select(indexProperty => indexProperty.Name));
+        Assert.False(index.IsUnique);
+        Assert.Equal("gin", index.GetMethod());
+        Assert.Equal(["gin_trgm_ops"], index.GetOperators());
     }
 }

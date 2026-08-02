@@ -10,10 +10,12 @@ using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
+using VSHelpDesk.Application.Features.Tickets.ReadModel;
 using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.Infrastructure.Email;
 using VSHelpDesk.Infrastructure.Parameters;
 using VSHelpDesk.Infrastructure.Persistence;
+using VSHelpDesk.Infrastructure.Persistence.ReadModel;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
 using VSHelpDesk.Infrastructure.Processing;
 using VSHelpDesk.Infrastructure.Storage;
@@ -39,6 +41,7 @@ public static class DependencyInjection
         services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connectionString));
         services.AddScoped<IApplicationDbContext>(
             serviceProvider => serviceProvider.GetRequiredService<ApplicationDbContext>());
+        services.AddScoped<ITicketListReadRepository, EfTicketListReadRepository>();
         services.AddScoped<IApplicationParameterReader, ApplicationParameterReader>();
         services.AddOptions<SeedUserOptions>()
             .Bind(configuration.GetSection(SeedUserOptions.SectionName));
