@@ -1,14 +1,17 @@
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
+
+using VSHelpDesk.Application.Common;
 
 namespace VSHelpDesk.Application.UnitTests.Features.Authentication.Login;
 
 public sealed class LoginHandlerTests
 {
-    private const string GenericFailure = "Invalid username or password.";
+    private static readonly string GenericFailure = ApplicationMessages.Auth.InvalidCredentials;
     private static readonly DateTimeOffset LoginTime = new(2026, 7, 20, 10, 30, 0, TimeSpan.Zero);
 
     [Fact]
@@ -104,16 +107,31 @@ public sealed class LoginHandlerTests
         FakeApplicationDbContext context,
         FakePasswordHasher passwordHasher,
         FakeTokenService tokenService) =>
-        new(context, passwordHasher, tokenService, new FixedTimeProvider(LoginTime));
+        new(context, context, passwordHasher, tokenService, new FixedTimeProvider(LoginTime));
 
     private static User CreateUser(string username = "active.user") =>
         new("Active User", username, $"{username}@example.test", "stored-password-hash", UserRole.Support);
 
-    private sealed class FakeApplicationDbContext(params User[] users) : IApplicationDbContext
+    private sealed class FakeApplicationDbContext(params User[] users) : IApplicationDbContext, IUserRepository, IUnitOfWork
     {
         public int SaveChangesCallCount { get; private set; }
 
         public IQueryable<User> Users { get; } = users.AsQueryable();
+
+        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Users.FirstOrDefault(u => u.Id == id));
+
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Users.FirstOrDefault(u => u.Email == email));
+
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Users.FirstOrDefault(u => u.Username == username));
+
+        public IQueryable<User> GetListQueryable() => Users;
+
+        public Task AddAsync(User user, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Update(User user) { }
 
         public IQueryable<Ticket> Tickets { get; } = Array.Empty<Ticket>().AsQueryable();
 
@@ -132,6 +150,9 @@ public sealed class LoginHandlerTests
         public IQueryable<ParameterChangeLog> ParameterChangeLogs { get; } =
             Array.Empty<ParameterChangeLog>().AsQueryable();
 
+        public IQueryable<SystemLog> SystemLogs { get; } =
+            Array.Empty<SystemLog>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
         }
@@ -145,7 +166,6 @@ public sealed class LoginHandlerTests
         public void ClearTrackedChanges()
         {
         }
-
     }
 
     private sealed class FakePasswordHasher(string validPassword) : IPasswordHasher

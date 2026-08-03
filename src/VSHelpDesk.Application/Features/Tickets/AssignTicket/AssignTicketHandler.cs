@@ -1,13 +1,15 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Domain.Exceptions;
 
 namespace VSHelpDesk.Application.Features.Tickets.AssignTicket;
 
 public sealed class AssignTicketHandler(
-    IApplicationDbContext applicationDbContext,
+    ITicketRepository ticketRepository,
+    IUserRepository userRepository,
+    IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
     TimeProvider timeProvider,
     ILogger<AssignTicketHandler> logger)
@@ -23,8 +25,7 @@ public sealed class AssignTicketHandler(
             throw new UnauthorizedApplicationException();
         }
 
-        var ticket = applicationDbContext.Tickets
-            .FirstOrDefault(candidate => candidate.Id == command.TicketId);
+        var ticket = await ticketRepository.GetByIdAsync(command.TicketId, cancellationToken: cancellationToken);
         if (ticket is null)
         {
             throw new NotFoundException($"Ticket '{command.TicketId}' was not found.");
@@ -41,8 +42,8 @@ public sealed class AssignTicketHandler(
                 throw new DomainException(AssignTicketCodes.AssigneeRequired);
             }
 
-            var targetIsActive = applicationDbContext.Users
-                .Any(user => user.Id == targetUserId && user.IsActive);
+            var targetUser = await userRepository.GetByIdAsync(targetUserId, cancellationToken);
+            var targetIsActive = targetUser is not null && targetUser.IsActive;
             if (!targetIsActive)
             {
                 throw new DomainException(AssignTicketCodes.AssigneeNotAvailable);
@@ -57,7 +58,7 @@ public sealed class AssignTicketHandler(
 
         if (changed)
         {
-            await applicationDbContext.SaveChangesAsync(cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
         logger.LogInformation(

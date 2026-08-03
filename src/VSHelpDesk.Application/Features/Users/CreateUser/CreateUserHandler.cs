@@ -1,6 +1,6 @@
 using System.Net.Mail;
 using VSHelpDesk.Application.Abstractions.Authentication;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Features.Users.GetUsers;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -9,7 +9,8 @@ using VSHelpDesk.Domain.Exceptions;
 namespace VSHelpDesk.Application.Features.Users.CreateUser;
 
 public sealed class CreateUserHandler(
-    IApplicationDbContext applicationDbContext,
+    IUserRepository userRepository,
+    IUnitOfWork unitOfWork,
     IPasswordHasher passwordHasher)
 {
     public const int MinPasswordLength = 12;
@@ -30,8 +31,8 @@ public sealed class CreateUserHandler(
         var password = ValidatePassword(command.Password);
         var role = ParseRole(command.Role);
 
-        var usernameTaken = applicationDbContext.Users.Any(user => user.Username == username);
-        if (usernameTaken)
+        var existingUser = await userRepository.GetByUsernameAsync(username, cancellationToken);
+        if (existingUser is not null)
         {
             throw new DomainException(UserCodes.UsernameTaken);
         }
@@ -43,8 +44,8 @@ public sealed class CreateUserHandler(
             passwordHasher.Hash(password),
             role);
 
-        applicationDbContext.Add(user);
-        await applicationDbContext.SaveChangesAsync(cancellationToken);
+        await userRepository.AddAsync(user, cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ToDto(user);
     }

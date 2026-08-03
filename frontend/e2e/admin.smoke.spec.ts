@@ -62,7 +62,10 @@ function watchBrowser(page: Page) {
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('requestfailed', (request) => {
     const failure = request.failure()?.errorText ?? ''
-    if (!failure.includes('ERR_ABORTED')) {
+    if (
+      !failure.includes('ERR_ABORTED') &&
+      !failure.includes('NS_BINDING_ABORTED')
+    ) {
       errors.push(`${request.method()} ${request.url()} ${failure}`)
     }
   })

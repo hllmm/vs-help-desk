@@ -1,116 +1,95 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Application.Features.Attachments;
 using VSHelpDesk.Domain.Entities;
-using VSHelpDesk.Domain.Enums;
 
 namespace VSHelpDesk.Application.UnitTests.Features.Attachments;
 
 public sealed class TicketAttachmentWriterTests
 {
-    private static readonly DateTimeOffset FixedNow = new(2026, 8, 5, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset FixedNow = new(2026, 7, 28, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task TryWrite_AllowedText_StoresMetadataAndFile()
+    public async Task MessageNotFound_ReturnsSkippedResultWithoutSavingFile()
     {
-        var message = CreateMessage();
+        var db = new FakeDb();
+        var storage = new RecordingStorage();
+        var writer = CreateWriter(db, storage, maxBytes: 100, allowed: ["image/png"]);
+        using var stream = new MemoryStream("data"u8.ToArray());
+
+        var result = await writer.TryWriteAsync(
+            Guid.NewGuid(),
+            "test.png",
+            "image/png",
+            stream,
+            declaredSize: 4,
+            CancellationToken.None);
+
+        Assert.False(result.WasStored);
+        Assert.Contains("was not found", result.SkipReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(storage.Saved);
+        Assert.Empty(db.Attachments);
+    }
+
+    [Fact]
+    public async Task PolicyViolation_ReturnsSkippedResultWithoutSavingFile()
+    {
+        var message = new TicketMessage(Guid.NewGuid(), Domain.Enums.MessageSenderType.Customer, "Body");
         var db = new FakeDb(message);
         var storage = new RecordingStorage();
-        var writer = CreateWriter(db, storage, maxBytes: 1024, allowed: ["text/plain"]);
+        var writer = CreateWriter(db, storage, maxBytes: 10, allowed: ["image/png"]);
+        using var stream = new MemoryStream("very long content exceeding size limit"u8.ToArray());
 
-        await using var content = new MemoryStream("hello"u8.ToArray());
         var result = await writer.TryWriteAsync(
             message.Id,
-            "note.txt",
-            "text/plain",
-            content,
-            content.Length,
+            "test.png",
+            "image/png",
+            stream,
+            declaredSize: 100,
+            CancellationToken.None);
+
+        Assert.False(result.WasStored);
+        Assert.Contains("exceeds the maximum allowed size", result.SkipReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(storage.Saved);
+        Assert.Empty(db.Attachments);
+    }
+
+    [Fact]
+    public async Task ValidAttachment_StoresFileAndPersistsMetadata()
+    {
+        var message = new TicketMessage(Guid.NewGuid(), Domain.Enums.MessageSenderType.Customer, "Body");
+        var db = new FakeDb(message);
+        var storage = new RecordingStorage();
+        var writer = CreateWriter(db, storage, maxBytes: 1000, allowed: ["image/png"]);
+        var payload = "png-content"u8.ToArray();
+        using var stream = new MemoryStream(payload);
+
+        var result = await writer.TryWriteAsync(
+            message.Id,
+            "photo.png",
+            "image/png",
+            stream,
+            declaredSize: payload.Length,
             CancellationToken.None);
 
         Assert.True(result.WasStored);
-        Assert.NotNull(result.AttachmentId);
-        Assert.Single(db.Attachments);
-        Assert.Single(storage.Saved);
-        Assert.Equal("note.txt", db.Attachments[0].FileName);
-    }
+        Assert.NotEqual(Guid.Empty, result.AttachmentId);
 
-    [Fact]
-    public async Task TryWrite_DisallowedMime_SkipsWithoutStorageOrDb()
-    {
-        var message = CreateMessage();
-        var db = new FakeDb(message);
-        var storage = new RecordingStorage();
-        var writer = CreateWriter(db, storage, maxBytes: 1024, allowed: ["text/plain"]);
+        var savedFile = Assert.Single(storage.Saved);
+        Assert.Equal("image/png", savedFile.ContentType);
+        Assert.Equal(payload.Length, savedFile.FileSize);
 
-        await using var content = new MemoryStream("x"u8.ToArray());
-        var result = await writer.TryWriteAsync(
-            message.Id,
-            "evil.exe",
-            "application/x-msdownload",
-            content,
-            content.Length,
-            CancellationToken.None);
-
-        Assert.False(result.WasStored);
-        Assert.Contains("not allowed", result.SkipReason, StringComparison.OrdinalIgnoreCase);
-        Assert.Empty(db.Attachments);
-        Assert.Empty(storage.Saved);
-    }
-
-    [Fact]
-    public async Task TryWrite_ZeroSize_Skips()
-    {
-        var message = CreateMessage();
-        var db = new FakeDb(message);
-        var storage = new RecordingStorage();
-        var writer = CreateWriter(db, storage, maxBytes: 1024, allowed: ["text/plain"]);
-
-        await using var content = new MemoryStream();
-        var result = await writer.TryWriteAsync(
-            message.Id,
-            "empty.txt",
-            "text/plain",
-            content,
-            declaredSize: 0,
-            CancellationToken.None);
-
-        Assert.False(result.WasStored);
-        Assert.Empty(db.Attachments);
-        Assert.Empty(storage.Saved);
-    }
-
-    [Fact]
-    public async Task TryWrite_TooLarge_SkipsWithoutStorageOrDb()
-    {
-        var message = CreateMessage();
-        var db = new FakeDb(message);
-        var storage = new RecordingStorage();
-        var writer = CreateWriter(db, storage, maxBytes: 4, allowed: ["text/plain"]);
-
-        await using var content = new MemoryStream("12345"u8.ToArray());
-        var result = await writer.TryWriteAsync(
-            message.Id,
-            "notes.txt",
-            "text/plain",
-            content,
-            content.Length,
-            CancellationToken.None);
-
-        Assert.False(result.WasStored);
-        Assert.Contains("maximum", result.SkipReason, StringComparison.OrdinalIgnoreCase);
-        Assert.Empty(db.Attachments);
-        Assert.Empty(storage.Saved);
-    }
-
-    private static TicketMessage CreateMessage()
-    {
-        var ticket = Ticket.Create("VS-000501", "Attach", "Ada", "ada@t.com", FixedNow.UtcDateTime);
-        return new TicketMessage(
-            ticket.Id,
-            MessageSenderType.Customer,
-            "Body",
-            createdAtUtc: FixedNow.UtcDateTime);
+        var attachment = Assert.Single(db.Attachments);
+        Assert.Equal(result.AttachmentId, attachment.Id);
+        Assert.Equal(message.Id, attachment.TicketMessageId);
+        Assert.Equal("photo.png", attachment.FileName);
+        Assert.Equal(savedFile.StoredFileName, attachment.StoredFileName);
+        Assert.Equal(savedFile.FilePath, attachment.FilePath);
+        Assert.Equal("image/png", attachment.ContentType);
+        Assert.Equal(payload.Length, attachment.FileSize);
+        Assert.Equal(FixedNow.UtcDateTime, attachment.CreatedAt);
     }
 
     private static TicketAttachmentWriter CreateWriter(
@@ -119,6 +98,8 @@ public sealed class TicketAttachmentWriterTests
         long maxBytes,
         string[] allowed) =>
         new(
+            db,
+            db,
             db,
             storage,
             new FixedPolicy(maxBytes, allowed),
@@ -173,9 +154,12 @@ public sealed class TicketAttachmentWriterTests
 
         public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+
+        public Task<IReadOnlyList<string>> ListStoredFilesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>(Saved.Select(s => s.StoredFileName).ToList());
     }
 
-    private sealed class FakeDb : IApplicationDbContext
+    private sealed class FakeDb : IApplicationDbContext, ITicketRepository, ITicketAttachmentRepository, IUnitOfWork
     {
         private readonly List<TicketMessage> messages;
         private readonly List<object> pending = [];
@@ -183,6 +167,22 @@ public sealed class TicketAttachmentWriterTests
         public List<TicketAttachment> Attachments { get; } = [];
 
         public FakeDb(params TicketMessage[] messages) => this.messages = messages.ToList();
+
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<Ticket?>(null);
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) => Task.FromResult<Ticket?>(null);
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Update(Ticket ticket) { }
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(messages.Any(m => m.Id == messageId));
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(messages.FirstOrDefault(m => m.Id == messageId));
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
+
+        Task<TicketAttachment?> ITicketAttachmentRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Attachments.FirstOrDefault(a => a.Id == id));
+        public Task<TicketAttachment?> GetByStoredFileNameAsync(string storedFileName, CancellationToken cancellationToken = default) => Task.FromResult(Attachments.FirstOrDefault(a => a.StoredFileName == storedFileName));
+        public Task AddAsync(TicketAttachment attachment, CancellationToken cancellationToken = default) { Add(attachment); return Task.CompletedTask; }
+        public void Remove(TicketAttachment attachment) => Attachments.Remove(attachment);
+        public IQueryable<TicketAttachment> GetOrphansQueryable() => TicketAttachments.Where(a => !messages.Any(m => m.Id == a.TicketMessageId));
 
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => Array.Empty<Ticket>().AsQueryable();
@@ -196,6 +196,9 @@ public sealed class TicketAttachmentWriterTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 

@@ -8,7 +8,8 @@ namespace VSHelpDesk.Infrastructure.Email;
 
 public sealed class SmtpEmailSender(
     IOptions<EmailOptions> emailOptions,
-    ILogger<SmtpEmailSender> logger) : IEmailSender
+    ILogger<SmtpEmailSender> logger,
+    IEmailTemplateService? emailTemplateService = null) : IEmailSender
 {
     public async Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
     {
@@ -29,10 +30,19 @@ public sealed class SmtpEmailSender(
         mime.To.Add(to);
         mime.Subject = message.Subject ?? string.Empty;
 
-        var bodyBuilder = new BodyBuilder();
-        if (message.IsHtml)
+        var isHtml = message.IsHtml;
+        var htmlBody = message.Body;
+
+        if (!isHtml && emailTemplateService != null)
         {
-            bodyBuilder.HtmlBody = message.Body;
+            htmlBody = emailTemplateService.WrapInCorporateTemplate(message.Subject ?? string.Empty, message.Body);
+            isHtml = true;
+        }
+
+        var bodyBuilder = new BodyBuilder();
+        if (isHtml)
+        {
+            bodyBuilder.HtmlBody = htmlBody;
         }
         else
         {

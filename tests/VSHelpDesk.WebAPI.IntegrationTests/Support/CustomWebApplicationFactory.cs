@@ -18,6 +18,8 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+        builder.UseSetting("Database:Provider", "InMemory");
+        builder.UseSetting("ConnectionStrings:DefaultConnection", "TestInMemoryDb");
         builder.UseSetting("Auth:SigningKey", TestSigningKey);
         builder.UseSetting("Jobs:ApiKey", TestJobsApiKey);
         builder.UseSetting("Email:SupportMailboxAddress", "support@example.test");

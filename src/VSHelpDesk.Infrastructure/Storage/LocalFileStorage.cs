@@ -100,6 +100,23 @@ public sealed class LocalFileStorage : IFileStorage
         return Task.CompletedTask;
     }
 
+    public Task<IReadOnlyList<string>> ListStoredFilesAsync(CancellationToken cancellationToken = default)
+    {
+        _ = cancellationToken;
+        if (!Directory.Exists(absoluteRoot))
+        {
+            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+        }
+
+        var files = Directory.GetFiles(absoluteRoot)
+            .Select(Path.GetFileName)
+            .Where(name => !string.IsNullOrEmpty(name))
+            .Select(name => name!)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<string>>(files);
+    }
+
     private string ResolveExistingPath(string storedFileName)
     {
         var safeName = Path.GetFileName(storedFileName);

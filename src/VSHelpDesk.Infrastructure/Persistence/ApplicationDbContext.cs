@@ -22,6 +22,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<ParameterChangeLog> ParameterChangeLogs => Set<ParameterChangeLog>();
 
+    public DbSet<SystemLog> SystemLogs => Set<SystemLog>();
+
     IQueryable<User> IApplicationDbContext.Users => Users;
 
     IQueryable<Ticket> IApplicationDbContext.Tickets => Tickets;
@@ -39,7 +41,12 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     IQueryable<ParameterChangeLog> IApplicationDbContext.ParameterChangeLogs =>
         ParameterChangeLogs;
 
+    IQueryable<SystemLog> IApplicationDbContext.SystemLogs =>
+        SystemLogs;
+
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Add(entity);
+
+    void IApplicationDbContext.Remove<TEntity>(TEntity entity) => Remove(entity);
 
     void IApplicationDbContext.ClearTrackedChanges() => ChangeTracker.Clear();
 

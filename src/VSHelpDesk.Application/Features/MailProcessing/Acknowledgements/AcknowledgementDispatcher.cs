@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 
@@ -19,10 +19,13 @@ public sealed record AcknowledgementDispatchSummary(
 /// Delivers new-ticket acknowledgements with durable Pending/Failed/Sent state (BR-002).
 /// </summary>
 public sealed class AcknowledgementDispatcher(
-    IApplicationDbContext db,
+    IProcessedEmailRepository processedEmailRepository,
+    ITicketRepository ticketRepository,
+    IUnitOfWork unitOfWork,
     IEmailSender sender,
     TimeProvider timeProvider,
-    ILogger<AcknowledgementDispatcher> logger)
+    ILogger<AcknowledgementDispatcher> logger,
+    IEmailTemplateService? templateService = null)
 {
     private const string SafeSmtpFailureMessage = "SMTP acknowledgement failed.";
 
@@ -31,8 +34,7 @@ public sealed class AcknowledgementDispatcher(
         CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var processed = db.ProcessedEmailMessages
-            .FirstOrDefault(row => row.Id == processedEmailMessageId);
+        var processed = await processedEmailRepository.GetByIdAsync(processedEmailMessageId, cancellationToken);
 
         if (processed is null || !processed.IsAcknowledgementDue(now))
         {
@@ -44,7 +46,7 @@ public sealed class AcknowledgementDispatcher(
             return new AcknowledgementAttemptResult(Attempted: false, Sent: false);
         }
 
-        var ticket = db.Tickets.FirstOrDefault(candidate => candidate.Id == processed.TicketId);
+        var ticket = await ticketRepository.GetByIdAsync(processed.TicketId.Value, cancellationToken: cancellationToken);
         if (ticket is null)
         {
             return new AcknowledgementAttemptResult(Attempted: false, Sent: false);
@@ -64,12 +66,12 @@ public sealed class AcknowledgementDispatcher(
                 processed.Id,
                 ticket.Id);
             processed.RecordAcknowledgementFailure(now, SafeSmtpFailureMessage);
-            await db.SaveChangesAsync(cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
             return new AcknowledgementAttemptResult(Attempted: true, Sent: false);
         }
 
         processed.RecordAcknowledgementSent(now);
-        await db.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return new AcknowledgementAttemptResult(Attempted: true, Sent: true);
     }
 
@@ -79,7 +81,7 @@ public sealed class AcknowledgementDispatcher(
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         // Database-translatable predicate only — never call IsAcknowledgementDue in the query.
-        var dueIds = db.ProcessedEmailMessages
+        var dueIds = processedEmailRepository.GetListQueryable()
             .Where(row =>
                 (row.AcknowledgementStatus == AcknowledgementStatus.Pending
                  || row.AcknowledgementStatus == AcknowledgementStatus.Failed)
@@ -114,17 +116,27 @@ public sealed class AcknowledgementDispatcher(
         return new AcknowledgementDispatchSummary(attempted, sent, failed);
     }
 
-    private static EmailMessage BuildAcknowledgement(Ticket ticket) =>
-        new(
+    private EmailMessage BuildAcknowledgement(Ticket ticket)
+    {
+        var subject = $"[{ticket.TicketNumber}] We received your support request";
+        var rawBody =
+            $"Hello,{Environment.NewLine}{Environment.NewLine}" +
+            $"We received your message and opened ticket {ticket.TicketNumber}.{Environment.NewLine}" +
+            $"Please keep {ticket.TicketNumber} in the subject when you reply.{Environment.NewLine}{Environment.NewLine}" +
+            "VS Help Desk";
+
+        var body = templateService != null
+            ? templateService.WrapInCorporateTemplate(subject, rawBody)
+            : rawBody;
+        var isHtml = templateService != null;
+
+        return new EmailMessage(
             ToAddress: ticket.CustomerEmail,
             ToDisplayName: string.IsNullOrWhiteSpace(ticket.CustomerName)
                 ? ticket.CustomerEmail
                 : ticket.CustomerName,
-            Subject: $"[{ticket.TicketNumber}] We received your support request",
-            Body:
-            $"Hello,{Environment.NewLine}{Environment.NewLine}" +
-            $"We received your message and opened ticket {ticket.TicketNumber}.{Environment.NewLine}" +
-            $"Please keep {ticket.TicketNumber} in the subject when you reply.{Environment.NewLine}{Environment.NewLine}" +
-            "VS Help Desk",
-            IsHtml: false);
+            Subject: subject,
+            Body: body,
+            IsHtml: isHtml);
+    }
 }

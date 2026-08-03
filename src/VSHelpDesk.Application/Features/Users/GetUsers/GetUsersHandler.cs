@@ -1,14 +1,14 @@
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 
 namespace VSHelpDesk.Application.Features.Users.GetUsers;
 
-public sealed class GetUsersHandler(IApplicationDbContext applicationDbContext)
+public sealed class GetUsersHandler(IUserRepository userRepository)
 {
     public Task<IReadOnlyList<UserListItemDto>> HandleAsync(
         CancellationToken cancellationToken = default)
     {
         // Sync materialization matches other Application list handlers (e.g. GetParameters).
-        var rows = applicationDbContext.Users
+        var rows = userRepository.GetListQueryable()
             .OrderBy(user => user.Username)
             .ToList();
 

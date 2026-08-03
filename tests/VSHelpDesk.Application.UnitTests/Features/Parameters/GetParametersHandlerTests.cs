@@ -1,5 +1,6 @@
 using VSHelpDesk.Application.Abstractions.Parameters;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Features.Parameters;
 using VSHelpDesk.Application.Features.Parameters.GetParameters;
 using VSHelpDesk.Domain.Entities;
@@ -57,9 +58,25 @@ public sealed class GetParametersHandlerTests
             throw new NotSupportedException();
     }
 
-    private sealed class FakeDb : IApplicationDbContext
+    private sealed class FakeDb : IApplicationDbContext, IApplicationParameterRepository
     {
         public List<ApplicationParameter> Parameters { get; } = [];
+
+        public Task<ApplicationParameter?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Parameters.FirstOrDefault(p => p.Key == code));
+
+        public Task<ApplicationParameter?> GetByKeyAsync(string key, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Parameters.FirstOrDefault(p => p.Key == key));
+
+        public Task<IReadOnlyList<ApplicationParameter>> GetAllAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ApplicationParameter>>(Parameters.ToList());
+
+        public Task AddChangeLogAsync(ParameterChangeLog changeLog, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public void Update(ApplicationParameter parameter) { }
+
+        public IQueryable<ParameterChangeLog> GetChangeLogsQueryable() => Array.Empty<ParameterChangeLog>().AsQueryable();
 
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => Array.Empty<Ticket>().AsQueryable();
@@ -73,6 +90,9 @@ public sealed class GetParametersHandlerTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {

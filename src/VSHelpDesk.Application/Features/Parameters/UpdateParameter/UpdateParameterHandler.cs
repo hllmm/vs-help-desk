@@ -1,6 +1,6 @@
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Parameters;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Parameters.GetParameters;
 using VSHelpDesk.Domain.Entities;
@@ -9,7 +9,8 @@ using VSHelpDesk.Domain.Exceptions;
 namespace VSHelpDesk.Application.Features.Parameters.UpdateParameter;
 
 public sealed class UpdateParameterHandler(
-    IApplicationDbContext applicationDbContext,
+    IApplicationParameterRepository parameterRepository,
+    IUnitOfWork unitOfWork,
     IApplicationParameterReader reader,
     ICurrentUserService currentUserService,
     TimeProvider timeProvider)
@@ -37,8 +38,8 @@ public sealed class UpdateParameterHandler(
 
         await reader.EnsureCatalogAsync(cancellationToken);
 
-        var entity = applicationDbContext.ApplicationParameters
-            .FirstOrDefault(parameter => parameter.Key == command.Key)
+        var entity = await parameterRepository.GetByKeyAsync(command.Key, cancellationToken)
+            ?? await parameterRepository.GetByCodeAsync(command.Key, cancellationToken)
             ?? throw new NotFoundException($"Parameter '{command.Key}' was not found.");
 
         var oldValue = entity.Value;
@@ -46,13 +47,15 @@ public sealed class UpdateParameterHandler(
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         entity.UpdateValue(newValue, now);
-        applicationDbContext.Add(new ParameterChangeLog(
+        parameterRepository.Update(entity);
+        await parameterRepository.AddChangeLogAsync(new ParameterChangeLog(
             entity.Key,
             oldValue,
             newValue,
             userId,
-            now));
-        await applicationDbContext.SaveChangesAsync(cancellationToken);
+            now), cancellationToken);
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new ParameterDto(
             entity.Key,

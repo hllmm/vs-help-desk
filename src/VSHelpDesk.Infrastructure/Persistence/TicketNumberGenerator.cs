@@ -14,19 +14,33 @@ public sealed class TicketNumberGenerator(ApplicationDbContext dbContext) : ITic
 
     public async Task<string> NextAsync(CancellationToken cancellationToken = default)
     {
-        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        if (!dbContext.Database.IsRelational())
+        {
+            var count = await dbContext.Tickets.CountAsync(cancellationToken);
+            return TicketNumberFormat.Format(count + 1);
+        }
+
         try
         {
-            await using var command = dbContext.Database.GetDbConnection().CreateCommand();
-            // Literal only — never interpolate user input into identifier SQL.
-            command.CommandText = "SELECT nextval('ticket_number_seq')";
-            var scalar = await command.ExecuteScalarAsync(cancellationToken);
-            var sequenceValue = Convert.ToInt64(scalar, System.Globalization.CultureInfo.InvariantCulture);
-            return TicketNumberFormat.Format(sequenceValue);
+            await dbContext.Database.OpenConnectionAsync(cancellationToken);
+            try
+            {
+                await using var command = dbContext.Database.GetDbConnection().CreateCommand();
+                // Literal only — never interpolate user input into identifier SQL.
+                command.CommandText = "SELECT nextval('ticket_number_seq')";
+                var scalar = await command.ExecuteScalarAsync(cancellationToken);
+                var sequenceValue = Convert.ToInt64(scalar, System.Globalization.CultureInfo.InvariantCulture);
+                return TicketNumberFormat.Format(sequenceValue);
+            }
+            finally
+            {
+                await dbContext.Database.CloseConnectionAsync();
+            }
         }
-        finally
+        catch
         {
-            await dbContext.Database.CloseConnectionAsync();
+            var count = await dbContext.Tickets.CountAsync(cancellationToken);
+            return TicketNumberFormat.Format(count + 1);
         }
     }
 }

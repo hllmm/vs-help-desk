@@ -672,9 +672,12 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
                 await using (var scope = factory.Services.CreateAsyncScope())
                 {
                     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-                    await db.TicketMessages
-                        .Where(message => message.Id == storageOrder[200].Id)
-                        .ExecuteDeleteAsync();
+                    var msgToDelete = await db.TicketMessages.FirstOrDefaultAsync(message => message.Id == storageOrder[200].Id);
+                    if (msgToDelete is not null)
+                    {
+                        db.TicketMessages.Remove(msgToDelete);
+                        await db.SaveChangesAsync();
+                    }
                 }
 
                 using var finalResponse = await client.GetAsync(
@@ -1265,8 +1268,11 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             "Conflict resolve",
             "Ada",
             "ada-resolve-conflict@example.test",
-            DateTime.UtcNow);
-        var conflictDb = new ConflictOnSaveDbContext(openTicket);
+        var (authJwt, csrf, supportUserId) = await CookieAuthTestHelper.CaptureSupportLoginAsync(factory);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var supportUser = await db.Users.FirstAsync(u => u.Id == supportUserId);
+        var conflictDb = new ConflictOnSaveDbContext(openTicket, supportUser);
         var conflictFactory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("environment", "Development");
@@ -1279,11 +1285,6 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
                 services.AddSingleton<IApplicationDbContext>(conflictDb);
             });
         });
-
-        // Login against the base host (real Users store). conflictFactory replaces
-        // IApplicationDbContext with an empty in-memory stub, so seed login cannot run there.
-        // Replay captured cookies onto a conflictFactory client for the resolve call.
-        var (authJwt, csrf, _) = await CookieAuthTestHelper.CaptureSupportLoginAsync(factory);
         using var client = conflictFactory.CreateClient();
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
@@ -1292,7 +1293,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         CookieAuthTestHelper.AddCsrf(request, csrf);
         using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.True(HttpStatusCode.Conflict == response.StatusCode, await response.Content.ReadAsStringAsync());
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
         Assert.Equal(
@@ -1501,7 +1502,8 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             "ada-assignment-conflict@example.test",
             DateTime.UtcNow.AddHours(-1));
         Assert.True(openTicket.Assign(Guid.NewGuid(), DateTime.UtcNow.AddMinutes(-30)));
-        var conflictDb = new ConflictOnSaveDbContext(openTicket);
+        var (authJwt, csrf, supportUser) = await CookieAuthTestHelper.CaptureSupportLoginAsync(factory);
+        var conflictDb = new ConflictOnSaveDbContext(openTicket, supportUser);
         var conflictFactory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("environment", "Development");
@@ -1514,8 +1516,6 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
                 services.AddSingleton<IApplicationDbContext>(conflictDb);
             });
         });
-
-        var (authJwt, csrf, _) = await CookieAuthTestHelper.CaptureSupportLoginAsync(factory);
         using var client = conflictFactory.CreateClient();
         using var request = new HttpRequestMessage(
             HttpMethod.Put,
@@ -1527,7 +1527,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         CookieAuthTestHelper.AddCsrf(request, csrf);
         using var response = await client.SendAsync(request);
 
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.True(HttpStatusCode.Conflict == response.StatusCode, await response.Content.ReadAsStringAsync());
         Assert.Equal(1, conflictDb.SaveCallCount);
         Assert.Equal(0, conflictDb.ClearTrackedCallCount);
     }
@@ -1597,19 +1597,66 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var messageIds = await db.TicketMessages
-            .Where(message => message.TicketId == ticketId)
-            .Select(message => message.Id)
-            .ToArrayAsync();
-        await db.TicketAttachments
-            .Where(attachment => messageIds.Contains(attachment.TicketMessageId))
-            .ExecuteDeleteAsync();
-        await db.TicketMessages
-            .Where(message => message.TicketId == ticketId)
-            .ExecuteDeleteAsync();
-        await db.Tickets
-            .Where(ticket => ticket.Id == ticketId)
-            .ExecuteDeleteAsync();
+        try
+        {
+            var messageIds = await db.TicketMessages
+                .Where(message => message.TicketId == ticketId)
+                .Select(message => message.Id)
+                .ToArrayAsync();
+            await db.TicketAttachments
+                .Where(attachment => messageIds.Contains(attachment.TicketMessageId))
+                .ExecuteDeleteAsync();
+            await db.TicketMessages
+                .Where(message => message.TicketId == ticketId)
+                .ExecuteDeleteAsync();
+            await db.Tickets
+                .Where(ticket => ticket.Id == ticketId)
+                .ExecuteDeleteAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            var messageIds = db.TicketMessages
+                .Where(message => message.TicketId == ticketId)
+                .Select(message => message.Id)
+                .ToList();
+            var attachments = db.TicketAttachments
+                .Where(attachment => messageIds.Contains(attachment.TicketMessageId))
+                .ToList();
+            db.TicketAttachments.RemoveRange(attachments);
+
+            var messages = db.TicketMessages
+                .Where(message => message.TicketId == ticketId)
+                .ToList();
+            db.TicketMessages.RemoveRange(messages);
+
+            var ticket = db.Tickets.FirstOrDefault(t => t.Id == ticketId);
+            if (ticket is not null)
+            {
+                db.Tickets.Remove(ticket);
+            }
+            await db.SaveChangesAsync();
+        }
+    }
+
+    private async Task DeleteTicketAsync(Guid ticketId)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        try
+        {
+            await db.Tickets
+                .Where(ticket => ticket.Id == ticketId)
+                .ExecuteDeleteAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            var ticket = db.Tickets.FirstOrDefault(t => t.Id == ticketId);
+            if (ticket is not null)
+            {
+                db.Tickets.Remove(ticket);
+                await db.SaveChangesAsync();
+            }
+        }
     }
 
     private async Task DeleteTicketsAsync(IEnumerable<Guid> ticketIds)
@@ -1617,7 +1664,16 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         var ids = ticketIds.ToArray();
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await db.Tickets.Where(ticket => ids.Contains(ticket.Id)).ExecuteDeleteAsync();
+        try
+        {
+            await db.Tickets.Where(ticket => ids.Contains(ticket.Id)).ExecuteDeleteAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            var tickets = db.Tickets.Where(ticket => ids.Contains(ticket.Id)).ToList();
+            db.Tickets.RemoveRange(tickets);
+            await db.SaveChangesAsync();
+        }
     }
 
     private static void AssertSafeValidationBody(string body)
@@ -1679,12 +1735,12 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         Ticket Ticket,
         IReadOnlyList<TicketMessage> Messages);
 
-    private sealed class ConflictOnSaveDbContext(Ticket ticket) : IApplicationDbContext
+    private sealed class ConflictOnSaveDbContext(Ticket ticket, User? user = null) : IApplicationDbContext
     {
         public int SaveCallCount { get; private set; }
         public int ClearTrackedCallCount { get; private set; }
 
-        public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
+        public IQueryable<User> Users => user is not null ? new[] { user }.AsQueryable() : Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => new[] { ticket }.AsQueryable();
         public IQueryable<TicketMessage> TicketMessages =>
             Array.Empty<TicketMessage>().AsQueryable();
@@ -1699,7 +1755,14 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
 
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
+        {
+        }
+
+        public void Remove<TEntity>(TEntity entity) where TEntity : class
         {
         }
 

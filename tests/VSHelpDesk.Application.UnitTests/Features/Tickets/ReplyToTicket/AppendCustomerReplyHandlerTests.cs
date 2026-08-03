@@ -1,4 +1,5 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Domain.Entities;
@@ -215,7 +216,7 @@ public sealed class AppendCustomerReplyHandlerTests
     private static AppendCustomerReplyHandler CreateHandler(
         FakeDb db,
         IDatabaseErrorClassifier? classifier = null) =>
-        new(db, new FixedTimeProvider(FixedNow), classifier ?? new NeverConflictClassifier());
+        new(db, db, db, new FixedTimeProvider(FixedNow), classifier ?? new NeverConflictClassifier());
 
     private sealed class NeverConflictClassifier : IDatabaseErrorClassifier
     {
@@ -238,7 +239,7 @@ public sealed class AppendCustomerReplyHandlerTests
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
 
-    private sealed class FakeDb : IApplicationDbContext
+    private sealed class FakeDb : IApplicationDbContext, ITicketRepository, IProcessedEmailRepository, IUnitOfWork
     {
         private readonly List<Ticket> tickets;
         private readonly List<object> pending = [];
@@ -252,6 +253,51 @@ public sealed class AppendCustomerReplyHandlerTests
 
         public FakeDb(params Ticket[] tickets) => this.tickets = tickets.ToList();
 
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(tickets.FirstOrDefault(t => t.Id == id));
+
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+            Task.FromResult(tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
+
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default)
+        {
+            Add(ticket);
+            return Task.CompletedTask;
+        }
+
+        public void Update(Ticket ticket) { }
+
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default)
+        {
+            Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Messages.Any(m => m.Id == messageId));
+
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Messages.FirstOrDefault(m => m.Id == messageId));
+
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Messages.Where(m => m.TicketId == ticketId).OrderBy(m => m.CreatedAt).Select(m => m.Id).FirstOrDefault());
+
+        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Processed.FirstOrDefault(p => p.IdempotencyKey == idempotencyKey));
+
+        Task<ProcessedEmailMessage?> IProcessedEmailRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Processed.FirstOrDefault(p => p.Id == id));
+
+        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken = default)
+        {
+            Add(message);
+            return Task.CompletedTask;
+        }
+
+        IQueryable<ProcessedEmailMessage> IProcessedEmailRepository.GetListQueryable() => ProcessedEmailMessages;
+
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => tickets.AsQueryable();
         public IQueryable<TicketMessage> TicketMessages => Messages.AsQueryable();
@@ -264,6 +310,9 @@ public sealed class AppendCustomerReplyHandlerTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 

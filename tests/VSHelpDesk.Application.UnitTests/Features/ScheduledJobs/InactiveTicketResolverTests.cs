@@ -1,5 +1,6 @@
 using System.Reflection;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 using VSHelpDesk.Domain.Entities;
@@ -59,7 +60,7 @@ public sealed class InactiveTicketResolverTests
     {
         var ticket = WaitingTicket(CutoffUtc);
         var db = new FakeDb(ticket);
-        var resolver = new InactiveTicketResolver(db);
+        var resolver = new InactiveTicketResolver(db, db);
 
         var outcome = await resolver.ResolveAsync(
             ticket.Id,
@@ -80,7 +81,8 @@ public sealed class InactiveTicketResolverTests
     [Fact]
     public async Task MissingOrNoLongerEligibleTicket_ReturnsSkippedWithoutSave()
     {
-        var missingResolver = new InactiveTicketResolver(new FakeDb());
+        var emptyDb = new FakeDb();
+        var missingResolver = new InactiveTicketResolver(emptyDb, emptyDb);
         var missingOutcome = await missingResolver.ResolveAsync(
             Guid.NewGuid(),
             CutoffUtc,
@@ -90,7 +92,7 @@ public sealed class InactiveTicketResolverTests
 
         var recent = WaitingTicket(CutoffUtc.AddTicks(1));
         var recentDb = new FakeDb(recent);
-        var recentResolver = new InactiveTicketResolver(recentDb);
+        var recentResolver = new InactiveTicketResolver(recentDb, recentDb);
         var recentOutcome = await recentResolver.ResolveAsync(
             recent.Id,
             CutoffUtc,
@@ -107,7 +109,7 @@ public sealed class InactiveTicketResolverTests
     {
         var ticket = WaitingTicket(CutoffUtc);
         var db = new FakeDb(ticket, conflictOnSaveCalls: [1]);
-        var resolver = new InactiveTicketResolver(db);
+        var resolver = new InactiveTicketResolver(db, db);
 
         var outcome = await resolver.ResolveAsync(
             ticket.Id,
@@ -140,7 +142,7 @@ public sealed class InactiveTicketResolverTests
                 snapshot.ClosedByUserId = null;
             }
         };
-        var resolver = new InactiveTicketResolver(db);
+        var resolver = new InactiveTicketResolver(db, db);
 
         var outcome = await resolver.ResolveAsync(
             ticket.Id,
@@ -162,7 +164,7 @@ public sealed class InactiveTicketResolverTests
     {
         var ticket = WaitingTicket(CutoffUtc);
         var db = new FakeDb(ticket, conflictOnSaveCalls: [1, 2]);
-        var resolver = new InactiveTicketResolver(db);
+        var resolver = new InactiveTicketResolver(db, db);
 
         var outcome = await resolver.ResolveAsync(
             ticket.Id,
@@ -185,7 +187,7 @@ public sealed class InactiveTicketResolverTests
         {
             OnSave = () => throw new InvalidOperationException("db unavailable")
         };
-        var resolver = new InactiveTicketResolver(db);
+        var resolver = new InactiveTicketResolver(db, db);
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             resolver.ResolveAsync(ticket.Id, CutoffUtc, NowUtc, CancellationToken.None));
@@ -204,7 +206,7 @@ public sealed class InactiveTicketResolverTests
         {
             OnSave = () => cts.Cancel()
         };
-        var resolver = new InactiveTicketResolver(db);
+        var resolver = new InactiveTicketResolver(db, db);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             resolver.ResolveAsync(ticket.Id, CutoffUtc, NowUtc, cts.Token));
@@ -244,7 +246,7 @@ public sealed class InactiveTicketResolverTests
     /// Save conflicts restore last successfully persisted snapshot (Week 3 reply pattern).
     /// OnConflict can simulate a concurrent customer reply committing before reload.
     /// </summary>
-    private sealed class FakeDb : IApplicationDbContext
+    private sealed class FakeDb : IApplicationDbContext, ITicketRepository, IUnitOfWork
     {
         private readonly HashSet<int> conflictOnSaveCalls;
         private Ticket? queryTicket;
@@ -264,6 +266,26 @@ public sealed class InactiveTicketResolverTests
                 CapturePersistedSnapshot(ticket);
             }
         }
+
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Tickets.FirstOrDefault(t => t.Id == id));
+
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
+
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Update(Ticket ticket) { }
+
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult<TicketMessage?>(null);
+
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
 
         public Action? OnSave { get; init; }
         public Action<PersistedSnapshot>? OnConflict { get; init; }
@@ -291,6 +313,9 @@ public sealed class InactiveTicketResolverTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {

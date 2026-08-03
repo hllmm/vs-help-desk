@@ -1,16 +1,16 @@
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 
 namespace VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 
 public sealed class GetAssignableUsersHandler(
-    IApplicationDbContext applicationDbContext)
+    IUserRepository userRepository)
 {
     public Task<IReadOnlyList<AssignableUserDto>> HandleAsync(
         CancellationToken cancellationToken = default)
     {
         _ = cancellationToken;
 
-        IReadOnlyList<AssignableUserDto> users = applicationDbContext.Users
+        IReadOnlyList<AssignableUserDto> users = userRepository.GetListQueryable()
             .Where(user => user.IsActive)
             .OrderBy(user => user.FullName)
             .ThenBy(user => user.Username)

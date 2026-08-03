@@ -1,12 +1,13 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 
 namespace VSHelpDesk.Application.Features.Tickets.ResolveTicket;
 
 public sealed class ResolveTicketHandler(
-    IApplicationDbContext applicationDbContext,
+    ITicketRepository ticketRepository,
+    IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
     TimeProvider timeProvider,
     ILogger<ResolveTicketHandler> logger)
@@ -22,8 +23,7 @@ public sealed class ResolveTicketHandler(
             throw new UnauthorizedApplicationException();
         }
 
-        var ticket = applicationDbContext.Tickets
-            .FirstOrDefault(candidate => candidate.Id == command.TicketId);
+        var ticket = await ticketRepository.GetByIdAsync(command.TicketId, cancellationToken: cancellationToken);
         if (ticket is null)
         {
             throw new NotFoundException($"Ticket '{command.TicketId}' was not found.");
@@ -35,7 +35,7 @@ public sealed class ResolveTicketHandler(
 
         if (changed)
         {
-            await applicationDbContext.SaveChangesAsync(cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
         }
 
         logger.LogInformation(

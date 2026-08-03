@@ -1,28 +1,18 @@
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Application.Common.Exceptions;
 
 namespace VSHelpDesk.Application.Features.Attachments.GetAttachment;
 
 public sealed class GetAttachmentHandler(
-    IApplicationDbContext applicationDbContext,
+    ITicketAttachmentRepository attachmentRepository,
     IFileStorage fileStorage)
 {
     public async Task<GetAttachmentResult> HandleAsync(
         GetAttachmentQuery query,
         CancellationToken cancellationToken)
     {
-        var attachment = applicationDbContext.TicketAttachments
-            .Where(candidate => candidate.Id == query.AttachmentId)
-            .Select(candidate => new
-            {
-                candidate.Id,
-                candidate.FileName,
-                candidate.StoredFileName,
-                candidate.ContentType,
-                candidate.FileSize
-            })
-            .FirstOrDefault();
+        var attachment = await attachmentRepository.GetByIdAsync(query.AttachmentId, cancellationToken);
 
         if (attachment is null)
         {

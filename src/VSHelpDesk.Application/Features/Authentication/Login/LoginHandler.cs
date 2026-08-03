@@ -1,30 +1,30 @@
 using VSHelpDesk.Application.Abstractions.Authentication;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Models;
 
 namespace VSHelpDesk.Application.Features.Authentication.Login;
 
 public sealed class LoginHandler(
-    IApplicationDbContext applicationDbContext,
+    IUserRepository userRepository,
+    IUnitOfWork unitOfWork,
     IPasswordHasher passwordHasher,
     ITokenService tokenService,
     TimeProvider timeProvider)
 {
-    private const string InvalidCredentialsError = "Invalid username or password.";
-
     public async Task<Result<LoginResult>> HandleAsync(LoginCommand command, CancellationToken cancellationToken)
     {
-        var user = applicationDbContext.Users.FirstOrDefault(candidate => candidate.Username == command.Username);
+        var user = await userRepository.GetByUsernameAsync(command.Username, cancellationToken);
         var passwordIsValid = passwordHasher.Verify(command.Password, user?.PasswordHash);
 
         // BR-015: inactive users receive the same safe response as invalid credentials.
         if (user is null || !user.IsActive || !passwordIsValid)
         {
-            return Result.Failure<LoginResult>(InvalidCredentialsError);
+            return Result.Failure<LoginResult>(ApplicationMessages.Auth.InvalidCredentials);
         }
 
         user.RecordLogin(timeProvider.GetUtcNow().UtcDateTime);
-        await applicationDbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         var accessToken = tokenService.CreateToken(user);
         return Result.Success(new LoginResult(

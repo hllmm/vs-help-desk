@@ -1,8 +1,10 @@
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 
 namespace VSHelpDesk.Application.Features.Parameters.GetParameterAudit;
 
-public sealed class GetParameterAuditHandler(IApplicationDbContext applicationDbContext)
+public sealed class GetParameterAuditHandler(
+    IApplicationParameterRepository parameterRepository,
+    IUserRepository userRepository)
 {
     public const int DefaultTake = 50;
     public const int MaxTake = 100;
@@ -16,14 +18,14 @@ public sealed class GetParameterAuditHandler(IApplicationDbContext applicationDb
 
         // Materialize then join in memory — matches other Application list handlers
         // that avoid EF async projections on the abstraction.
-        var logs = applicationDbContext.ParameterChangeLogs
+        var logs = parameterRepository.GetChangeLogsQueryable()
             .Where(log => keyFilter == null || log.ParameterKey == keyFilter)
             .OrderByDescending(log => log.ChangedAt)
             .Take(take)
             .ToList();
 
         var userIds = logs.Select(log => log.ChangedByUserId).Distinct().ToList();
-        var usernames = applicationDbContext.Users
+        var usernames = userRepository.GetListQueryable()
             .Where(user => userIds.Contains(user.Id))
             .Select(user => new { user.Id, user.Username })
             .ToList()

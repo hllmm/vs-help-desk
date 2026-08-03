@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
@@ -9,6 +10,8 @@ using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Tickets;
 
+using VSHelpDesk.Application.Abstractions.Security;
+
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
 /// <summary>
@@ -16,14 +19,17 @@ namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 /// Normalization runs before any entity is tracked.
 /// </summary>
 public sealed class InboundEmailItemProcessor(
-    IApplicationDbContext applicationDbContext,
+    IProcessedEmailRepository processedEmailRepository,
+    ITicketRepository ticketRepository,
+    IUnitOfWork unitOfWork,
     CreateTicketHandler createTicketHandler,
     AppendCustomerReplyHandler appendCustomerReplyHandler,
     AcknowledgementDispatcher acknowledgementDispatcher,
     ITicketAttachmentWriter ticketAttachmentWriter,
     TimeProvider timeProvider,
     IDatabaseErrorClassifier databaseErrorClassifier,
-    ILogger<InboundEmailItemProcessor> logger) : IInboundEmailItemProcessor
+    ILogger<InboundEmailItemProcessor> logger,
+    IHtmlSanitizerService? htmlSanitizerService = null) : IInboundEmailItemProcessor
 {
     public async Task<InboundEmailItemResult> ProcessAsync(
         IncomingEmail email,
@@ -46,16 +52,16 @@ public sealed class InboundEmailItemProcessor(
             ?? throw new InvalidOperationException(
                 "Inbound normalizer returned Process without a normalized email.");
 
-        var existing = FindProcessed(identity.IdempotencyKey);
+        var existing = await processedEmailRepository.GetByIdempotencyKeyAsync(identity.IdempotencyKey, cancellationToken);
         if (existing is not null)
         {
-            return BuildAlreadyProcessed(identity.IdempotencyKey, existing);
+            return await BuildAlreadyProcessedAsync(identity.IdempotencyKey, existing, cancellationToken);
         }
 
         try
         {
             if (TicketNumberParser.TryFindInText(normalized.Subject, out var ticketNumber) &&
-                TryGetMatchingCustomerTicket(ticketNumber, normalized.FromAddress, out _))
+                await TryGetMatchingCustomerTicketAsync(ticketNumber, normalized.FromAddress, cancellationToken))
             {
                 return await AppendAsync(normalized, ticketNumber, cancellationToken);
             }
@@ -80,33 +86,33 @@ public sealed class InboundEmailItemProcessor(
         string? processingNote,
         CancellationToken cancellationToken)
     {
-        var existing = FindProcessed(identity.IdempotencyKey);
+        var existing = await processedEmailRepository.GetByIdempotencyKeyAsync(identity.IdempotencyKey, cancellationToken);
         if (existing is not null)
         {
-            return BuildAlreadyProcessed(identity.IdempotencyKey, existing);
+            return await BuildAlreadyProcessedAsync(identity.IdempotencyKey, existing, cancellationToken);
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        applicationDbContext.Add(ProcessedEmailMessage.ForQuarantine(
+        await processedEmailRepository.AddAsync(ProcessedEmailMessage.ForQuarantine(
             identity.IdempotencyKey,
             sourceMessageId: identity.SourceMessageId,
             processedAtUtc: now,
-            processingNote: processingNote));
+            processingNote: processingNote), cancellationToken);
 
         try
         {
-            await applicationDbContext.SaveChangesAsync(cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
-            applicationDbContext.ClearTrackedChanges();
+            unitOfWork.ClearTrackedChanges();
 
             if (databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
             {
-                var afterRace = FindProcessed(identity.IdempotencyKey);
+                var afterRace = await processedEmailRepository.GetByIdempotencyKeyAsync(identity.IdempotencyKey, cancellationToken);
                 if (afterRace is not null)
                 {
-                    return BuildAlreadyProcessed(identity.IdempotencyKey, afterRace);
+                    return await BuildAlreadyProcessedAsync(identity.IdempotencyKey, afterRace, cancellationToken);
                 }
 
                 return new InboundEmailItemResult(
@@ -136,6 +142,9 @@ public sealed class InboundEmailItemProcessor(
         NormalizedIncomingEmail normalized,
         CancellationToken cancellationToken)
     {
+        var sanitizedBody = htmlSanitizerService is not null
+            ? htmlSanitizerService.SanitizeHtml(normalized.Body)
+            : normalized.Body;
         var createResult = await createTicketHandler.HandleAsync(
             new CreateTicketCommand(
                 IdempotencyKey: normalized.IdempotencyKey,
@@ -143,7 +152,7 @@ public sealed class InboundEmailItemProcessor(
                 Subject: normalized.Subject,
                 CustomerName: normalized.FromDisplayName,
                 CustomerEmail: normalized.FromAddress,
-                Content: normalized.Body),
+                Content: sanitizedBody),
             cancellationToken);
 
         if (createResult.IsFailure)
@@ -196,12 +205,15 @@ public sealed class InboundEmailItemProcessor(
         string ticketNumber,
         CancellationToken cancellationToken)
     {
+        var sanitizedBody = htmlSanitizerService is not null
+            ? htmlSanitizerService.SanitizeHtml(normalized.Body)
+            : normalized.Body;
         var replyResult = await appendCustomerReplyHandler.HandleAsync(
             new AppendCustomerReplyCommand(
                 IdempotencyKey: normalized.IdempotencyKey,
                 SourceMessageId: normalized.SourceMessageId,
                 TicketNumber: ticketNumber,
-                Content: normalized.Body,
+                Content: sanitizedBody,
                 FromAddress: normalized.FromAddress),
             cancellationToken);
 
@@ -295,13 +307,12 @@ public sealed class InboundEmailItemProcessor(
         }
     }
 
-    private bool TryGetMatchingCustomerTicket(
+    private async Task<bool> TryGetMatchingCustomerTicketAsync(
         string ticketNumber,
         string fromAddress,
-        out Ticket ticket)
+        CancellationToken cancellationToken)
     {
-        var found = applicationDbContext.Tickets
-            .FirstOrDefault(candidate => candidate.TicketNumber == ticketNumber);
+        var found = await ticketRepository.GetByNumberAsync(ticketNumber, cancellationToken);
 
         if (found is null ||
             !string.Equals(
@@ -309,28 +320,22 @@ public sealed class InboundEmailItemProcessor(
                 fromAddress,
                 StringComparison.OrdinalIgnoreCase))
         {
-            ticket = null!;
             return false;
         }
 
-        ticket = found;
         return true;
     }
 
-    private ProcessedEmailMessage? FindProcessed(string idempotencyKey) =>
-        applicationDbContext.ProcessedEmailMessages
-            .FirstOrDefault(row => row.IdempotencyKey == idempotencyKey);
-
-    private InboundEmailItemResult BuildAlreadyProcessed(
+    private async Task<InboundEmailItemResult> BuildAlreadyProcessedAsync(
         string idempotencyKey,
-        ProcessedEmailMessage existing)
+        ProcessedEmailMessage existing,
+        CancellationToken cancellationToken)
     {
         string? ticketNumber = null;
         if (existing.TicketId is Guid ticketId)
         {
-            ticketNumber = applicationDbContext.Tickets
-                .FirstOrDefault(ticket => ticket.Id == ticketId)
-                ?.TicketNumber;
+            var ticket = await ticketRepository.GetByIdAsync(ticketId, cancellationToken: cancellationToken);
+            ticketNumber = ticket?.TicketNumber;
         }
 
         return new InboundEmailItemResult(

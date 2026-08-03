@@ -1,16 +1,22 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 
+using VSHelpDesk.Application.Abstractions.Security;
+
 namespace VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 
 public sealed class AppendCustomerReplyHandler(
-    IApplicationDbContext applicationDbContext,
+    ITicketRepository ticketRepository,
+    IProcessedEmailRepository processedEmailRepository,
+    IUnitOfWork unitOfWork,
     TimeProvider timeProvider,
-    IDatabaseErrorClassifier databaseErrorClassifier)
+    IDatabaseErrorClassifier databaseErrorClassifier,
+    IHtmlSanitizerService? htmlSanitizerService = null)
 {
     public async Task<Result<AppendCustomerReplyResult>> HandleAsync(
         AppendCustomerReplyCommand command,
@@ -33,7 +39,7 @@ public sealed class AppendCustomerReplyHandler(
         catch (Exception ex) when (databaseErrorClassifier.IsOptimisticConcurrencyConflict(ex))
         {
             // One safe retry with a fully reloaded ticket/message graph.
-            applicationDbContext.ClearTrackedChanges();
+            unitOfWork.ClearTrackedChanges();
 
             try
             {
@@ -53,15 +59,13 @@ public sealed class AppendCustomerReplyHandler(
         CancellationToken cancellationToken)
     {
         var idempotencyKey = command.IdempotencyKey.Trim();
-        var existing = applicationDbContext.ProcessedEmailMessages
-            .FirstOrDefault(processed => processed.IdempotencyKey == idempotencyKey);
+        var existing = await processedEmailRepository.GetByIdempotencyKeyAsync(idempotencyKey, cancellationToken);
         if (existing is not null)
         {
-            return Result.Success(BuildAlreadyProcessedResult(existing, command.TicketNumber.Trim()));
+            return Result.Success(await BuildAlreadyProcessedResultAsync(existing, command.TicketNumber.Trim(), cancellationToken));
         }
 
-        var ticket = applicationDbContext.Tickets
-            .FirstOrDefault(candidate => candidate.TicketNumber == command.TicketNumber.Trim());
+        var ticket = await ticketRepository.GetByNumberAsync(command.TicketNumber.Trim(), cancellationToken);
         if (ticket is null)
         {
             return Result.Failure<AppendCustomerReplyResult>(
@@ -82,7 +86,10 @@ public sealed class AppendCustomerReplyHandler(
         var statusBefore = ticket.Status;
         var wasResolved = statusBefore == TicketStatus.Resolved;
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var content = InboundMailLimits.NormalizeBody(command.Content);
+        var sanitizedContent = htmlSanitizerService is not null
+            ? htmlSanitizerService.SanitizeHtml(command.Content)
+            : command.Content;
+        var content = InboundMailLimits.NormalizeBody(sanitizedContent);
 
         // BR-004 / BR-013: append the customer reply to the matched conversation;
         // never replace or overwrite an earlier message.
@@ -101,24 +108,23 @@ public sealed class AppendCustomerReplyHandler(
             sourceMessageId: command.SourceMessageId,
             processedAtUtc: now,
             ticketId: ticket.Id);
-        applicationDbContext.Add(message);
-        applicationDbContext.Add(processed);
+        await ticketRepository.AddMessageAsync(message, cancellationToken);
+        await processedEmailRepository.AddAsync(processed, cancellationToken);
 
         try
         {
-            await applicationDbContext.SaveChangesAsync(cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
-            applicationDbContext.ClearTrackedChanges();
+            unitOfWork.ClearTrackedChanges();
 
             if (databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
             {
-                var afterRace = applicationDbContext.ProcessedEmailMessages
-                    .FirstOrDefault(processedRow => processedRow.IdempotencyKey == idempotencyKey);
+                var afterRace = await processedEmailRepository.GetByIdempotencyKeyAsync(idempotencyKey, cancellationToken);
                 if (afterRace is not null)
                 {
-                    return Result.Success(BuildAlreadyProcessedResult(afterRace, ticket.TicketNumber));
+                    return Result.Success(await BuildAlreadyProcessedResultAsync(afterRace, ticket.TicketNumber, cancellationToken));
                 }
             }
 
@@ -135,13 +141,14 @@ public sealed class AppendCustomerReplyHandler(
             WasReopened: wasResolved));
     }
 
-    private AppendCustomerReplyResult BuildAlreadyProcessedResult(
+    private async Task<AppendCustomerReplyResult> BuildAlreadyProcessedResultAsync(
         ProcessedEmailMessage existing,
-        string fallbackTicketNumber)
+        string fallbackTicketNumber,
+        CancellationToken cancellationToken)
     {
         var existingTicket = existing.TicketId is null
             ? null
-            : applicationDbContext.Tickets.FirstOrDefault(ticket => ticket.Id == existing.TicketId);
+            : await ticketRepository.GetByIdAsync(existing.TicketId.Value, cancellationToken: cancellationToken);
 
         return new AppendCustomerReplyResult(
             existing.TicketId ?? existingTicket?.Id ?? Guid.Empty,

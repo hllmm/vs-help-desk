@@ -1,4 +1,5 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -46,8 +47,23 @@ public sealed class GetAssignableUsersHandlerTests
         return user;
     }
 
-    private sealed class FakeDb(IReadOnlyList<User> users) : IApplicationDbContext
+    private sealed class FakeDb(IReadOnlyList<User> users) : IApplicationDbContext, IUserRepository
     {
+        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(users.FirstOrDefault(u => u.Id == id));
+
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+            Task.FromResult(users.FirstOrDefault(u => u.Email == email));
+
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
+            Task.FromResult(users.FirstOrDefault(u => u.Username == username));
+
+        public IQueryable<User> GetListQueryable() => Users;
+
+        public Task AddAsync(User user, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Update(User user) { }
+
         public IQueryable<User> Users => users.AsQueryable();
         public IQueryable<Ticket> Tickets => Array.Empty<Ticket>().AsQueryable();
         public IQueryable<TicketMessage> TicketMessages => Array.Empty<TicketMessage>().AsQueryable();
@@ -55,13 +71,16 @@ public sealed class GetAssignableUsersHandlerTests
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages => Array.Empty<ProcessedEmailMessage>().AsQueryable();
         public IQueryable<ApplicationParameter> ApplicationParameters => Array.Empty<ApplicationParameter>().AsQueryable();
         public IQueryable<ParameterChangeLog> ParameterChangeLogs => Array.Empty<ParameterChangeLog>().AsQueryable();
+        public IQueryable<SystemLog> SystemLogs => Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class =>
             throw new NotSupportedException();
 
         public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            Task.FromResult(0);
 
-        public void ClearTrackedChanges() => throw new NotSupportedException();
+        public void ClearTrackedChanges()
+        {
+        }
     }
 }

@@ -146,6 +146,39 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                     b.ToTable("ProcessedEmailMessages", (string)null);
                 });
 
+            modelBuilder.Entity("VSHelpDesk.Domain.Entities.SystemLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CategoryName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("character varying(250)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Exception")
+                        .HasColumnType("text");
+
+                    b.Property<string>("LogLevel")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("SystemLogs", (string)null);
+                });
+
             modelBuilder.Entity("VSHelpDesk.Domain.Entities.Ticket", b =>
                 {
                     b.Property<Guid>("Id")

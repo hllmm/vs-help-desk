@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Features.Attachments;
 using VSHelpDesk.Application.Features.Attachments.UploadAttachment;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -122,13 +124,19 @@ public sealed class UploadAttachmentHandlerTests
         FakeDb db,
         IFileStorage storage,
         long maxBytes,
-        string[] allowed) =>
-        new(
+        string[] allowed)
+    {
+        var writer = new TicketAttachmentWriter(
+            db,
+            db,
             db,
             storage,
             new FixedPolicy(maxBytes, allowed),
             new FixedTimeProvider(FixedNow),
-            NullLogger<UploadAttachmentHandler>.Instance);
+            NullLogger<TicketAttachmentWriter>.Instance);
+
+        return new UploadAttachmentHandler(writer, db);
+    }
 
     private sealed class FixedPolicy(long maxBytes, string[] allowed) : IAttachmentUploadPolicy
     {
@@ -178,9 +186,12 @@ public sealed class UploadAttachmentHandlerTests
 
         public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+
+        public Task<IReadOnlyList<string>> ListStoredFilesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>(Saved.Select(s => s.StoredFileName).ToList());
     }
 
-    private sealed class FakeDb : IApplicationDbContext
+    private sealed class FakeDb : IApplicationDbContext, ITicketRepository, ITicketAttachmentRepository, IUnitOfWork
     {
         private readonly List<TicketMessage> messages;
         private readonly List<object> pending = [];
@@ -188,6 +199,44 @@ public sealed class UploadAttachmentHandlerTests
         public List<TicketAttachment> Attachments { get; } = [];
 
         public FakeDb(params TicketMessage[] messages) => this.messages = messages.ToList();
+
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Ticket?>(null);
+
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Ticket?>(null);
+
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Update(Ticket ticket) { }
+
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(messages.Any(m => m.Id == messageId));
+
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(messages.FirstOrDefault(m => m.Id == messageId));
+
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Guid.Empty);
+
+        Task<TicketAttachment?> ITicketAttachmentRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Attachments.FirstOrDefault(a => a.Id == id));
+
+        public Task<TicketAttachment?> GetByStoredFileNameAsync(string storedFileName, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Attachments.FirstOrDefault(a => a.StoredFileName == storedFileName));
+
+        public Task AddAsync(TicketAttachment attachment, CancellationToken cancellationToken = default)
+        {
+            Add(attachment);
+            return Task.CompletedTask;
+        }
+        public void Remove(TicketAttachment attachment) => Attachments.Remove(attachment);
+
+        public IQueryable<TicketAttachment> GetOrphansQueryable() => TicketAttachments.Where(a => !messages.Any(m => m.Id == a.TicketMessageId));
 
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => Array.Empty<Ticket>().AsQueryable();
@@ -201,6 +250,9 @@ public sealed class UploadAttachmentHandlerTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 

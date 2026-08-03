@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 using VSHelpDesk.Domain.Entities;
@@ -321,12 +322,14 @@ public sealed class SupportReplyToTicketHandlerTests
 
     private static SupportReplyToTicketHandler CreateHandler(
         FakeDb db,
-        IEmailSender sender,
-        ILogger<SupportReplyToTicketHandler>? logger = null) =>
+        IEmailSender? sender = null,
+        ILogger<SupportReplyToTicketHandler>? logger = null,
+        ICurrentUserService? currentUser = null) =>
         new(
             db,
-            sender,
-            new FixedCurrentUser(),
+            db,
+            sender ?? new RecordingSender(),
+            currentUser ?? new FixedCurrentUser(),
             new FixedTimeProvider(FixedNow),
             logger ?? NullLogger<SupportReplyToTicketHandler>.Instance);
 
@@ -392,7 +395,7 @@ public sealed class SupportReplyToTicketHandlerTests
     /// <see cref="ClearTrackedChanges"/> switches the query to a fresh persisted snapshot so a
     /// failed tracked waiting-state mutation cannot masquerade as a saved status.
     /// </summary>
-    private sealed class FakeDb : IApplicationDbContext
+    private sealed class FakeDb : IApplicationDbContext, ITicketRepository, IUnitOfWork
     {
         private readonly HashSet<int> conflictOnSaveCalls;
         private readonly List<object> pending = [];
@@ -415,6 +418,33 @@ public sealed class SupportReplyToTicketHandlerTests
             CapturePersistedSnapshot(ticket);
         }
 
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Tickets.FirstOrDefault(t => t.Id == id));
+
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
+
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Update(Ticket ticket) { }
+
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default)
+        {
+            Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Messages.Any(m => m.Id == messageId));
+
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Messages.FirstOrDefault(m => m.Id == messageId));
+
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Messages.Where(m => m.TicketId == ticketId).OrderBy(m => m.CreatedAt).Select(m => m.Id).FirstOrDefault());
+
         public List<TicketMessage> Messages { get; } = [];
         public int SaveCallCount { get; private set; }
         public int ClearTrackedCallCount { get; private set; }
@@ -433,6 +463,9 @@ public sealed class SupportReplyToTicketHandlerTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 

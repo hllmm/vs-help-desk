@@ -1,21 +1,25 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Email;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Domain.Exceptions;
 
+using VSHelpDesk.Application.Abstractions.Security;
+
 namespace VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
 
 public sealed class SupportReplyToTicketHandler(
-    IApplicationDbContext applicationDbContext,
+    ITicketRepository ticketRepository,
+    IUnitOfWork unitOfWork,
     IEmailSender emailSender,
     ICurrentUserService currentUserService,
     TimeProvider timeProvider,
-    ILogger<SupportReplyToTicketHandler> logger)
+    ILogger<SupportReplyToTicketHandler> logger,
+    IHtmlSanitizerService? htmlSanitizerService = null)
 {
     public async Task<Result<SupportReplyToTicketResult>> HandleAsync(
         SupportReplyToTicketCommand command,
@@ -27,15 +31,17 @@ public sealed class SupportReplyToTicketHandler(
                 SupportReplyCodes.ContentRequired);
         }
 
-        var content = command.Content.Trim();
+        var sanitizedContent = htmlSanitizerService is not null
+            ? htmlSanitizerService.SanitizeHtml(command.Content)
+            : command.Content;
+        var content = sanitizedContent.Trim();
         if (content.Length > SupportReplyLimits.MaxContentLength)
         {
             return Result.Failure<SupportReplyToTicketResult>(
                 SupportReplyCodes.ContentTooLong);
         }
 
-        var ticket = applicationDbContext.Tickets
-            .FirstOrDefault(candidate => candidate.Id == command.TicketId);
+        var ticket = await ticketRepository.GetByIdAsync(command.TicketId, cancellationToken: cancellationToken);
         if (ticket is null)
         {
             throw new NotFoundException($"Ticket '{command.TicketId}' was not found.");
@@ -57,9 +63,9 @@ public sealed class SupportReplyToTicketHandler(
             createdAtUtc: now);
 
         // Persist first (BR-022): message survives SMTP failure.
-        applicationDbContext.Add(message);
+        await ticketRepository.AddMessageAsync(message, cancellationToken);
         ticket.RecordMessageActivity(now);
-        await applicationDbContext.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         try
         {
@@ -131,7 +137,7 @@ public sealed class SupportReplyToTicketHandler(
 
             var oldStatus = ticket.Status;
             ticket.MarkAsWaitingCustomerReply(now);
-            await applicationDbContext.SaveChangesAsync(cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
             return LogWaitingSuccess(
                 ticket.Id,
                 messageId,
@@ -140,7 +146,7 @@ public sealed class SupportReplyToTicketHandler(
         }
         catch (OptimisticConcurrencyException)
         {
-            applicationDbContext.ClearTrackedChanges();
+            unitOfWork.ClearTrackedChanges();
         }
         catch (DomainException)
         {
@@ -148,8 +154,7 @@ public sealed class SupportReplyToTicketHandler(
             return LogWaitingConflict(ticket.Id, messageId, statusAfterMessageCommit);
         }
 
-        var reloaded = applicationDbContext.Tickets
-            .FirstOrDefault(candidate => candidate.Id == ticket.Id);
+        var reloaded = await ticketRepository.GetByIdAsync(ticket.Id, cancellationToken: cancellationToken);
         if (reloaded is null)
         {
             throw new NotFoundException($"Ticket '{ticket.Id}' was not found.");
@@ -166,7 +171,7 @@ public sealed class SupportReplyToTicketHandler(
         {
             var oldStatus = reloaded.Status;
             reloaded.MarkAsWaitingCustomerReply(now);
-            await applicationDbContext.SaveChangesAsync(cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
             return LogWaitingSuccess(
                 reloaded.Id,
                 messageId,
@@ -175,25 +180,19 @@ public sealed class SupportReplyToTicketHandler(
         }
         catch (OptimisticConcurrencyException)
         {
-            applicationDbContext.ClearTrackedChanges();
+            unitOfWork.ClearTrackedChanges();
 
-            var confirmedStatus = applicationDbContext.Tickets
-                .Where(candidate => candidate.Id == ticket.Id)
-                .Select(candidate => (TicketStatus?)candidate.Status)
-                .FirstOrDefault()
-                ?? statusAfterMessageCommit;
+            var reloadedTicket = await ticketRepository.GetByIdAsync(ticket.Id, cancellationToken: cancellationToken);
+            var confirmedStatus = reloadedTicket?.Status ?? statusAfterMessageCommit;
 
             return LogWaitingConflict(ticket.Id, messageId, confirmedStatus);
         }
         catch (DomainException)
         {
-            applicationDbContext.ClearTrackedChanges();
+            unitOfWork.ClearTrackedChanges();
 
-            var confirmedStatus = applicationDbContext.Tickets
-                .Where(candidate => candidate.Id == ticket.Id)
-                .Select(candidate => (TicketStatus?)candidate.Status)
-                .FirstOrDefault()
-                ?? statusAfterMessageCommit;
+            var reloadedTicket = await ticketRepository.GetByIdAsync(ticket.Id, cancellationToken: cancellationToken);
+            var confirmedStatus = reloadedTicket?.Status ?? statusAfterMessageCommit;
 
             return LogWaitingConflict(ticket.Id, messageId, confirmedStatus);
         }

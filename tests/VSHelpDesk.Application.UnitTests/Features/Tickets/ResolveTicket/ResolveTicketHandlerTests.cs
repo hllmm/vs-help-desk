@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.ResolveTicket;
 using VSHelpDesk.Domain.Entities;
@@ -156,6 +157,7 @@ public sealed class ResolveTicketHandlerTests
         ILogger<ResolveTicketHandler>? logger = null) =>
         new(
             db,
+            db,
             currentUser ?? new FixedCurrentUser(),
             new FixedTimeProvider(FixedNow),
             logger ?? NullLogger<ResolveTicketHandler>.Instance);
@@ -199,7 +201,7 @@ public sealed class ResolveTicketHandlerTests
         }
     }
 
-    private sealed class FakeDb : IApplicationDbContext
+    private sealed class FakeDb : IApplicationDbContext, ITicketRepository, IUnitOfWork
     {
         private readonly Ticket? ticket;
         private readonly bool conflictOnSave;
@@ -216,6 +218,25 @@ public sealed class ResolveTicketHandlerTests
             }
         }
 
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Tickets.FirstOrDefault(t => t.Id == id));
+
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
+
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Update(Ticket ticket) { }
+
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult<TicketMessage?>(null);
+
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
         public Action? OnSave { get; init; }
         public int SaveCallCount { get; private set; }
         public int ClearTrackedCallCount { get; private set; }
@@ -250,6 +271,9 @@ public sealed class ResolveTicketHandlerTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {

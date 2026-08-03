@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Parameters;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Parameters;
 using VSHelpDesk.Domain.Enums;
@@ -12,7 +12,7 @@ namespace VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 /// Cutoff days from <c>AutoResolve.InactiveDays</c> (default 3).
 /// </summary>
 public sealed class ResolveInactiveTicketsHandler(
-    IApplicationDbContext applicationDbContext,
+    ITicketRepository ticketRepository,
     IInactiveTicketResolverFactory resolverFactory,
     IResolveInactiveTicketsGate gate,
     IApplicationParameterReader parameterReader,
@@ -47,7 +47,7 @@ public sealed class ResolveInactiveTicketsHandler(
             "ResolveInactiveTickets started cutoffUtc={CutoffUtc}",
             cutoffUtc);
 
-        var candidateIds = applicationDbContext.Tickets
+        var candidateIds = ticketRepository.GetListQueryable()
             .Where(ticket =>
                 ticket.Status == TicketStatus.WaitingCustomerReply
                 && ticket.WaitingCustomerSince != null

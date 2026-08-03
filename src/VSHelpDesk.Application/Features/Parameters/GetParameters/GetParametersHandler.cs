@@ -1,10 +1,10 @@
 using VSHelpDesk.Application.Abstractions.Parameters;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 
 namespace VSHelpDesk.Application.Features.Parameters.GetParameters;
 
 public sealed class GetParametersHandler(
-    IApplicationDbContext applicationDbContext,
+    IApplicationParameterRepository parameterRepository,
     IApplicationParameterReader reader)
 {
     public async Task<IReadOnlyList<ParameterDto>> HandleAsync(
@@ -16,8 +16,8 @@ public sealed class GetParametersHandler(
             .Select(definition => definition.Key)
             .ToList();
 
-        // Sync materialization matches other Application list handlers (e.g. GetTicketList).
-        var rows = applicationDbContext.ApplicationParameters
+        var allParameters = await parameterRepository.GetAllAsync(cancellationToken);
+        var rows = allParameters
             .Where(parameter => allowedKeys.Contains(parameter.Key))
             .OrderBy(parameter => parameter.Key)
             .ToList();

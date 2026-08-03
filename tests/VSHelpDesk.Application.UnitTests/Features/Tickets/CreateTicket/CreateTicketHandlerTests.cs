@@ -1,4 +1,5 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -241,6 +242,8 @@ public sealed class CreateTicketHandlerTests
         IDatabaseErrorClassifier? classifier = null) =>
         new(
             context,
+            context,
+            context,
             numbers,
             new FixedTimeProvider(CreateTime),
             classifier ?? new FakeDatabaseErrorClassifier());
@@ -258,8 +261,53 @@ public sealed class CreateTicketHandlerTests
         public bool IsOptimisticConcurrencyConflict(Exception exception) => false;
     }
 
-    private sealed class FakeApplicationDbContext : IApplicationDbContext
+    private sealed class FakeApplicationDbContext : IApplicationDbContext, ITicketRepository, IProcessedEmailRepository, IUnitOfWork
     {
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketsList.FirstOrDefault(t => t.Id == id));
+
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketsList.FirstOrDefault(t => t.TicketNumber == ticketNumber));
+
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default)
+        {
+            Add(ticket);
+            return Task.CompletedTask;
+        }
+
+        public void Update(Ticket ticket) { }
+
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default)
+        {
+            Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketMessagesList.Any(m => m.Id == messageId));
+
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketMessagesList.FirstOrDefault(m => m.Id == messageId));
+
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketMessagesList.Where(m => m.TicketId == ticketId).OrderBy(m => m.CreatedAt).Select(m => m.Id).FirstOrDefault());
+
+        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ProcessedEmailMessagesList.FirstOrDefault(p => p.IdempotencyKey == idempotencyKey));
+
+        Task<ProcessedEmailMessage?> IProcessedEmailRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ProcessedEmailMessagesList.FirstOrDefault(p => p.Id == id));
+
+        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken = default)
+        {
+            Add(message);
+            return Task.CompletedTask;
+        }
+
+        IQueryable<ProcessedEmailMessage> IProcessedEmailRepository.GetListQueryable() => ProcessedEmailMessages;
+
         public int SaveChangesCallCount { get; private set; }
 
         public bool SimulateConcurrentIdempotencyWinner { get; init; }
@@ -288,6 +336,9 @@ public sealed class CreateTicketHandlerTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {

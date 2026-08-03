@@ -14,6 +14,8 @@ public interface IFileStorage
     Task<Stream> OpenReadAsync(string storedFileName, CancellationToken cancellationToken = default);
 
     Task DeleteAsync(string storedFileName, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<string>> ListStoredFilesAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed record StoredFile(

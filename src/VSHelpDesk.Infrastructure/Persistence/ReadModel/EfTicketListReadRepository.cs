@@ -16,14 +16,27 @@ public sealed class EfTicketListReadRepository(ApplicationDbContext applicationD
 
         if (!string.IsNullOrEmpty(request.Search))
         {
-            var escapedSearch = EscapeLikePattern(request.Search);
-            var pattern = $"%{escapedSearch}%";
+            var isPostgres = applicationDbContext.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+            if (isPostgres)
+            {
+                var escapedSearch = EscapeLikePattern(request.Search);
+                var pattern = $"%{escapedSearch}%";
 
-            searchedTickets = searchedTickets.Where(ticket =>
-                EF.Functions.ILike(ticket.TicketNumber, pattern, "\\") ||
-                EF.Functions.ILike(ticket.Subject, pattern, "\\") ||
-                EF.Functions.ILike(ticket.CustomerName, pattern, "\\") ||
-                EF.Functions.ILike(ticket.CustomerEmail, pattern, "\\"));
+                searchedTickets = searchedTickets.Where(ticket =>
+                    EF.Functions.ILike(ticket.TicketNumber, pattern, "\\") ||
+                    EF.Functions.ILike(ticket.Subject, pattern, "\\") ||
+                    EF.Functions.ILike(ticket.CustomerName, pattern, "\\") ||
+                    EF.Functions.ILike(ticket.CustomerEmail, pattern, "\\"));
+            }
+            else
+            {
+                var search = request.Search.Trim();
+                searchedTickets = searchedTickets.Where(ticket =>
+                    EF.Functions.Like(ticket.TicketNumber, $"%{search}%") ||
+                    EF.Functions.Like(ticket.Subject, $"%{search}%") ||
+                    EF.Functions.Like(ticket.CustomerName, $"%{search}%") ||
+                    EF.Functions.Like(ticket.CustomerEmail, $"%{search}%"));
+            }
         }
 
         var counts = await searchedTickets

@@ -1,5 +1,6 @@
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Storage;
 using VSHelpDesk.Application.Features.Attachments;
 using VSHelpDesk.Application.Features.MailProcessing;
@@ -223,20 +224,26 @@ public sealed class InboundEmailItemProcessorTests
         context.TicketsList.Add(existing);
         var classifier = new AlwaysOptimisticConflictClassifier();
         var time = new FixedTimeProvider(FixedNow);
-        var create = new CreateTicketHandler(context, new SequenceNumbers("VS-000407"), time, classifier);
-        var reply = new AppendCustomerReplyHandler(context, time, classifier);
+        var create = new CreateTicketHandler(context, context, context, new SequenceNumbers("VS-000407"), time, classifier);
+        var reply = new AppendCustomerReplyHandler(context, context, context, time, classifier);
         var dispatcher = new AcknowledgementDispatcher(
+            context,
+            context,
             context,
             new RecordingSender(),
             time,
             NullLogger<AcknowledgementDispatcher>.Instance);
         var writer = new TicketAttachmentWriter(
             context,
+            context,
+            context,
             new RecordingStorage(),
             new FixedPolicy(maxBytes: 1024 * 1024, allowed: ["text/plain"]),
             time,
             NullLogger<TicketAttachmentWriter>.Instance);
         var processor = new InboundEmailItemProcessor(
+            context,
+            context,
             context,
             create,
             reply,
@@ -368,20 +375,26 @@ public sealed class InboundEmailItemProcessorTests
     {
         var time = new FixedTimeProvider(FixedNow);
         var classifier = new NeverConflictClassifier();
-        var create = new CreateTicketHandler(context, new SequenceNumbers(number), time, classifier);
-        var reply = new AppendCustomerReplyHandler(context, time, classifier);
+        var create = new CreateTicketHandler(context, context, context, new SequenceNumbers(number), time, classifier);
+        var reply = new AppendCustomerReplyHandler(context, context, context, time, classifier);
         var dispatcher = new AcknowledgementDispatcher(
+            context,
+            context,
             context,
             sender,
             time,
             NullLogger<AcknowledgementDispatcher>.Instance);
         var writer = new TicketAttachmentWriter(
             context,
+            context,
+            context,
             new RecordingStorage(),
             new FixedPolicy(maxBytes: 1024 * 1024, allowed: ["text/plain", "application/pdf"]),
             time,
             NullLogger<TicketAttachmentWriter>.Instance);
         return new InboundEmailItemProcessor(
+            context,
+            context,
             context,
             create,
             reply,
@@ -477,7 +490,7 @@ public sealed class InboundEmailItemProcessorTests
         }
     }
 
-    private class FakeDb : IApplicationDbContext
+    private class FakeDb : IApplicationDbContext, IProcessedEmailRepository, ITicketRepository, ITicketAttachmentRepository, IUserRepository, IUnitOfWork
     {
         public List<User> UsersList { get; } = [];
         public List<Ticket> TicketsList { get; } = [];
@@ -485,6 +498,85 @@ public sealed class InboundEmailItemProcessorTests
         public List<TicketAttachment> TicketAttachmentsList { get; } = [];
         public List<ProcessedEmailMessage> ProcessedEmailMessagesList { get; } = [];
         protected readonly List<object> pending = [];
+        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ProcessedEmailMessagesList.FirstOrDefault(p => p.IdempotencyKey == idempotencyKey));
+
+        Task<ProcessedEmailMessage?> IProcessedEmailRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ProcessedEmailMessagesList.FirstOrDefault(p => p.Id == id));
+
+        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken = default)
+        {
+            Add(message);
+            return Task.CompletedTask;
+        }
+
+        IQueryable<ProcessedEmailMessage> IProcessedEmailRepository.GetListQueryable() => ProcessedEmailMessages;
+
+        Task<Ticket?> ITicketRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketsList.FirstOrDefault(t => t.Id == id));
+
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketsList.FirstOrDefault(t => t.TicketNumber == ticketNumber));
+
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default)
+        {
+            Add(ticket);
+            return Task.CompletedTask;
+        }
+
+        public void Update(Ticket ticket) { }
+
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default)
+        {
+            Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketMessagesList.Any(m => m.Id == messageId));
+
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketMessagesList.FirstOrDefault(m => m.Id == messageId));
+
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketMessagesList.Where(m => m.TicketId == ticketId).OrderBy(m => m.CreatedAt).Select(m => m.Id).FirstOrDefault());
+
+        Task<TicketAttachment?> ITicketAttachmentRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketAttachmentsList.FirstOrDefault(a => a.Id == id));
+
+        public Task<TicketAttachment?> GetByStoredFileNameAsync(string storedFileName, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TicketAttachmentsList.FirstOrDefault(a => a.StoredFileName == storedFileName));
+
+        public Task AddAsync(TicketAttachment attachment, CancellationToken cancellationToken = default)
+        {
+            Add(attachment);
+            return Task.CompletedTask;
+        }
+
+        public void Remove(TicketAttachment attachment) => TicketAttachmentsList.Remove(attachment);
+
+        public IQueryable<TicketAttachment> GetOrphansQueryable() => TicketAttachments.Where(a => !TicketMessagesList.Any(m => m.Id == a.TicketMessageId));
+
+        Task<User?> IUserRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(UsersList.FirstOrDefault(u => u.Id == id));
+
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+            Task.FromResult(UsersList.FirstOrDefault(u => u.Email == email));
+
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
+            Task.FromResult(UsersList.FirstOrDefault(u => u.Username == username));
+
+        IQueryable<User> IUserRepository.GetListQueryable() => Users;
+
+        public Task AddAsync(User user, CancellationToken cancellationToken = default)
+        {
+            Add(user);
+            return Task.CompletedTask;
+        }
+
+        public void Update(User user) { }
 
         public IQueryable<User> Users => UsersList.AsQueryable();
         public IQueryable<Ticket> Tickets => TicketsList.AsQueryable();
@@ -498,6 +590,9 @@ public sealed class InboundEmailItemProcessorTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 
@@ -582,5 +677,8 @@ public sealed class InboundEmailItemProcessorTests
 
         public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+
+        public Task<IReadOnlyList<string>> ListStoredFilesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
     }
 }

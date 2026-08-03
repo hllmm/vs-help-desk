@@ -18,7 +18,7 @@ namespace VSHelpDesk.WebAPI.IntegrationTests.Authentication;
 
 public sealed class AuthControllerTests
 {
-    private const string GenericFailure = "Invalid username or password.";
+    private const string GenericFailure = VSHelpDesk.Application.Common.ApplicationMessages.Auth.InvalidCredentials;
     private static readonly DateTimeOffset LoginTime = new(2026, 7, 24, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class AuthControllerTests
 
         var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
         Assert.Equal(StatusCodes.Status401Unauthorized, unauthorized.StatusCode);
-        Assert.Contains(GenericFailure, JsonSerializer.Serialize(unauthorized.Value), StringComparison.Ordinal);
+        Assert.Contains(GenericFailure, unauthorized.Value?.ToString() ?? string.Empty, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public sealed class AuthControllerTests
 
         var unauthorized = Assert.IsType<UnauthorizedObjectResult>(result);
         Assert.Equal(StatusCodes.Status401Unauthorized, unauthorized.StatusCode);
-        Assert.Contains(GenericFailure, JsonSerializer.Serialize(unauthorized.Value), StringComparison.Ordinal);
+        Assert.Contains(GenericFailure, unauthorized.Value?.ToString() ?? string.Empty, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -129,9 +129,11 @@ public sealed class AuthControllerTests
 
     private static AuthController CreateController(User user, string validPassword)
     {
-        var context = new FakeApplicationDbContext(user);
+        var userRepository = new FakeUserRepository(user);
+        var unitOfWork = new FakeUnitOfWork();
         var handler = new LoginHandler(
-            context,
+            userRepository,
+            unitOfWork,
             new FakePasswordHasher(validPassword),
             new FakeTokenService("access-token"),
             new FixedTimeProvider(LoginTime));
@@ -178,6 +180,9 @@ public sealed class AuthControllerTests
         public IQueryable<ParameterChangeLog> ParameterChangeLogs { get; } =
             Array.Empty<ParameterChangeLog>().AsQueryable();
 
+        public IQueryable<SystemLog> SystemLogs { get; } =
+            Array.Empty<SystemLog>().AsQueryable();
+
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
         }
@@ -189,6 +194,30 @@ public sealed class AuthControllerTests
         {
         }
 
+    }
+
+    private sealed class FakeUserRepository(User user) : VSHelpDesk.Application.Abstractions.Persistence.Repositories.IUserRepository
+    {
+        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult<User?>(user.Id == id ? user : null);
+
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
+            Task.FromResult<User?>(string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase) ? user : null);
+
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+            Task.FromResult<User?>(string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase) ? user : null);
+
+        public Task AddAsync(User user, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Update(User user) { }
+
+        public IQueryable<User> GetListQueryable() => new[] { user }.AsQueryable();
+    }
+
+    private sealed class FakeUnitOfWork : VSHelpDesk.Application.Abstractions.Persistence.Repositories.IUnitOfWork
+    {
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(1);
+        public void ClearTrackedChanges() { }
     }
 
     private sealed class FakePasswordHasher(string validPassword) : IPasswordHasher

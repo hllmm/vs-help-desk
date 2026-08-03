@@ -1,5 +1,5 @@
 using VSHelpDesk.Application.Abstractions.Authentication;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Users.CreateUser;
 using VSHelpDesk.Domain.Entities;
@@ -7,7 +7,8 @@ using VSHelpDesk.Domain.Entities;
 namespace VSHelpDesk.Application.Features.Users.SetUserPassword;
 
 public sealed class SetUserPasswordHandler(
-    IApplicationDbContext applicationDbContext,
+    IUserRepository userRepository,
+    IUnitOfWork unitOfWork,
     IPasswordHasher passwordHasher)
 {
     public async Task HandleAsync(
@@ -18,10 +19,11 @@ public sealed class SetUserPasswordHandler(
 
         var password = CreateUserHandler.ValidatePassword(command.Password);
 
-        var user = applicationDbContext.Users.FirstOrDefault(candidate => candidate.Id == command.Id)
+        var user = await userRepository.GetByIdAsync(command.Id, cancellationToken)
             ?? throw new NotFoundException(nameof(User), command.Id);
 
         user.ReplacePasswordHash(passwordHasher.Hash(password));
-        await applicationDbContext.SaveChangesAsync(cancellationToken);
+        userRepository.Update(user);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
     }
 }

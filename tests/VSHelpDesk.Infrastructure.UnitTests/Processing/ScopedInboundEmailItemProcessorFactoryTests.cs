@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
@@ -44,13 +45,19 @@ public sealed class ScopedInboundEmailItemProcessorFactoryTests
         var services = new ServiceCollection();
         services.AddSingleton(tracker);
         services.AddSingleton(TimeProvider.System);
-        services.AddScoped<IApplicationDbContext, EmptyDb>();
+        services.AddScoped<EmptyDb>();
+        services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<EmptyDb>());
+        services.AddScoped<IProcessedEmailRepository>(sp => sp.GetRequiredService<EmptyDb>());
+        services.AddScoped<ITicketRepository>(sp => sp.GetRequiredService<EmptyDb>());
+        services.AddScoped<IUnitOfWork>(sp => sp.GetRequiredService<EmptyDb>());
         services.AddScoped<IEmailSender, NoopSender>();
         services.AddScoped<AcknowledgementDispatcher>(sp =>
         {
             tracker.DispatcherResolveCount++;
             return new AcknowledgementDispatcher(
-                sp.GetRequiredService<IApplicationDbContext>(),
+                sp.GetRequiredService<IProcessedEmailRepository>(),
+                sp.GetRequiredService<ITicketRepository>(),
+                sp.GetRequiredService<IUnitOfWork>(),
                 sp.GetRequiredService<IEmailSender>(),
                 sp.GetRequiredService<TimeProvider>(),
                 NullLogger<AcknowledgementDispatcher>.Instance);
@@ -149,8 +156,23 @@ public sealed class ScopedInboundEmailItemProcessorFactoryTests
         }
     }
 
-    private sealed class EmptyDb : IApplicationDbContext
+    private sealed class EmptyDb : IApplicationDbContext, IProcessedEmailRepository, ITicketRepository, IUnitOfWork
     {
+        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) => Task.FromResult<ProcessedEmailMessage?>(null);
+        public Task<ProcessedEmailMessage?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<ProcessedEmailMessage?>(null);
+        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        IQueryable<ProcessedEmailMessage> IProcessedEmailRepository.GetListQueryable() => ProcessedEmailMessages;
+
+        Task<Ticket?> ITicketRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<Ticket?>(null);
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) => Task.FromResult<Ticket?>(null);
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Update(Ticket ticket) { }
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult<TicketMessage?>(null);
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
+
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => Array.Empty<Ticket>().AsQueryable();
         public IQueryable<TicketMessage> TicketMessages => Array.Empty<TicketMessage>().AsQueryable();
@@ -164,6 +186,9 @@ public sealed class ScopedInboundEmailItemProcessorFactoryTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {

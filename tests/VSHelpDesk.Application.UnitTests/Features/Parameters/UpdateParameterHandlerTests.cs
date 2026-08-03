@@ -1,6 +1,7 @@
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Parameters;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Parameters;
 using VSHelpDesk.Application.Features.Parameters.UpdateParameter;
@@ -122,6 +123,7 @@ public sealed class UpdateParameterHandlerTests
     private static UpdateParameterHandler CreateHandler(FakeDb db, Guid? userId) =>
         new(
             db,
+            db,
             new CountingReader(db),
             new StubCurrentUser(userId),
             new FixedTimeProvider(FixedNow));
@@ -171,7 +173,7 @@ public sealed class UpdateParameterHandlerTests
             throw new NotSupportedException();
     }
 
-    private sealed class FakeDb : IApplicationDbContext
+    private sealed class FakeDb : IApplicationDbContext, IApplicationParameterRepository, IUnitOfWork
     {
         public FakeDb(params ApplicationParameter[] parameters)
         {
@@ -182,6 +184,25 @@ public sealed class UpdateParameterHandlerTests
         public List<ParameterChangeLog> ChangeLogs { get; } = [];
         public int SaveCallCount { get; private set; }
         public int ReaderEnsureCallCount { get; set; }
+
+        public Task<ApplicationParameter?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Parameters.FirstOrDefault(p => p.Key == code));
+
+        public Task<ApplicationParameter?> GetByKeyAsync(string key, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Parameters.FirstOrDefault(p => p.Key == key));
+
+        public Task<IReadOnlyList<ApplicationParameter>> GetAllAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ApplicationParameter>>(Parameters.ToList());
+
+        public Task AddChangeLogAsync(ParameterChangeLog changeLog, CancellationToken cancellationToken = default)
+        {
+            ChangeLogs.Add(changeLog);
+            return Task.CompletedTask;
+        }
+
+        public void Update(ApplicationParameter parameter) { }
+
+        public IQueryable<ParameterChangeLog> GetChangeLogsQueryable() => ChangeLogs.AsQueryable();
 
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => Array.Empty<Ticket>().AsQueryable();
@@ -194,6 +215,8 @@ public sealed class UpdateParameterHandlerTests
         public IQueryable<ApplicationParameter> ApplicationParameters => Parameters.AsQueryable();
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs => ChangeLogs.AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs => Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {

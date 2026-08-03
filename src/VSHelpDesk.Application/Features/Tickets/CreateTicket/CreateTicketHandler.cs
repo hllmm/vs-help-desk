@@ -1,16 +1,22 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 
+using VSHelpDesk.Application.Abstractions.Security;
+
 namespace VSHelpDesk.Application.Features.Tickets.CreateTicket;
 
 public sealed class CreateTicketHandler(
-    IApplicationDbContext applicationDbContext,
+    ITicketRepository ticketRepository,
+    IProcessedEmailRepository processedEmailRepository,
+    IUnitOfWork unitOfWork,
     ITicketNumberGenerator ticketNumberGenerator,
     TimeProvider timeProvider,
-    IDatabaseErrorClassifier databaseErrorClassifier)
+    IDatabaseErrorClassifier databaseErrorClassifier,
+    IHtmlSanitizerService? htmlSanitizerService = null)
 {
     public async Task<Result<CreateTicketResult>> HandleAsync(
         CreateTicketCommand command,
@@ -23,10 +29,10 @@ public sealed class CreateTicketHandler(
         }
 
         var idempotencyKey = command.IdempotencyKey.Trim();
-        var existing = FindProcessed(idempotencyKey);
+        var existing = await processedEmailRepository.GetByIdempotencyKeyAsync(idempotencyKey, cancellationToken);
         if (existing is not null)
         {
-            return Result.Success(BuildAlreadyProcessedResult(existing));
+            return Result.Success(await BuildAlreadyProcessedResultAsync(existing, cancellationToken));
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -38,8 +44,11 @@ public sealed class CreateTicketHandler(
             command.CustomerEmail.Trim(),
             now);
 
-        // Inbound mail: store plain text only (HTML policy for portal safety).
-        var content = InboundMailLimits.NormalizeBody(command.Content);
+        // Inbound mail: store sanitized plain text/HTML body.
+        var sanitizedContent = htmlSanitizerService is not null
+            ? htmlSanitizerService.SanitizeHtml(command.Content)
+            : command.Content;
+        var content = InboundMailLimits.NormalizeBody(sanitizedContent);
         var firstMessage = new TicketMessage(
             ticket.Id,
             MessageSenderType.Customer,
@@ -56,25 +65,25 @@ public sealed class CreateTicketHandler(
             processedAtUtc: now,
             ticketId: ticket.Id);
 
-        applicationDbContext.Add(ticket);
-        applicationDbContext.Add(firstMessage);
-        applicationDbContext.Add(processed);
+        await ticketRepository.AddAsync(ticket, cancellationToken);
+        await ticketRepository.AddMessageAsync(firstMessage, cancellationToken);
+        await processedEmailRepository.AddAsync(processed, cancellationToken);
 
         try
         {
-            await applicationDbContext.SaveChangesAsync(cancellationToken);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex)
         {
             // Drop failed graph so later mails in the same scoped context can save.
-            applicationDbContext.ClearTrackedChanges();
+            unitOfWork.ClearTrackedChanges();
 
             if (databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
             {
-                var afterRace = FindProcessed(idempotencyKey);
+                var afterRace = await processedEmailRepository.GetByIdempotencyKeyAsync(idempotencyKey, cancellationToken);
                 if (afterRace is not null)
                 {
-                    return Result.Success(BuildAlreadyProcessedResult(afterRace));
+                    return Result.Success(await BuildAlreadyProcessedResultAsync(afterRace, cancellationToken));
                 }
             }
 
@@ -89,23 +98,17 @@ public sealed class CreateTicketHandler(
             WasAlreadyProcessed: false));
     }
 
-    private ProcessedEmailMessage? FindProcessed(string idempotencyKey) =>
-        applicationDbContext.ProcessedEmailMessages
-            .FirstOrDefault(processed => processed.IdempotencyKey == idempotencyKey);
-
-    private CreateTicketResult BuildAlreadyProcessedResult(ProcessedEmailMessage existing)
+    private async Task<CreateTicketResult> BuildAlreadyProcessedResultAsync(
+        ProcessedEmailMessage existing,
+        CancellationToken cancellationToken)
     {
         var existingTicket = existing.TicketId is null
             ? null
-            : applicationDbContext.Tickets.FirstOrDefault(ticket => ticket.Id == existing.TicketId);
+            : await ticketRepository.GetByIdAsync(existing.TicketId.Value, cancellationToken: cancellationToken);
 
         var firstMessageId = existing.TicketId is null
             ? Guid.Empty
-            : applicationDbContext.TicketMessages
-                .Where(message => message.TicketId == existing.TicketId)
-                .OrderBy(message => message.CreatedAt)
-                .Select(message => message.Id)
-                .FirstOrDefault();
+            : await ticketRepository.GetFirstMessageIdAsync(existing.TicketId.Value, cancellationToken);
 
         return new CreateTicketResult(
             existing.TicketId ?? existingTicket?.Id ?? Guid.Empty,

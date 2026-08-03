@@ -1,4 +1,4 @@
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 
 namespace VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
@@ -6,7 +6,9 @@ namespace VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 /// <summary>
 /// Per-candidate automatic resolution: load → eligibility recheck → ResolveAutomatically → one retry.
 /// </summary>
-public sealed class InactiveTicketResolver(IApplicationDbContext applicationDbContext)
+public sealed class InactiveTicketResolver(
+    ITicketRepository ticketRepository,
+    IUnitOfWork unitOfWork)
     : IInactiveTicketResolver
 {
     public async Task<InactiveTicketResolutionOutcome> ResolveAsync(
@@ -15,8 +17,7 @@ public sealed class InactiveTicketResolver(IApplicationDbContext applicationDbCo
         DateTime nowUtc,
         CancellationToken cancellationToken)
     {
-        var ticket = applicationDbContext.Tickets
-            .FirstOrDefault(candidate => candidate.Id == ticketId);
+        var ticket = await ticketRepository.GetByIdAsync(ticketId, cancellationToken: cancellationToken);
         if (ticket is null || !ResolveInactiveTicketsPolicy.IsEligible(ticket, cutoffUtc))
         {
             return InactiveTicketResolutionOutcome.Skipped;
@@ -25,16 +26,15 @@ public sealed class InactiveTicketResolver(IApplicationDbContext applicationDbCo
         try
         {
             ticket.ResolveAutomatically(nowUtc);
-            await applicationDbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return InactiveTicketResolutionOutcome.Resolved;
         }
         catch (OptimisticConcurrencyException)
         {
-            applicationDbContext.ClearTrackedChanges();
+            unitOfWork.ClearTrackedChanges();
         }
 
-        var reloaded = applicationDbContext.Tickets
-            .FirstOrDefault(candidate => candidate.Id == ticketId);
+        var reloaded = await ticketRepository.GetByIdAsync(ticketId, cancellationToken: cancellationToken);
         if (reloaded is null || !ResolveInactiveTicketsPolicy.IsEligible(reloaded, cutoffUtc))
         {
             return InactiveTicketResolutionOutcome.Skipped;
@@ -43,12 +43,12 @@ public sealed class InactiveTicketResolver(IApplicationDbContext applicationDbCo
         try
         {
             reloaded.ResolveAutomatically(nowUtc);
-            await applicationDbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return InactiveTicketResolutionOutcome.Resolved;
         }
         catch (OptimisticConcurrencyException)
         {
-            applicationDbContext.ClearTrackedChanges();
+            unitOfWork.ClearTrackedChanges();
             return InactiveTicketResolutionOutcome.Conflicted;
         }
     }

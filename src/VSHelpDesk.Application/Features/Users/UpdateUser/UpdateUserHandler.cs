@@ -1,4 +1,4 @@
-using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Users.CreateUser;
 using VSHelpDesk.Application.Features.Users.GetUsers;
@@ -6,7 +6,9 @@ using VSHelpDesk.Domain.Entities;
 
 namespace VSHelpDesk.Application.Features.Users.UpdateUser;
 
-public sealed class UpdateUserHandler(IApplicationDbContext applicationDbContext)
+public sealed class UpdateUserHandler(
+    IUserRepository userRepository,
+    IUnitOfWork unitOfWork)
 {
     public async Task<UserListItemDto> HandleAsync(
         UpdateUserCommand command,
@@ -18,11 +20,11 @@ public sealed class UpdateUserHandler(IApplicationDbContext applicationDbContext
         var email = CreateUserHandler.ValidateEmail(command.Email);
         var role = CreateUserHandler.ParseRole(command.Role);
 
-        var user = applicationDbContext.Users.FirstOrDefault(candidate => candidate.Id == command.Id)
+        var user = await userRepository.GetByIdAsync(command.Id, cancellationToken)
             ?? throw new NotFoundException(nameof(User), command.Id);
 
         LastAdminGuard.EnsureCanDemoteOrDeactivate(
-            applicationDbContext.Users,
+            userRepository.GetListQueryable(),
             command.Id,
             role,
             command.IsActive);
@@ -38,7 +40,8 @@ public sealed class UpdateUserHandler(IApplicationDbContext applicationDbContext
             user.Deactivate();
         }
 
-        await applicationDbContext.SaveChangesAsync(cancellationToken);
+        userRepository.Update(user);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new UserListItemDto(
             user.Id,

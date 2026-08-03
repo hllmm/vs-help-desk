@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Parameters;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Parameters;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
@@ -273,7 +274,7 @@ public sealed class ResolveInactiveTicketsHandlerTests
     }
 
     private static ResolveInactiveTicketsHandler CreateHandler(
-        IApplicationDbContext db,
+        ITicketRepository db,
         IInactiveTicketResolverFactory factory,
         TimeProvider? time = null,
         IApplicationParameterReader? parameterReader = null) =>
@@ -427,7 +428,7 @@ public sealed class ResolveInactiveTicketsHandlerTests
         }
     }
 
-    private sealed class FakeDb : IApplicationDbContext
+    private sealed class FakeDb : IApplicationDbContext, ITicketRepository
     {
         private readonly Ticket[] tickets;
 
@@ -435,6 +436,26 @@ public sealed class ResolveInactiveTicketsHandlerTests
         {
             this.tickets = tickets.ToArray();
         }
+
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(tickets.FirstOrDefault(t => t.Id == id));
+
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+            Task.FromResult(tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
+
+        public IQueryable<Ticket> GetListQueryable() => Tickets;
+
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Update(Ticket ticket) { }
+
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult<TicketMessage?>(null);
+
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
 
         public int TicketQueryCount { get; private set; }
 
@@ -461,6 +482,9 @@ public sealed class ResolveInactiveTicketsHandlerTests
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
             Array.Empty<ParameterChangeLog>().AsQueryable();
+
+        public IQueryable<SystemLog> SystemLogs =>
+            Array.Empty<SystemLog>().AsQueryable();
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {

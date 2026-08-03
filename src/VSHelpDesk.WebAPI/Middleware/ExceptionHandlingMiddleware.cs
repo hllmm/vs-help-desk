@@ -38,8 +38,15 @@ public sealed class ExceptionHandlingMiddleware
 
     private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
+        var unwrapped = exception switch
+        {
+            System.Reflection.TargetInvocationException tie when tie.InnerException is not null => tie.InnerException,
+            AggregateException ae when ae.InnerExceptions.Count == 1 => ae.InnerExceptions[0],
+            _ => exception
+        };
+
         // Client titles stay stable/non-sensitive; full detail is logged server-side.
-        var (statusCode, title) = exception switch
+        var (statusCode, title) = unwrapped switch
         {
             RequestValidationException => (HttpStatusCode.BadRequest, "The request was invalid."),
             NotFoundException => (HttpStatusCode.NotFound, "The requested resource was not found."),
