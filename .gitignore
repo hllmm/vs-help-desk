@@ -500,6 +500,7 @@ performance/ticket-read-performance.json
 
 # AI agent directories
 docs/
-.antigravity/
-.gemini/
+# Local dotnet CLI cache
+.dotnet/
+
 

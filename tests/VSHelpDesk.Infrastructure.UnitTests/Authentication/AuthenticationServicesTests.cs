@@ -133,6 +133,26 @@ public sealed class AuthenticationServicesTests
         Assert.Contains("placeholder", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData("replace-with-random-utf8-key-at-least-32-bytes-long")]
+    [InlineData("this-is-a-changeme-secret-key-that-is-long-enough")]
+    [InlineData("example-secret-key-that-is-at-least-32-bytes-long!")]
+    public void AuthOptionsValidator_SubstringPlaceholders_FailsValidation(string keyWithPlaceholder)
+    {
+        var validator = new AuthOptionsValidator();
+        var options = new AuthOptions
+        {
+            Issuer = "VSHelpDesk",
+            Audience = "VSHelpDesk.Client",
+            SigningKey = keyWithPlaceholder,
+            ExpirationMinutes = 480
+        };
+
+        var result = validator.Validate(null, options);
+        Assert.True(result.Failed);
+        Assert.Contains(result.Failures, f => f.Contains("placeholder", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public void AddInfrastructure_InvalidAuthConfiguration_FailsStartupValidation()
     {

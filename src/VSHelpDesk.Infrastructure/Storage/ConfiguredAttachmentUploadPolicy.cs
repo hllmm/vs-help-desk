@@ -64,6 +64,13 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
             return "application/zip";
         }
 
+        // Legacy OLE Compound File Binary Format (.xls)
+        if (header.Length >= 4 &&
+            header[0] == 0xD0 && header[1] == 0xCF && header[2] == 0x11 && header[3] == 0xE0)
+        {
+            return "application/vnd.ms-excel";
+        }
+
         // PE executable / DLL
         if (header.Length >= 2 && header[0] == 0x4D && header[1] == 0x5A)
         {
@@ -102,6 +109,11 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
             if (detected is "application/zip" &&
                 declared.StartsWith("application/vnd.openxmlformats-officedocument.", StringComparison.OrdinalIgnoreCase))
             {
+                if (ContainsBytesIgnoreCase(header, "vbaProject.bin"u8))
+                {
+                    return false;
+                }
+
                 return true;
             }
 
@@ -110,12 +122,76 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
 
         // Unknown binary signatures for media types that should have signatures → reject.
         if (declared.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(declared, "application/pdf", StringComparison.OrdinalIgnoreCase))
+            string.Equals(declared, "application/pdf", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(declared, "application/vnd.ms-excel", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        // text/plain and similar: no reliable magic; allow when content type is allowed.
+        // text/plain: no magic signature, validate text encoding and absence of binary/null control bytes.
+        if (string.Equals(declared, "text/plain", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsValidTextContent(header);
+        }
+
         return true;
+    }
+
+    private static bool IsValidTextContent(ReadOnlySpan<byte> content)
+    {
+        if (content.IsEmpty)
+        {
+            return true;
+        }
+
+        if (!System.Text.Unicode.Utf8.IsValid(content))
+        {
+            return false;
+        }
+
+        foreach (var b in content)
+        {
+            if (b == 0x00)
+            {
+                return false;
+            }
+
+            if (b < 0x08 || (b > 0x0D && b < 0x20 && b != 0x1B) || b == 0x7F)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool ContainsBytesIgnoreCase(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
+    {
+        if (needle.IsEmpty || haystack.Length < needle.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i <= haystack.Length - needle.Length; i++)
+        {
+            var match = true;
+            for (var j = 0; j < needle.Length; j++)
+            {
+                var h = (char)haystack[i + j];
+                var n = (char)needle[j];
+                if (char.ToLowerInvariant(h) != char.ToLowerInvariant(n))
+                {
+                    match = false;
+                    break;
+                }
+            }
+
+            if (match)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

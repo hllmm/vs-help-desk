@@ -54,7 +54,7 @@ public sealed class CsrfProtectionMiddleware(RequestDelegate next)
         var path = context.Request.Path.Value ?? string.Empty;
         if (path.Equals("/api/auth/login", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return context.Request.Cookies.ContainsKey(AuthCookieNames.Csrf);
         }
 
         if (path.StartsWith("/api/jobs", StringComparison.OrdinalIgnoreCase))

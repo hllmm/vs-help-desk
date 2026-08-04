@@ -22,6 +22,28 @@ public sealed class AuthController(
     IHostEnvironment hostEnvironment,
     IOptions<AuthOptions> authOptions) : ControllerBase
 {
+    /// <summary>GET api/auth/csrf — issues a pre-login CSRF token cookie</summary>
+    [AllowAnonymous]
+    [HttpGet("csrf")]
+    public IActionResult Csrf()
+    {
+        var csrfToken = AuthCookieService.CreateCsrfToken();
+        Response.Cookies.Append(
+            AuthCookieNames.Csrf,
+            csrfToken,
+            new CookieOptions
+            {
+                HttpOnly = false,
+                Secure = !hostEnvironment.IsDevelopment(),
+                SameSite = SameSiteMode.Lax,
+                Path = "/",
+                MaxAge = TimeSpan.FromMinutes(authOptions.Value.ExpirationMinutes),
+                IsEssential = true
+            });
+
+        return Ok(new { csrfToken });
+    }
+
     /// <summary>POST api/auth/login — UC-001</summary>
     [AllowAnonymous]
     [EnableRateLimiting("auth-login")]

@@ -52,19 +52,15 @@ builder.Services.AddRateLimiter(options =>
         httpContext =>
         {
             var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-            var username = string.Empty;
-            if (httpContext.Request.ContentLength is > 0 and < 4096
-                && httpContext.Request.HasJsonContentType())
-            {
-                // Partition key falls back to IP only; username is read after model bind
-                // via a secondary key in the controller attribute if needed.
-            }
+            var usernameHeader = httpContext.Request.Headers["X-Login-Username"].FirstOrDefault()?.Trim().ToLowerInvariant();
+            var partitionKey = string.IsNullOrWhiteSpace(usernameHeader)
+                ? $"login:{ip}"
+                : $"login:{ip}:{usernameHeader}";
 
-            // IP-based fixed window; username refinement would require middleware body buffer.
-            // Development uses a higher ceiling so WebApplicationFactory suites can log in repeatedly.
+            // IP & Username partition; development uses higher limit for integration testing suites.
             var permitLimit = builder.Environment.IsDevelopment() ? 1_000 : 10;
             return RateLimitPartition.GetFixedWindowLimiter(
-                partitionKey: $"login:{ip}",
+                partitionKey: partitionKey,
                 factory: _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = permitLimit,
@@ -102,7 +98,7 @@ builder.Services.AddCors(options =>
 // Trust reverse-proxy headers (nginx / company edge).
 var trustedNetworks = builder.Configuration
     .GetSection("ForwardedHeaders:TrustedNetworks")
-    .Get<string[]>() ?? ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.1/32"];
+    .Get<string[]>() ?? ["127.0.0.1/32", "::1/128"];
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {

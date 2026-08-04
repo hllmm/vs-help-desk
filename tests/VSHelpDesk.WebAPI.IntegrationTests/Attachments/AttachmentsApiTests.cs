@@ -130,6 +130,7 @@ public sealed class AttachmentsApiTests : IClassFixture<CustomWebApplicationFact
             using var downloadResponse = await client.SendAsync(downloadRequest);
             Assert.Equal(HttpStatusCode.OK, downloadResponse.StatusCode);
             Assert.Equal("attachment-body", await downloadResponse.Content.ReadAsStringAsync());
+            Assert.Equal("attachment", downloadResponse.Content.Headers.ContentDisposition?.DispositionType);
             Assert.Equal(
                 "guide.txt",
                 downloadResponse.Content.Headers.ContentDisposition?.FileNameStar
