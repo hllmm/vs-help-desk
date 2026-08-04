@@ -132,11 +132,12 @@ export function TicketReplyForm({
     }
 
     if (result.messageSaved) {
+      let attachmentFailed = false
       if (selectedFile && result.messageId) {
         try {
           await uploadAttachment(result.messageId, selectedFile)
         } catch {
-          // File upload failed after message saved; still refresh
+          attachmentFailed = true
         }
       }
       setDraft('')
@@ -153,7 +154,9 @@ export function TicketReplyForm({
       setOutcome({
         kind: result.kind,
         messageSaved: true,
-        message,
+        message: attachmentFailed
+          ? `${message} (Ancak dosya eki yüklenemedi; izin verilen formatları denetleyin).`
+          : message,
       })
       return
     }
@@ -251,6 +254,7 @@ export function TicketReplyForm({
             id={`${baseId}-file`}
             ref={fileInputRef}
             type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.txt,.docx,.xlsx"
             className="ticket-reply__file-input"
             disabled={isSubmitting}
             onChange={(e) => {

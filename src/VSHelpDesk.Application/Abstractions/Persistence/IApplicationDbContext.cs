@@ -26,6 +26,8 @@ public interface IApplicationDbContext
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
+    Task ExecuteSqlRawAsync(string sql, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
     /// <summary>
     /// Drops tracked pending entities after a failed SaveChanges so the scoped context
     /// can continue processing later mails (idempotency race recovery).

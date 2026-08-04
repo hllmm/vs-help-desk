@@ -51,6 +51,14 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     void IApplicationDbContext.ClearTrackedChanges() => ChangeTracker.Clear();
 
+    public async Task ExecuteSqlRawAsync(string sql, CancellationToken cancellationToken = default)
+    {
+        if (Database.IsNpgsql())
+        {
+            await Database.ExecuteSqlRawAsync(sql, cancellationToken);
+        }
+    }
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         try

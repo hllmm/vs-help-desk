@@ -1,4 +1,5 @@
 using System.Transactions;
+using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Users.CreateUser;
@@ -9,7 +10,8 @@ namespace VSHelpDesk.Application.Features.Users.UpdateUser;
 
 public sealed class UpdateUserHandler(
     IUserRepository userRepository,
-    IUnitOfWork unitOfWork)
+    IUnitOfWork unitOfWork,
+    IApplicationDbContext? dbContext = null)
 {
     private static readonly SemaphoreSlim AdminUpdateLock = new(1, 1);
     public async Task<UserListItemDto> HandleAsync(
@@ -29,6 +31,13 @@ public sealed class UpdateUserHandler(
                 TransactionScopeOption.Required,
                 new TransactionOptions { IsolationLevel = IsolationLevel.Serializable },
                 TransactionScopeAsyncFlowOption.Enabled);
+
+            if (dbContext is not null)
+            {
+                await dbContext.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock(6220394968519887181);",
+                    cancellationToken);
+            }
 
             var user = await userRepository.GetByIdAsync(command.Id, cancellationToken)
                 ?? throw new NotFoundException(nameof(User), command.Id);

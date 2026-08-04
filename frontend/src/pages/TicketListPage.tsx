@@ -77,11 +77,11 @@ export function TicketListPage(): ReactElement {
   }, [query])
 
   const lifecycleCounts: LifecycleCounts = {
-    all: counts.all,
-    New: counts.new,
-    WaitingCustomerReply: counts.waitingCustomerReply,
-    CustomerReplied: counts.customerReplied,
-    Resolved: counts.resolved,
+    all: counts?.all ?? 0,
+    New: counts?.new ?? 0,
+    WaitingCustomerReply: counts?.waitingCustomerReply ?? 0,
+    CustomerReplied: counts?.customerReplied ?? 0,
+    Resolved: counts?.resolved ?? 0,
   }
   const hasRows = tickets.length > 0
   const isInitialLoading = isLoading && !hasInitialized

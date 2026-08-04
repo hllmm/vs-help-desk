@@ -100,6 +100,10 @@ builder.Services.AddCors(options =>
 });
 
 // Trust reverse-proxy headers (nginx / company edge).
+var trustedNetworks = builder.Configuration
+    .GetSection("ForwardedHeaders:TrustedNetworks")
+    .Get<string[]>() ?? ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.1/32"];
+
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders =
@@ -108,11 +112,13 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 
-    // Trust standard private IP ranges (Docker bridge, Kubernetes pods, local loopback & LAN proxies)
-    options.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
-    options.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
-    options.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
-    options.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("127.0.0.1"), 32));
+    foreach (var cidr in trustedNetworks)
+    {
+        if (!string.IsNullOrWhiteSpace(cidr) && IPNetwork.TryParse(cidr, out var network))
+        {
+            options.KnownIPNetworks.Add(network);
+        }
+    }
 });
 
 var app = builder.Build();

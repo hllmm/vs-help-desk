@@ -53,6 +53,7 @@ public sealed class AttachmentsController(
             new GetAttachmentQuery(id),
             cancellationToken);
 
+        Response.Headers.Append("X-Content-Type-Options", "nosniff");
         return File(attachment.Content, attachment.ContentType, attachment.FileName);
     }
 }

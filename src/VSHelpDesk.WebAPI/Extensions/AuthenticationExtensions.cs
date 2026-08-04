@@ -74,8 +74,15 @@ public static class AuthenticationExtensions
                             return;
                         }
 
+                        var roleClaim = context.Principal?.FindFirst("role")?.Value;
+                        if (!string.Equals(roleClaim, user.Role.ToString(), StringComparison.Ordinal))
+                        {
+                            context.Fail("User role has changed.");
+                            return;
+                        }
+
                         var stampClaim = context.Principal?.FindFirst("security_stamp")?.Value;
-                        if (!string.IsNullOrEmpty(stampClaim) &&
+                        if (string.IsNullOrWhiteSpace(stampClaim) ||
                             !string.Equals(stampClaim, user.SecurityStamp, StringComparison.Ordinal))
                         {
                             context.Fail("Token has been revoked due to security settings change.");

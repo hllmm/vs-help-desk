@@ -83,6 +83,13 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
         var declared = declaredContentType!.Split(';', 2)[0].Trim();
         var detected = DetectContentTypeFromContent(header);
 
+        // Reject macro-enabled Office formats and legacy msword
+        if (declared.Contains("macroEnabled", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(declared, "application/msword", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         // Dangerous sniffed types are always rejected even if not in allow-list path above.
         if (detected is "application/x-msdownload")
         {

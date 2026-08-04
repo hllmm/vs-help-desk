@@ -21,6 +21,11 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
 
             if (migrationBuilder.ActiveProvider?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
             {
+                migrationBuilder.Sql(@"
+                    UPDATE ""Users""
+                    SET ""SecurityStamp"" = md5(random()::text || clock_timestamp()::text)
+                    WHERE ""SecurityStamp"" IS NULL OR ""SecurityStamp"" = '';
+                ");
                 migrationBuilder.Sql("ALTER SEQUENCE ticket_number_seq MAXVALUE 999999 NO CYCLE;");
             }
         }
