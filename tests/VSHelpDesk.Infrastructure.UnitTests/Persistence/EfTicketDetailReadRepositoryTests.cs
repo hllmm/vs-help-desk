@@ -257,7 +257,7 @@ public sealed class EfTicketDetailReadRepositoryTests
             DbCommand command,
             CommandEventData eventData,
             InterceptionResult<DbDataReader> result,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             ReaderCancellationTokens.Add(cancellationToken);
             return base.ReaderExecutingAsync(

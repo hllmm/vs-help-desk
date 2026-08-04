@@ -46,8 +46,8 @@ jobs:
       SeedUser__FullName: CI Support
       SeedUser__Email: support@vshelpdesk.local
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
       - name: Restore
@@ -73,8 +73,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
@@ -91,7 +91,7 @@ jobs:
     name: Kustomize validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Validate kustomize build
         run: |
           kubectl kustomize deploy/k8s/base >/dev/null
@@ -121,8 +121,8 @@ jobs:
       Auth__SigningKey: ci-signing-key-with-at-least-32-bytes!!
       Jobs__ApiKey: ci-jobs-api-key-32-characters!!
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
       - name: Restore
@@ -194,8 +194,8 @@ jobs:
       Auth__SigningKey: ci-signing-key-with-at-least-32-bytes!!
       Jobs__ApiKey: ci-jobs-api-key-32-characters!!
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
       - name: Restore
@@ -230,11 +230,11 @@ jobs:
       ConnectionStrings__DefaultConnection: >-
         Host=localhost;Port=5432;Database=VS_HelpDesk_Perf;Username=stajyer;Password=ci_postgres_password
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
       - name: Restore
@@ -305,7 +305,7 @@ jobs:
           test -s ticket-read-performance.json
       - name: Upload performance evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ticket-read-performance-json
           path: |

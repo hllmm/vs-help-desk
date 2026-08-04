@@ -218,25 +218,25 @@ public sealed class ResolveTicketHandlerTests
             }
         }
 
-        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(Tickets.FirstOrDefault(t => t.Id == id));
 
-        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken) =>
             Task.FromResult(Tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
 
         public IQueryable<Ticket> GetListQueryable() => Tickets;
 
-        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void Update(Ticket ticket) { }
 
-        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken) => Task.CompletedTask;
 
-        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult(false);
 
-        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult<TicketMessage?>(null);
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult<TicketMessage?>(null);
 
-        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken) => Task.FromResult(Guid.Empty);
         public Action? OnSave { get; init; }
         public int SaveCallCount { get; private set; }
         public int ClearTrackedCallCount { get; private set; }
@@ -279,7 +279,7 @@ public sealed class ResolveTicketHandlerTests
         {
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveCallCount++;
             OnSave?.Invoke();

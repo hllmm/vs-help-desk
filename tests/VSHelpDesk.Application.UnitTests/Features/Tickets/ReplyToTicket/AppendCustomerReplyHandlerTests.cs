@@ -253,15 +253,15 @@ public sealed class AppendCustomerReplyHandlerTests
 
         public FakeDb(params Ticket[] tickets) => this.tickets = tickets.ToList();
 
-        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(tickets.FirstOrDefault(t => t.Id == id));
 
-        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken) =>
             Task.FromResult(tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
 
         public IQueryable<Ticket> GetListQueryable() => Tickets;
 
-        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default)
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken)
         {
             Add(ticket);
             return Task.CompletedTask;
@@ -269,28 +269,28 @@ public sealed class AppendCustomerReplyHandlerTests
 
         public void Update(Ticket ticket) { }
 
-        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default)
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken)
         {
             Add(message);
             return Task.CompletedTask;
         }
 
-        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken) =>
             Task.FromResult(Messages.Any(m => m.Id == messageId));
 
-        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken) =>
             Task.FromResult(Messages.FirstOrDefault(m => m.Id == messageId));
 
-        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) =>
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken) =>
             Task.FromResult(Messages.Where(m => m.TicketId == ticketId).OrderBy(m => m.CreatedAt).Select(m => m.Id).FirstOrDefault());
 
-        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) =>
+        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken) =>
             Task.FromResult(Processed.FirstOrDefault(p => p.IdempotencyKey == idempotencyKey));
 
-        Task<ProcessedEmailMessage?> IProcessedEmailRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task<ProcessedEmailMessage?> IProcessedEmailRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(Processed.FirstOrDefault(p => p.Id == id));
 
-        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken = default)
+        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken)
         {
             Add(message);
             return Task.CompletedTask;
@@ -316,7 +316,7 @@ public sealed class AppendCustomerReplyHandlerTests
 
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveChangesCallCount++;
 

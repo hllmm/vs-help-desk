@@ -147,7 +147,7 @@ public sealed class UpdateParameterHandlerTests
 
     private sealed class CountingReader(FakeDb db) : IApplicationParameterReader
     {
-        public Task EnsureCatalogAsync(CancellationToken cancellationToken = default)
+        public Task EnsureCatalogAsync(CancellationToken cancellationToken)
         {
             db.ReaderEnsureCallCount++;
             foreach (var definition in ApplicationParameterCatalog.All)
@@ -169,7 +169,7 @@ public sealed class UpdateParameterHandlerTests
         public Task<int> GetIntAsync(
             string key,
             int defaultValue,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
 
@@ -185,16 +185,16 @@ public sealed class UpdateParameterHandlerTests
         public int SaveCallCount { get; private set; }
         public int ReaderEnsureCallCount { get; set; }
 
-        public Task<ApplicationParameter?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) =>
+        public Task<ApplicationParameter?> GetByCodeAsync(string code, CancellationToken cancellationToken) =>
             Task.FromResult(Parameters.FirstOrDefault(p => p.Key == code));
 
-        public Task<ApplicationParameter?> GetByKeyAsync(string key, CancellationToken cancellationToken = default) =>
+        public Task<ApplicationParameter?> GetByKeyAsync(string key, CancellationToken cancellationToken) =>
             Task.FromResult(Parameters.FirstOrDefault(p => p.Key == key));
 
-        public Task<IReadOnlyList<ApplicationParameter>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<ApplicationParameter>> GetAllAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ApplicationParameter>>(Parameters.ToList());
 
-        public Task AddChangeLogAsync(ParameterChangeLog changeLog, CancellationToken cancellationToken = default)
+        public Task AddChangeLogAsync(ParameterChangeLog changeLog, CancellationToken cancellationToken)
         {
             ChangeLogs.Add(changeLog);
             return Task.CompletedTask;
@@ -230,7 +230,7 @@ public sealed class UpdateParameterHandlerTests
             }
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveCallCount++;
             return Task.FromResult(1);

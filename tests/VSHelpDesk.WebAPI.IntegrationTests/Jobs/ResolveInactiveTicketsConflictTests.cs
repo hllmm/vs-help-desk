@@ -90,7 +90,7 @@ public sealed class ResolveInactiveTicketsConflictTests : IClassFixture<CustomWe
     private sealed class BusyGate : IResolveInactiveTicketsGate
     {
         public Task<IResolveInactiveTicketsLease?> TryAcquireAsync(
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             Task.FromResult<IResolveInactiveTicketsLease?>(null);
     }
 
@@ -132,7 +132,7 @@ public sealed class ResolveInactiveTicketsConflictTests : IClassFixture<CustomWe
         public void Add<TEntity>(TEntity entity) where TEntity : class =>
             ((IApplicationDbContext)inner).Add(entity);
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken) =>
             inner.SaveChangesAsync(cancellationToken);
 
         public void ClearTrackedChanges() =>

@@ -317,13 +317,13 @@ public sealed class ResolveInactiveTicketsHandlerTests
         public string? LastKey { get; private set; }
         public int? LastDefaultValue { get; private set; }
 
-        public Task EnsureCatalogAsync(CancellationToken cancellationToken = default) =>
+        public Task EnsureCatalogAsync(CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
         public Task<int> GetIntAsync(
             string key,
             int defaultValue,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             LastKey = key;
             LastDefaultValue = defaultValue;
@@ -350,21 +350,21 @@ public sealed class ResolveInactiveTicketsHandlerTests
     private sealed class AlwaysEnterGate : IResolveInactiveTicketsGate
     {
         public Task<IResolveInactiveTicketsLease?> TryAcquireAsync(
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             Task.FromResult<IResolveInactiveTicketsLease?>(new NoopLease());
     }
 
     private sealed class BusyGate : IResolveInactiveTicketsGate
     {
         public Task<IResolveInactiveTicketsLease?> TryAcquireAsync(
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             Task.FromResult<IResolveInactiveTicketsLease?>(null);
     }
 
     private sealed class TrackingGate(TrackingLease lease) : IResolveInactiveTicketsGate
     {
         public Task<IResolveInactiveTicketsLease?> TryAcquireAsync(
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             Task.FromResult<IResolveInactiveTicketsLease?>(lease);
     }
 
@@ -438,25 +438,25 @@ public sealed class ResolveInactiveTicketsHandlerTests
             this.tickets = tickets.ToArray();
         }
 
-        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(tickets.FirstOrDefault(t => t.Id == id));
 
-        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken) =>
             Task.FromResult(tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
 
         public IQueryable<Ticket> GetListQueryable() => Tickets;
 
-        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void Update(Ticket ticket) { }
 
-        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken) => Task.CompletedTask;
 
-        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult(false);
 
-        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult<TicketMessage?>(null);
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult<TicketMessage?>(null);
 
-        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken) => Task.FromResult(Guid.Empty);
 
         public int TicketQueryCount { get; private set; }
 
@@ -491,7 +491,7 @@ public sealed class ResolveInactiveTicketsHandlerTests
         {
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken) =>
             Task.FromResult(0);
 
         public void ClearTrackedChanges()

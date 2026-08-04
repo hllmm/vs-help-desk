@@ -187,7 +187,7 @@ public sealed class AuthControllerTests
         {
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken) =>
             Task.FromResult(1);
 
         public void ClearTrackedChanges()
@@ -198,16 +198,16 @@ public sealed class AuthControllerTests
 
     private sealed class FakeUserRepository(User user) : VSHelpDesk.Application.Abstractions.Persistence.Repositories.IUserRepository
     {
-        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult<User?>(user.Id == id ? user : null);
 
-        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken) =>
             Task.FromResult<User?>(string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase) ? user : null);
 
-        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) =>
             Task.FromResult<User?>(string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase) ? user : null);
 
-        public Task AddAsync(User user, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(User user, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void Update(User user) { }
 
@@ -216,7 +216,7 @@ public sealed class AuthControllerTests
 
     private sealed class FakeUnitOfWork : VSHelpDesk.Application.Abstractions.Persistence.Repositories.IUnitOfWork
     {
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(1);
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken) => Task.FromResult(1);
         public void ClearTrackedChanges() { }
     }
 

@@ -263,45 +263,45 @@ public sealed class AssignTicketHandlerTests
         public IQueryable<ParameterChangeLog> ParameterChangeLogs => Array.Empty<ParameterChangeLog>().AsQueryable();
         public IQueryable<SystemLog> SystemLogs => Array.Empty<SystemLog>().AsQueryable();
 
-        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(tickets.FirstOrDefault(t => t.Id == id));
 
-        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken) =>
             Task.FromResult(tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
 
         public IQueryable<Ticket> GetListQueryable() => Tickets;
 
-        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void Update(Ticket ticket) { }
 
-        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken) => Task.CompletedTask;
 
-        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult(false);
 
-        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult<TicketMessage?>(null);
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult<TicketMessage?>(null);
 
-        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken) => Task.FromResult(Guid.Empty);
 
-        Task<User?> IUserRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task<User?> IUserRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(users.FirstOrDefault(u => u.Id == id));
 
-        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) =>
             Task.FromResult(users.FirstOrDefault(u => u.Email == email));
 
-        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken) =>
             Task.FromResult(users.FirstOrDefault(u => u.Username == username));
 
         IQueryable<User> IUserRepository.GetListQueryable() => Users;
 
-        public Task AddAsync(User user, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(User user, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void Update(User user) { }
 
         public void Add<TEntity>(TEntity entity) where TEntity : class =>
             throw new NotSupportedException();
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveCallCount++;
             if (ThrowConflictOnSave)
