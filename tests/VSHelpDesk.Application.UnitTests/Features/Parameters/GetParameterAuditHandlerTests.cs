@@ -93,25 +93,25 @@ public sealed class GetParameterAuditHandlerTests
         public IQueryable<ParameterChangeLog> ParameterChangeLogs => logs.AsQueryable();
         public IQueryable<SystemLog> SystemLogs => Array.Empty<SystemLog>().AsQueryable();
 
-        public Task<ApplicationParameter?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) => Task.FromResult<ApplicationParameter?>(null);
-        public Task<ApplicationParameter?> GetByKeyAsync(string key, CancellationToken cancellationToken = default) => Task.FromResult<ApplicationParameter?>(null);
-        public Task<IReadOnlyList<ApplicationParameter>> GetAllAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ApplicationParameter>>([]);
-        public Task AddChangeLogAsync(ParameterChangeLog changeLog, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<ApplicationParameter?> GetByCodeAsync(string code, CancellationToken cancellationToken) => Task.FromResult<ApplicationParameter?>(null);
+        public Task<ApplicationParameter?> GetByKeyAsync(string key, CancellationToken cancellationToken) => Task.FromResult<ApplicationParameter?>(null);
+        public Task<IReadOnlyList<ApplicationParameter>> GetAllAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<ApplicationParameter>>([]);
+        public Task AddChangeLogAsync(ParameterChangeLog changeLog, CancellationToken cancellationToken) => Task.CompletedTask;
         public void Update(ApplicationParameter parameter) { }
         public IQueryable<ParameterChangeLog> GetChangeLogsQueryable() => ParameterChangeLogs;
 
-        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(users.FirstOrDefault(u => u.Id == id));
-        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) => Task.FromResult(users.FirstOrDefault(u => u.Email == email));
-        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) => Task.FromResult(users.FirstOrDefault(u => u.Username == username));
+        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult(users.FirstOrDefault(u => u.Id == id));
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) => Task.FromResult(users.FirstOrDefault(u => u.Email == email));
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken) => Task.FromResult(users.FirstOrDefault(u => u.Username == username));
         public IQueryable<User> GetListQueryable() => Users;
-        public Task AddAsync(User user, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(User user, CancellationToken cancellationToken) => Task.CompletedTask;
         public void Update(User user) { }
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken) =>
             Task.FromResult(0);
 
         public void ClearTrackedChanges()

@@ -499,7 +499,7 @@ public sealed class InboundEmailItemProcessorTests
     {
         private int index;
 
-        public Task<string> NextAsync(CancellationToken cancellationToken = default) =>
+        public Task<string> NextAsync(CancellationToken cancellationToken) =>
             Task.FromResult(numbers[index++]);
     }
 
@@ -508,7 +508,7 @@ public sealed class InboundEmailItemProcessorTests
         public bool ThrowOnSend { get; init; }
         public List<EmailMessage> Sent { get; } = [];
 
-        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken)
         {
             if (ThrowOnSend)
             {
@@ -528,13 +528,13 @@ public sealed class InboundEmailItemProcessorTests
         public List<TicketAttachment> TicketAttachmentsList { get; } = [];
         public List<ProcessedEmailMessage> ProcessedEmailMessagesList { get; } = [];
         protected readonly List<object> pending = [];
-        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) =>
+        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken) =>
             Task.FromResult(ProcessedEmailMessagesList.FirstOrDefault(p => p.IdempotencyKey == idempotencyKey));
 
-        Task<ProcessedEmailMessage?> IProcessedEmailRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task<ProcessedEmailMessage?> IProcessedEmailRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(ProcessedEmailMessagesList.FirstOrDefault(p => p.Id == id));
 
-        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken = default)
+        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken)
         {
             Add(message);
             return Task.CompletedTask;
@@ -542,15 +542,15 @@ public sealed class InboundEmailItemProcessorTests
 
         IQueryable<ProcessedEmailMessage> IProcessedEmailRepository.GetListQueryable() => ProcessedEmailMessages;
 
-        Task<Ticket?> ITicketRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task<Ticket?> ITicketRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(TicketsList.FirstOrDefault(t => t.Id == id));
 
-        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken) =>
             Task.FromResult(TicketsList.FirstOrDefault(t => t.TicketNumber == ticketNumber));
 
         public IQueryable<Ticket> GetListQueryable() => Tickets;
 
-        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default)
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken)
         {
             Add(ticket);
             return Task.CompletedTask;
@@ -558,28 +558,28 @@ public sealed class InboundEmailItemProcessorTests
 
         public void Update(Ticket ticket) { }
 
-        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default)
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken)
         {
             Add(message);
             return Task.CompletedTask;
         }
 
-        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken) =>
             Task.FromResult(TicketMessagesList.Any(m => m.Id == messageId));
 
-        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken) =>
             Task.FromResult(TicketMessagesList.FirstOrDefault(m => m.Id == messageId));
 
-        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) =>
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken) =>
             Task.FromResult(TicketMessagesList.Where(m => m.TicketId == ticketId).OrderBy(m => m.CreatedAt).Select(m => m.Id).FirstOrDefault());
 
-        Task<TicketAttachment?> ITicketAttachmentRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task<TicketAttachment?> ITicketAttachmentRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(TicketAttachmentsList.FirstOrDefault(a => a.Id == id));
 
-        public Task<TicketAttachment?> GetByStoredFileNameAsync(string storedFileName, CancellationToken cancellationToken = default) =>
+        public Task<TicketAttachment?> GetByStoredFileNameAsync(string storedFileName, CancellationToken cancellationToken) =>
             Task.FromResult(TicketAttachmentsList.FirstOrDefault(a => a.StoredFileName == storedFileName));
 
-        public Task AddAsync(TicketAttachment attachment, CancellationToken cancellationToken = default)
+        public Task AddAsync(TicketAttachment attachment, CancellationToken cancellationToken)
         {
             Add(attachment);
             return Task.CompletedTask;
@@ -589,18 +589,18 @@ public sealed class InboundEmailItemProcessorTests
 
         public IQueryable<TicketAttachment> GetOrphansQueryable() => TicketAttachments.Where(a => !TicketMessagesList.Any(m => m.Id == a.TicketMessageId));
 
-        Task<User?> IUserRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        Task<User?> IUserRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(UsersList.FirstOrDefault(u => u.Id == id));
 
-        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) =>
             Task.FromResult(UsersList.FirstOrDefault(u => u.Email == email));
 
-        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken) =>
             Task.FromResult(UsersList.FirstOrDefault(u => u.Username == username));
 
         IQueryable<User> IUserRepository.GetListQueryable() => Users;
 
-        public Task AddAsync(User user, CancellationToken cancellationToken = default)
+        public Task AddAsync(User user, CancellationToken cancellationToken)
         {
             Add(user);
             return Task.CompletedTask;
@@ -626,7 +626,7 @@ public sealed class InboundEmailItemProcessorTests
 
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 
-        public virtual Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public virtual Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             foreach (var entity in pending)
             {
@@ -661,7 +661,7 @@ public sealed class InboundEmailItemProcessorTests
     {
         public int SaveAttempts { get; private set; }
 
-        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveAttempts++;
             throw new InvalidOperationException("simulated optimistic concurrency");
@@ -691,7 +691,7 @@ public sealed class InboundEmailItemProcessorTests
             Stream content,
             string originalFileName,
             string contentType,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             using var ms = new MemoryStream();
             await content.CopyToAsync(ms, cancellationToken);
@@ -702,13 +702,13 @@ public sealed class InboundEmailItemProcessorTests
                 ms.Length);
         }
 
-        public Task<Stream> OpenReadAsync(string storedFileName, CancellationToken cancellationToken = default) =>
+        public Task<Stream> OpenReadAsync(string storedFileName, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken = default) =>
+        public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task<IReadOnlyList<string>> ListStoredFilesAsync(CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<string>> ListStoredFilesAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
     }
 }

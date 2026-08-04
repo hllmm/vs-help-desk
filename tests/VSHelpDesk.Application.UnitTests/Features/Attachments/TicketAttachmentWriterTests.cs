@@ -136,7 +136,7 @@ public sealed class TicketAttachmentWriterTests
             Stream content,
             string originalFileName,
             string contentType,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             using var ms = new MemoryStream();
             await content.CopyToAsync(ms, cancellationToken);
@@ -149,13 +149,13 @@ public sealed class TicketAttachmentWriterTests
             return stored;
         }
 
-        public Task<Stream> OpenReadAsync(string storedFileName, CancellationToken cancellationToken = default) =>
+        public Task<Stream> OpenReadAsync(string storedFileName, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken = default) =>
+        public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task<IReadOnlyList<string>> ListStoredFilesAsync(CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<string>> ListStoredFilesAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<string>>(Saved.Select(s => s.StoredFileName).ToList());
     }
 
@@ -168,19 +168,19 @@ public sealed class TicketAttachmentWriterTests
 
         public FakeDb(params TicketMessage[] messages) => this.messages = messages.ToList();
 
-        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<Ticket?>(null);
-        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) => Task.FromResult<Ticket?>(null);
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<Ticket?>(null);
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken) => Task.FromResult<Ticket?>(null);
         public IQueryable<Ticket> GetListQueryable() => Tickets;
-        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken) => Task.CompletedTask;
         public void Update(Ticket ticket) { }
-        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(messages.Any(m => m.Id == messageId));
-        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(messages.FirstOrDefault(m => m.Id == messageId));
-        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult(messages.Any(m => m.Id == messageId));
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult(messages.FirstOrDefault(m => m.Id == messageId));
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken) => Task.FromResult(Guid.Empty);
 
-        Task<TicketAttachment?> ITicketAttachmentRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Attachments.FirstOrDefault(a => a.Id == id));
-        public Task<TicketAttachment?> GetByStoredFileNameAsync(string storedFileName, CancellationToken cancellationToken = default) => Task.FromResult(Attachments.FirstOrDefault(a => a.StoredFileName == storedFileName));
-        public Task AddAsync(TicketAttachment attachment, CancellationToken cancellationToken = default) { Add(attachment); return Task.CompletedTask; }
+        Task<TicketAttachment?> ITicketAttachmentRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult(Attachments.FirstOrDefault(a => a.Id == id));
+        public Task<TicketAttachment?> GetByStoredFileNameAsync(string storedFileName, CancellationToken cancellationToken) => Task.FromResult(Attachments.FirstOrDefault(a => a.StoredFileName == storedFileName));
+        public Task AddAsync(TicketAttachment attachment, CancellationToken cancellationToken) { Add(attachment); return Task.CompletedTask; }
         public void Remove(TicketAttachment attachment) => Attachments.Remove(attachment);
         public IQueryable<TicketAttachment> GetOrphansQueryable() => TicketAttachments.Where(a => !messages.Any(m => m.Id == a.TicketMessageId));
 
@@ -202,7 +202,7 @@ public sealed class TicketAttachmentWriterTests
 
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             foreach (var entity in pending)
             {

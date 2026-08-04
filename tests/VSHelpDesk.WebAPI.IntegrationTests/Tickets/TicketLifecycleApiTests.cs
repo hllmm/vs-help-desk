@@ -903,7 +903,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
         public void Reexpose(IncomingEmail email) => pending = email;
 
         public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             IReadOnlyList<IncomingEmail> batch = pending is null ? [] : [pending];
             return Task.FromResult(batch);
@@ -911,7 +911,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
 
         public Task MarkAsProcessedAsync(
             EmailReceiptHandle receiptHandle,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             Marked.Add(receiptHandle);
             if (pending is not null
@@ -931,7 +931,7 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
     {
         public List<EmailMessage> Sent { get; } = [];
 
-        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken)
         {
             Sent.Add(message);
             return Task.CompletedTask;

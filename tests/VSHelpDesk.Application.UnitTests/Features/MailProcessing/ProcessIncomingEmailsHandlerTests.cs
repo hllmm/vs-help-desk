@@ -396,7 +396,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
     private sealed class AlwaysEnterGate : IProcessIncomingEmailsGate
     {
         public Task<IProcessIncomingEmailsLease?> TryAcquireAsync(
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             Task.FromResult<IProcessIncomingEmailsLease?>(new NoopLease());
 
         private sealed class NoopLease : IProcessIncomingEmailsLease
@@ -418,7 +418,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
     private sealed class BusyGate : IProcessIncomingEmailsGate
     {
         public Task<IProcessIncomingEmailsLease?> TryAcquireAsync(
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             Task.FromResult<IProcessIncomingEmailsLease?>(null);
     }
 
@@ -429,7 +429,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
         public bool ThrowOnFetch { get; init; }
 
         public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             if (ThrowOnFetch)
             {
@@ -441,7 +441,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
 
         public Task MarkAsProcessedAsync(
             EmailReceiptHandle receiptHandle,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             if (ThrowOnMarkValues.Contains(receiptHandle.Value))
             {

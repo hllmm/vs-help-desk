@@ -372,7 +372,7 @@ public sealed class SupportReplyToTicketHandlerTests
         public bool ObserveToken { get; init; }
         public List<EmailMessage> Sent { get; } = [];
 
-        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken)
         {
             OnSend?.Invoke();
             if (ObserveToken)
@@ -418,31 +418,31 @@ public sealed class SupportReplyToTicketHandlerTests
             CapturePersistedSnapshot(ticket);
         }
 
-        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(Tickets.FirstOrDefault(t => t.Id == id));
 
-        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) =>
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken) =>
             Task.FromResult(Tickets.FirstOrDefault(t => t.TicketNumber == ticketNumber));
 
         public IQueryable<Ticket> GetListQueryable() => Tickets;
 
-        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void Update(Ticket ticket) { }
 
-        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default)
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken)
         {
             Add(message);
             return Task.CompletedTask;
         }
 
-        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken) =>
             Task.FromResult(Messages.Any(m => m.Id == messageId));
 
-        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) =>
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken) =>
             Task.FromResult(Messages.FirstOrDefault(m => m.Id == messageId));
 
-        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) =>
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken) =>
             Task.FromResult(Messages.Where(m => m.TicketId == ticketId).OrderBy(m => m.CreatedAt).Select(m => m.Id).FirstOrDefault());
 
         public List<TicketMessage> Messages { get; } = [];
@@ -469,7 +469,7 @@ public sealed class SupportReplyToTicketHandlerTests
 
         public void Add<TEntity>(TEntity entity) where TEntity : class => pending.Add(entity!);
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveCallCount++;
             if (conflictOnSaveCalls.Contains(SaveCallCount))

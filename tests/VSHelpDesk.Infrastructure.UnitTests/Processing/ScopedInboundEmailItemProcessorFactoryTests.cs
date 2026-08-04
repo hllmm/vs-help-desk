@@ -158,20 +158,20 @@ public sealed class ScopedInboundEmailItemProcessorFactoryTests
 
     private sealed class EmptyDb : IApplicationDbContext, IProcessedEmailRepository, ITicketRepository, IUnitOfWork
     {
-        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default) => Task.FromResult<ProcessedEmailMessage?>(null);
-        public Task<ProcessedEmailMessage?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<ProcessedEmailMessage?>(null);
-        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken) => Task.FromResult<ProcessedEmailMessage?>(null);
+        public Task<ProcessedEmailMessage?> GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<ProcessedEmailMessage?>(null);
+        public Task AddAsync(ProcessedEmailMessage message, CancellationToken cancellationToken) => Task.CompletedTask;
         IQueryable<ProcessedEmailMessage> IProcessedEmailRepository.GetListQueryable() => ProcessedEmailMessages;
 
-        Task<Ticket?> ITicketRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<Ticket?>(null);
-        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken = default) => Task.FromResult<Ticket?>(null);
+        Task<Ticket?> ITicketRepository.GetByIdAsync(Guid id, CancellationToken cancellationToken) => Task.FromResult<Ticket?>(null);
+        public Task<Ticket?> GetByNumberAsync(string ticketNumber, CancellationToken cancellationToken) => Task.FromResult<Ticket?>(null);
         public IQueryable<Ticket> GetListQueryable() => Tickets;
-        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(Ticket ticket, CancellationToken cancellationToken) => Task.CompletedTask;
         public void Update(Ticket ticket) { }
-        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken = default) => Task.FromResult<TicketMessage?>(null);
-        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken = default) => Task.FromResult(Guid.Empty);
+        public Task AddMessageAsync(TicketMessage message, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task<bool> MessageExistsAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult(false);
+        public Task<TicketMessage?> GetMessageByIdAsync(Guid messageId, CancellationToken cancellationToken) => Task.FromResult<TicketMessage?>(null);
+        public Task<Guid> GetFirstMessageIdAsync(Guid ticketId, CancellationToken cancellationToken) => Task.FromResult(Guid.Empty);
 
         public IQueryable<User> Users => Array.Empty<User>().AsQueryable();
         public IQueryable<Ticket> Tickets => Array.Empty<Ticket>().AsQueryable();
@@ -194,7 +194,7 @@ public sealed class ScopedInboundEmailItemProcessorFactoryTests
         {
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken) =>
             Task.FromResult(0);
 
         public void ClearTrackedChanges()
@@ -204,7 +204,7 @@ public sealed class ScopedInboundEmailItemProcessorFactoryTests
 
     private sealed class NoopSender : IEmailSender
     {
-        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default) =>
+        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 }

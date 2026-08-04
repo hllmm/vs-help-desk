@@ -123,18 +123,18 @@ public sealed class LoginHandlerTests
 
         public IQueryable<User> Users { get; } = users.AsQueryable();
 
-        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken) =>
             Task.FromResult(Users.FirstOrDefault(u => u.Id == id));
 
-        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) =>
             Task.FromResult(Users.FirstOrDefault(u => u.Email == email));
 
-        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default) =>
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken) =>
             Task.FromResult(Users.FirstOrDefault(u => u.Username == username));
 
         public IQueryable<User> GetListQueryable() => Users;
 
-        public Task AddAsync(User user, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task AddAsync(User user, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public void Update(User user) { }
 
@@ -162,7 +162,7 @@ public sealed class LoginHandlerTests
         {
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveChangesCallCount++;
             return Task.FromResult(1);

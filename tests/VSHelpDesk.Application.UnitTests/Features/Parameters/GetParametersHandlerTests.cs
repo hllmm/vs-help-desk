@@ -32,7 +32,7 @@ public sealed class GetParametersHandlerTests
     {
         public int EnsureCallCount { get; private set; }
 
-        public Task EnsureCatalogAsync(CancellationToken cancellationToken = default)
+        public Task EnsureCatalogAsync(CancellationToken cancellationToken)
         {
             EnsureCallCount++;
             foreach (var definition in ApplicationParameterCatalog.All)
@@ -54,7 +54,7 @@ public sealed class GetParametersHandlerTests
         public Task<int> GetIntAsync(
             string key,
             int defaultValue,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
 
@@ -62,16 +62,16 @@ public sealed class GetParametersHandlerTests
     {
         public List<ApplicationParameter> Parameters { get; } = [];
 
-        public Task<ApplicationParameter?> GetByCodeAsync(string code, CancellationToken cancellationToken = default) =>
+        public Task<ApplicationParameter?> GetByCodeAsync(string code, CancellationToken cancellationToken) =>
             Task.FromResult(Parameters.FirstOrDefault(p => p.Key == code));
 
-        public Task<ApplicationParameter?> GetByKeyAsync(string key, CancellationToken cancellationToken = default) =>
+        public Task<ApplicationParameter?> GetByKeyAsync(string key, CancellationToken cancellationToken) =>
             Task.FromResult(Parameters.FirstOrDefault(p => p.Key == key));
 
-        public Task<IReadOnlyList<ApplicationParameter>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        public Task<IReadOnlyList<ApplicationParameter>> GetAllAsync(CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ApplicationParameter>>(Parameters.ToList());
 
-        public Task AddChangeLogAsync(ParameterChangeLog changeLog, CancellationToken cancellationToken = default) =>
+        public Task AddChangeLogAsync(ParameterChangeLog changeLog, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
         public void Update(ApplicationParameter parameter) { }
@@ -102,7 +102,7 @@ public sealed class GetParametersHandlerTests
             }
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken) =>
             Task.FromResult(0);
 
         public void ClearTrackedChanges()

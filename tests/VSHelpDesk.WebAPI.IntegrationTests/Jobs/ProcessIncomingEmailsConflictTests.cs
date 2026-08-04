@@ -99,7 +99,7 @@ public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<CustomWeb
     private sealed class BusyGate : IProcessIncomingEmailsGate
     {
         public Task<IProcessIncomingEmailsLease?> TryAcquireAsync(
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             Task.FromResult<IProcessIncomingEmailsLease?>(null);
     }
 
@@ -108,7 +108,7 @@ public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<CustomWeb
         public int FetchCount { get; private set; }
 
         public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken)
         {
             FetchCount++;
             return Task.FromResult<IReadOnlyList<IncomingEmail>>([]);
@@ -116,7 +116,7 @@ public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<CustomWeb
 
         public Task MarkAsProcessedAsync(
             EmailReceiptHandle receiptHandle,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 }

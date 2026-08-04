@@ -1724,7 +1724,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         public bool ThrowOnSend { get; init; }
         public List<EmailMessage> Sent { get; } = [];
 
-        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
+        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken)
         {
             if (ThrowOnSend)
             {
@@ -1773,7 +1773,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         {
         }
 
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         {
             SaveCallCount++;
             throw new OptimisticConcurrencyException("Simulated resolve concurrency conflict.");

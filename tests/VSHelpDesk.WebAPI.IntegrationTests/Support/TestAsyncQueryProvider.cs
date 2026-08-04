@@ -29,7 +29,7 @@ internal sealed class TestAsyncQueryProvider<TEntity>(IQueryProvider inner) : IA
         return inner.Execute<TResult>(expression);
     }
 
-    public TResult ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken = default)
+    public TResult ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken)
     {
         var resultType = typeof(TResult).GetGenericArguments()[0];
         var executionResult = typeof(IQueryProvider)
@@ -60,7 +60,7 @@ internal sealed class TestAsyncEnumerable<T> : EnumerableQuery<T>, IAsyncEnumera
     {
     }
 
-    public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+    public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken)
     {
         return new TestAsyncEnumerator<T>(this.AsEnumerable().GetEnumerator());
     }
