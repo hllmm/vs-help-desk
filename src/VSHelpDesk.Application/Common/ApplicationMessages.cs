@@ -3,6 +3,7 @@ namespace VSHelpDesk.Application.Common;
 /// <summary>
 /// Application-level error, exception, and validation messages (tr-TR default).
 /// </summary>
+[Obsolete("Use IMessageProvider with MessageKeys instead.")]
 public static class ApplicationMessages
 {
     public static class Auth

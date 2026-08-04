@@ -500,3 +500,8 @@ performance/ticket-read-performance.json
 
 # Private workspace notes (Docs folder intentionally untracked)
 docs/
+
+# AI agent directories
+.antigravity/
+.gemini/
+

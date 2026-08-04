@@ -1,8 +1,10 @@
+using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Parameters;
@@ -21,9 +23,14 @@ using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.ReadModel;
 using VSHelpDesk.Infrastructure.Persistence.Repositories;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
+using VSHelpDesk.Application.Common.Localization;
+using VSHelpDesk.Infrastructure.Localization;
+using VSHelpDesk.Infrastructure.Persistence.Sequences;
 using VSHelpDesk.Infrastructure.Processing;
 using VSHelpDesk.Infrastructure.Security;
 using VSHelpDesk.Infrastructure.Storage;
+using VSHelpDesk.Application.Common.Localization;
+using VSHelpDesk.Infrastructure.Localization;
 
 namespace VSHelpDesk.Infrastructure;
 
@@ -37,6 +44,9 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         services.AddLogging();
+        services.AddSingleton<IMessageProvider>(
+            new DictionaryMessageProvider(TurkishMessages.Messages));
+
 
         var connectionString = configuration.GetConnectionString("DefaultConnection");
         var provider = configuration["Database:Provider"]?.Trim();
@@ -144,6 +154,7 @@ public static class DependencyInjection
 
         if (isPostgres)
         {
+            services.AddScoped<ISequenceValueAllocator, PostgresSequenceAllocator>();
             services.AddSingleton<IDatabaseErrorClassifier, PostgresDatabaseErrorClassifier>();
             services.AddSingleton<IProcessIncomingEmailsGate>(serviceProvider =>
                 new PostgresProcessIncomingEmailsGate(
@@ -158,6 +169,7 @@ public static class DependencyInjection
         }
         else
         {
+            services.AddScoped<ISequenceValueAllocator, FallbackSequenceAllocator>();
             services.AddSingleton<IDatabaseErrorClassifier, FallbackDatabaseErrorClassifier>();
             services.AddSingleton<IProcessIncomingEmailsGate, InProcessProcessIncomingEmailsGate>();
             services.AddSingleton<IResolveInactiveTicketsGate, InProcessResolveInactiveTicketsGate>();
@@ -200,8 +212,19 @@ public static class DependencyInjection
 
         services.AddHostedService<OrphanAttachmentCleanupHostedService>();
 
+        var channel = Channel.CreateBounded<SystemLog>(new BoundedChannelOptions(10_000)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest
+        });
+
+        services.AddSingleton(channel);
+        services.AddSingleton(channel.Reader);
+        services.AddSingleton(channel.Writer);
+
         services.AddSingleton<ILoggerProvider, DbLoggerProvider>(sp =>
-            new DbLoggerProvider(sp.GetRequiredService<IServiceScopeFactory>(), LogLevel.Error));
+            new DbLoggerProvider(sp.GetRequiredService<ChannelWriter<SystemLog>>(), LogLevel.Error));
+
+        services.AddHostedService<DbLogBackgroundWriter>();
 
         return services;
     }

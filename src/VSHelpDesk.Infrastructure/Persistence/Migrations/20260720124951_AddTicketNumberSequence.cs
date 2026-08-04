@@ -11,6 +11,9 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Npgsql.EntityFrameworkCore.PostgreSQL")
+                return;
+
             migrationBuilder.Sql(
                 $"""
                 CREATE SEQUENCE IF NOT EXISTS {TicketNumberGenerator.SequenceName}
@@ -26,6 +29,9 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            if (migrationBuilder.ActiveProvider != "Npgsql.EntityFrameworkCore.PostgreSQL")
+                return;
+
             migrationBuilder.Sql($"DROP SEQUENCE IF EXISTS {TicketNumberGenerator.SequenceName};");
         }
     }

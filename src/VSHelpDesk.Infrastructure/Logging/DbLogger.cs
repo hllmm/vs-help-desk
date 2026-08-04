@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Persistence;
@@ -8,13 +9,13 @@ namespace VSHelpDesk.Infrastructure.Logging;
 public sealed class DbLogger : ILogger
 {
     private readonly string _categoryName;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ChannelWriter<SystemLog> _writer;
     private readonly LogLevel _minLogLevel;
 
-    public DbLogger(string categoryName, IServiceScopeFactory scopeFactory, LogLevel minLogLevel = LogLevel.Error)
+    public DbLogger(string categoryName, ChannelWriter<SystemLog> writer, LogLevel minLogLevel = LogLevel.Error)
     {
         _categoryName = categoryName ?? string.Empty;
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _writer = writer ?? throw new ArgumentNullException(nameof(writer));
         _minLogLevel = minLogLevel;
     }
 
@@ -55,13 +56,6 @@ public sealed class DbLogger : ILogger
 
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetService<IApplicationDbContext>();
-            if (dbContext == null)
-            {
-                return;
-            }
-
             var logEntry = new SystemLog(
                 logLevel: logLevel.ToString(),
                 message: message,
@@ -70,8 +64,7 @@ public sealed class DbLogger : ILogger
                 eventId: eventId.Id != 0 ? eventId.Id : null,
                 createdAt: DateTime.UtcNow);
 
-            dbContext.Add(logEntry);
-            dbContext.SaveChangesAsync().GetAwaiter().GetResult();
+            _writer.TryWrite(logEntry);
         }
         catch
         {

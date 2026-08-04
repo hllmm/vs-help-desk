@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using VSHelpDesk.Domain.Tickets;
 using VSHelpDesk.Infrastructure.Persistence;
+using VSHelpDesk.Infrastructure.Persistence.Sequences;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Persistence;
 
@@ -10,7 +11,7 @@ public sealed class TicketNumberGeneratorTests
     public async Task NextAsync_AgainstPostgreSQL_ReturnsDistinctCanonicalNumbers()
     {
         await using var context = PostgresTestConnection.CreateContext();
-        var generator = new TicketNumberGenerator(context);
+        var generator = new TicketNumberGenerator(new PostgresSequenceAllocator(context));
 
         var first = await generator.NextAsync();
         var second = await generator.NextAsync();
@@ -28,7 +29,7 @@ public sealed class TicketNumberGeneratorTests
         var tasks = Enumerable.Range(0, parallelCount).Select(async _ =>
         {
             await using var context = PostgresTestConnection.CreateContext();
-            var generator = new TicketNumberGenerator(context);
+            var generator = new TicketNumberGenerator(new PostgresSequenceAllocator(context));
             return await generator.NextAsync();
         });
 
@@ -52,7 +53,7 @@ public sealed class TicketNumberGeneratorTests
                 await command.ExecuteScalarAsync(),
                 System.Globalization.CultureInfo.InvariantCulture);
 
-            var generator = new TicketNumberGenerator(context);
+            var generator = new TicketNumberGenerator(new PostgresSequenceAllocator(context));
             var allocated = await generator.NextAsync();
 
             command.CommandText = $"SELECT last_value FROM {TicketNumberGenerator.SequenceName}";
