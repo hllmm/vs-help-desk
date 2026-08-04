@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
@@ -313,7 +314,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
             handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None));
 
         Assert.Equal(
-            "The 'process-incoming-emails' job is already running.",
+            ApplicationMessages.MailProcessing.JobAlreadyRunning("process-incoming-emails"),
             exception.Message);
     }
 

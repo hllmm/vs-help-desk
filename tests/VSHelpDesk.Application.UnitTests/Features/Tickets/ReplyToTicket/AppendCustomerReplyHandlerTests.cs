@@ -190,7 +190,7 @@ public sealed class AppendCustomerReplyHandlerTests
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        Assert.Contains("not found", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("bulunamadı", result.Error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -209,7 +209,7 @@ public sealed class AppendCustomerReplyHandlerTests
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        Assert.Contains("does not match", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("eşleşmiyor", result.Error, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(TicketStatus.New, ticket.Status);
     }
 

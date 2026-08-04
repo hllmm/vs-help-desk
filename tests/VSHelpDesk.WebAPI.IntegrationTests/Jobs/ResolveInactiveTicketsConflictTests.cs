@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Infrastructure.Persistence;
@@ -49,7 +50,7 @@ public sealed class ResolveInactiveTicketsConflictTests : IClassFixture<CustomWe
         var root = doc.RootElement;
         Assert.Equal(409, root.GetProperty("status").GetInt32());
         Assert.Equal(
-            "The request conflicts with current state.",
+            ApplicationMessages.Http.Conflict,
             root.GetProperty("title").GetString());
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("connection", json, StringComparison.OrdinalIgnoreCase);

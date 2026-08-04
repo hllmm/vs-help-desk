@@ -1,5 +1,6 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Domain.Entities;
@@ -122,22 +123,22 @@ public sealed class CreateTicketHandler(
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
-            return "IdempotencyKey is required.";
+            return ApplicationMessages.Tickets.IdempotencyKeyRequired;
         }
 
         if (string.IsNullOrWhiteSpace(command.Subject))
         {
-            return "Subject is required.";
+            return ApplicationMessages.Tickets.SubjectRequired;
         }
 
         if (string.IsNullOrWhiteSpace(command.CustomerName))
         {
-            return "CustomerName is required.";
+            return ApplicationMessages.Tickets.CustomerNameRequired;
         }
 
         if (string.IsNullOrWhiteSpace(command.CustomerEmail))
         {
-            return "CustomerEmail is required.";
+            return ApplicationMessages.Tickets.CustomerEmailRequired;
         }
 
         return null;

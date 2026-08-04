@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
 using VSHelpDesk.WebAPI.IntegrationTests.Support;
@@ -45,7 +46,7 @@ public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<CustomWeb
         var root = doc.RootElement;
         Assert.Equal(409, root.GetProperty("status").GetInt32());
         Assert.Equal(
-            "The request conflicts with current state.",
+            ApplicationMessages.Http.Conflict,
             root.GetProperty("title").GetString());
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("connection", json, StringComparison.OrdinalIgnoreCase);
@@ -67,7 +68,7 @@ public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<CustomWeb
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
         Assert.Equal(
-            "The request conflicts with current state.",
+            ApplicationMessages.Http.Conflict,
             doc.RootElement.GetProperty("title").GetString());
     }
 

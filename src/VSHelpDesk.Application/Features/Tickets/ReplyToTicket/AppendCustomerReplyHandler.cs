@@ -1,5 +1,6 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
@@ -24,12 +25,12 @@ public sealed class AppendCustomerReplyHandler(
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
-            return Result.Failure<AppendCustomerReplyResult>("IdempotencyKey is required.");
+            return Result.Failure<AppendCustomerReplyResult>(ApplicationMessages.Tickets.IdempotencyKeyRequired);
         }
 
         if (string.IsNullOrWhiteSpace(command.TicketNumber))
         {
-            return Result.Failure<AppendCustomerReplyResult>("TicketNumber is required.");
+            return Result.Failure<AppendCustomerReplyResult>(ApplicationMessages.Tickets.TicketNumberRequired);
         }
 
         try
@@ -69,7 +70,7 @@ public sealed class AppendCustomerReplyHandler(
         if (ticket is null)
         {
             return Result.Failure<AppendCustomerReplyResult>(
-                $"Ticket '{command.TicketNumber}' was not found.");
+                ApplicationMessages.Tickets.NotFound(command.TicketNumber));
         }
 
         // Optional From binding when caller supplies a customer address (ProcessIncoming).
@@ -80,7 +81,7 @@ public sealed class AppendCustomerReplyHandler(
                 StringComparison.OrdinalIgnoreCase))
         {
             return Result.Failure<AppendCustomerReplyResult>(
-                "From address does not match the ticket customer email.");
+                ApplicationMessages.Tickets.FromAddressMismatch);
         }
 
         var statusBefore = ticket.Status;

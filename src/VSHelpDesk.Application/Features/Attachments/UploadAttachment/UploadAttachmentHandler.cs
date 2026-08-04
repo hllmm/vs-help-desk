@@ -29,9 +29,7 @@ public sealed class UploadAttachmentHandler(
         if (!result.WasStored)
         {
             var notFoundReason = ApplicationMessages.Attachments.MessageNotFound(command.TicketMessageId);
-            if (result.SkipReason != null &&
-                (result.SkipReason == notFoundReason ||
-                 result.SkipReason.Contains($"'{command.TicketMessageId}' was not found", StringComparison.OrdinalIgnoreCase)))
+            if (result.SkipReason == notFoundReason)
             {
                 throw new NotFoundException(result.SkipReason);
             }

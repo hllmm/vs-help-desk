@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application;
 using VSHelpDesk.Application.Abstractions.Authentication;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
@@ -41,7 +42,7 @@ builder.Services.AddRateLimiter(options =>
     {
         context.HttpContext.Response.ContentType = "application/json";
         await context.HttpContext.Response.WriteAsJsonAsync(
-            new { message = "Too many login attempts. Please try again later." },
+            new { message = ApplicationMessages.Http.RateLimitExceeded },
             token);
     };
 

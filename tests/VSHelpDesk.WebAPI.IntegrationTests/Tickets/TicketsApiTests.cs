@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.AssignTicket;
 using VSHelpDesk.Application.Features.Tickets.ReadModel;
@@ -1102,7 +1103,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             using var doc = JsonDocument.Parse(json);
             Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
             Assert.Equal(
-                "The request conflicts with current state.",
+                ApplicationMessages.Http.Conflict,
                 doc.RootElement.GetProperty("title").GetString());
             Assert.DoesNotContain(customerEmail, json, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(replyContent, json, StringComparison.OrdinalIgnoreCase);
@@ -1298,7 +1299,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
         Assert.Equal(
-            "The request conflicts with current state.",
+            ApplicationMessages.Http.Conflict,
             doc.RootElement.GetProperty("title").GetString());
         Assert.Equal(1, conflictDb.SaveCallCount);
         Assert.Equal(0, conflictDb.ClearTrackedCallCount);

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Parameters;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Parameters;
 using VSHelpDesk.Application.Features.ScheduledJobs.ResolveInactiveTickets;
@@ -234,7 +235,7 @@ public sealed class ResolveInactiveTicketsHandlerTests
             handler.HandleAsync(new ResolveInactiveTicketsCommand(), CancellationToken.None));
 
         Assert.Equal(
-            "The 'resolve-inactive-tickets' job is already running.",
+            ApplicationMessages.MailProcessing.JobAlreadyRunning("resolve-inactive-tickets"),
             ex.Message);
         Assert.Equal(0, db.TicketQueryCount);
         Assert.Empty(factory.CalledTicketIds);

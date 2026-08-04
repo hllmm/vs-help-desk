@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Domain.Exceptions;
 
@@ -48,13 +49,13 @@ public sealed class ExceptionHandlingMiddleware
         // Client titles stay stable/non-sensitive; full detail is logged server-side.
         var (statusCode, title) = unwrapped switch
         {
-            RequestValidationException => (HttpStatusCode.BadRequest, "The request was invalid."),
-            NotFoundException => (HttpStatusCode.NotFound, "The requested resource was not found."),
-            UnauthorizedApplicationException => (HttpStatusCode.Unauthorized, "Unauthorized."),
+            RequestValidationException => (HttpStatusCode.BadRequest, ApplicationMessages.Http.BadRequest),
+            NotFoundException => (HttpStatusCode.NotFound, ApplicationMessages.Http.NotFound),
+            UnauthorizedApplicationException => (HttpStatusCode.Unauthorized, ApplicationMessages.Http.Unauthorized),
             ConflictApplicationException =>
-                (HttpStatusCode.Conflict, "The request conflicts with current state."),
-            DomainException => (HttpStatusCode.BadRequest, "A domain rule was violated."),
-            _ => (HttpStatusCode.InternalServerError, "An unexpected error occurred.")
+                (HttpStatusCode.Conflict, ApplicationMessages.Http.Conflict),
+            DomainException => (HttpStatusCode.BadRequest, ApplicationMessages.Http.DomainRuleViolation),
+            _ => (HttpStatusCode.InternalServerError, ApplicationMessages.Http.UnexpectedError)
         };
 
         if (exception is RequestValidationException requestValidationException)

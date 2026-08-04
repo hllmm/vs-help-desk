@@ -14,59 +14,71 @@ public static class ApplicationMessages
 
     public static class Tickets
     {
-        public static string NotFound(object idOrNumber) => $"Ticket '{idOrNumber}' was not found.";
-        public static string MessageNotFound(object messageId) => $"Ticket message '{messageId}' was not found.";
-        public const string ResolvedTicketSupportReply = "A resolved ticket cannot receive a support reply.";
-        public const string FromAddressMismatch = "From address does not match the ticket customer email.";
-        public const string SubjectRequired = "Subject is required.";
-        public const string CustomerNameRequired = "CustomerName is required.";
-        public const string CustomerEmailRequired = "CustomerEmail is required.";
-        public const string IdempotencyKeyRequired = "IdempotencyKey is required.";
-        public const string TicketNumberRequired = "TicketNumber is required.";
-        public const string ContentRequired = "Content is required.";
-        public const string ConcurrentUpdate = "Could not update ticket due to a concurrent update.";
+        public static string NotFound(object idOrNumber) => $"'{idOrNumber}' numaralı Ticket bulunamadı.";
+        public static string MessageNotFound(object messageId) => $"'{messageId}' numaralı Ticket mesajı bulunamadı.";
+        public const string ResolvedTicketSupportReply = "Çözümlenmiş bir Tickete destek yanıtı gönderilemez.";
+        public const string FromAddressMismatch = "Gönderen adresi, Ticket müşteri e-postasıyla eşleşmiyor.";
+        public const string SubjectRequired = "Ticket konusu (Subject) zorunludur.";
+        public const string CustomerNameRequired = "Müşteri adı (CustomerName) zorunludur.";
+        public const string CustomerEmailRequired = "Müşteri e-postası (CustomerEmail) zorunludur.";
+        public const string IdempotencyKeyRequired = "IdempotencyKey zorunludur.";
+        public const string TicketNumberRequired = "Ticket numarası (TicketNumber) zorunludur.";
+        public const string ContentRequired = "İçerik (Content) zorunludur.";
+        public const string ConcurrentUpdate = "Eşzamanlı güncelleme nedeniyle Ticket güncellenemedi.";
     }
 
     public static class Attachments
     {
-        public const string FileNameRequired = "File name is required.";
-        public const string FileContentRequired = "File content is required.";
-        public static string MaxSizeBytesExceeded(long maxBytes) => $"File exceeds the maximum allowed size of {maxBytes} bytes.";
-        public static string ContentTypeNotAllowed(string contentType) => $"Content type '{contentType}' is not allowed.";
-        public static string MessageNotFound(object messageId) => $"Ticket message '{messageId}' was not found.";
-        public const string FailedToReadFile = "Failed to read the uploaded file.";
-        public const string ContentTypeMismatch = "File content does not match the declared content type.";
-        public const string FailedToStoreFile = "Failed to store the uploaded file.";
-        public const string FailedToPersistMetadata = "Failed to persist attachment metadata.";
-        public static string NotFound(object attachmentId) => $"Attachment '{attachmentId}' was not found.";
-        public static string StorageFileNotFound(object attachmentId) => $"Attachment file for '{attachmentId}' was not found in storage.";
+        public const string FileNameRequired = "Dosya adı (FileName) zorunludur.";
+        public const string FileContentRequired = "Dosya içeriği (FileContent) zorunludur.";
+        public static string MaxSizeBytesExceeded(long maxBytes) => $"Dosya izin verilen azami {maxBytes} bayt boyutunu aşıyor.";
+        public static string ContentTypeNotAllowed(string contentType) => $"'{contentType}' içerik türüne izin verilmiyor.";
+        public static string MessageNotFound(object messageId) => $"'{messageId}' numaralı Ticket mesajı bulunamadı.";
+        public const string FailedToReadFile = "Yüklenen dosya okunamadı.";
+        public const string ContentTypeMismatch = "Dosya içeriği belirtilen içerik türüyle eşleşmiyor.";
+        public const string FailedToStoreFile = "Yüklenen dosya saklanamadı.";
+        public const string FailedToPersistMetadata = "Ek (attachment) meta verisi kaydedilemedi.";
+        public static string NotFound(object attachmentId) => $"'{attachmentId}' numaralı ek (attachment) bulunamadı.";
+        public static string StorageFileNotFound(object attachmentId) => $"'{attachmentId}' numaralı ekin dosyası depolama alanında bulunamadı.";
     }
 
     public static class Users
     {
-        public static string EmailAlreadyRegistered(string email) => $"Email '{email}' is already registered.";
-        public static string NotFound(object userId) => $"User '{userId}' was not found.";
-        public const string CannotDeactivateLastAdmin = "Cannot deactivate or demote the last Active Admin user.";
-        public const string UsernameRequired = "Username is required.";
-        public const string PasswordRequired = "Password is required.";
+        public static string EmailAlreadyRegistered(string email) => $"'{email}' e-posta adresi zaten kayıtlı.";
+        public static string NotFound(object userId) => $"'{userId}' numaralı kullanıcı bulunamadı.";
+        public const string CannotDeactivateLastAdmin = "Son Aktif Yönetici kullanıcısı devre dışı bırakılamaz veya düşürülemez.";
+        public const string UsernameRequired = "Kullanıcı adı (Username) zorunludur.";
+        public const string PasswordRequired = "Şifre (Password) zorunludur.";
     }
 
     public static class Parameters
     {
-        public static string NotFound(string key) => $"Parameter '{key}' was not found.";
-        public const string InvalidValue = "Parameter value is invalid.";
-        public const string NameRequired = "Parameter name is required.";
+        public static string NotFound(string key) => $"'{key}' parametresi bulunamadı.";
+        public const string InvalidValue = "Parametre değeri geçersiz.";
+        public const string NameRequired = "Parametre adı (Name) zorunludur.";
     }
 
     public static class MailProcessing
     {
-        public static string JobAlreadyRunning(string jobName) => $"The '{jobName}' job is already running.";
-        public const string FailedToProcessIncomingEmail = "Failed to process incoming email.";
+        public static string JobAlreadyRunning(string jobName) => $"'{jobName}' işi zaten çalışıyor.";
+        public const string FailedToProcessIncomingEmail = "Gelen e-posta işlenemedi.";
     }
 
     public static class Common
     {
-        public static string NotFoundTemplate(string entityName, object key) => $"{entityName} '{key}' was not found.";
-        public const string OptimisticConcurrencyConflict = "The entity was modified by another operation.";
+        public static string NotFoundTemplate(string entityName, object key) => $"{entityName} '{key}' numaralı kayıt bulunamadı.";
+        public const string OptimisticConcurrencyConflict = "Varlık başka bir işlem tarafından değiştirildi.";
+    }
+
+    /// <summary>HTTP-level response titles returned by the WebAPI middleware/filters.</summary>
+    public static class Http
+    {
+        public const string RateLimitExceeded = "Çok fazla giriş denemesi yapıldı. Lütfen daha sonra tekrar deneyin.";
+        public const string BadRequest = "İstek geçersiz.";
+        public const string NotFound = "İstenen kaynak bulunamadı.";
+        public const string Unauthorized = "Yetkisiz erişim.";
+        public const string Conflict = "İstek, mevcut durumla çakışıyor.";
+        public const string DomainRuleViolation = "Bir alan kuralı ihlal edildi.";
+        public const string UnexpectedError = "Beklenmeyen bir hata oluştu.";
     }
 }

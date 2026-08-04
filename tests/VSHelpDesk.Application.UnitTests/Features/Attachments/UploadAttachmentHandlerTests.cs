@@ -60,7 +60,7 @@ public sealed class UploadAttachmentHandlerTests
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        Assert.Contains("not allowed", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("izin verilmiyor", result.Error, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(db.Attachments);
         Assert.Empty(storage.Saved);
     }
@@ -84,7 +84,7 @@ public sealed class UploadAttachmentHandlerTests
             CancellationToken.None);
 
         Assert.True(result.IsFailure);
-        Assert.Contains("maximum", result.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("azami", result.Error, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(db.Attachments);
         Assert.Empty(storage.Saved);
     }

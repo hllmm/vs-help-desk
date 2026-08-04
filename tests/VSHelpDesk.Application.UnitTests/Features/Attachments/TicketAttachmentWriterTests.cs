@@ -28,7 +28,7 @@ public sealed class TicketAttachmentWriterTests
             CancellationToken.None);
 
         Assert.False(result.WasStored);
-        Assert.Contains("was not found", result.SkipReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("bulunamadı", result.SkipReason, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(storage.Saved);
         Assert.Empty(db.Attachments);
     }
@@ -51,7 +51,7 @@ public sealed class TicketAttachmentWriterTests
             CancellationToken.None);
 
         Assert.False(result.WasStored);
-        Assert.Contains("exceeds the maximum allowed size", result.SkipReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("boyutunu aşıyor", result.SkipReason, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(storage.Saved);
         Assert.Empty(db.Attachments);
     }

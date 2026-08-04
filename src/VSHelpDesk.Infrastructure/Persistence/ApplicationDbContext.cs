@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Domain.Entities;
+using VSHelpDesk.Infrastructure.Persistence.Configurations;
 
 namespace VSHelpDesk.Infrastructure.Persistence;
 
@@ -82,8 +83,16 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasPostgresExtension("pg_trgm");
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+        var isPostgres = Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
+        if (isPostgres)
+        {
+            modelBuilder.HasPostgresExtension("pg_trgm");
+        }
+
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            typeof(ApplicationDbContext).Assembly,
+            configurationType => configurationType != typeof(TicketConfiguration));
+        modelBuilder.ApplyConfiguration(new TicketConfiguration(isPostgres));
         base.OnModelCreating(modelBuilder);
     }
 }

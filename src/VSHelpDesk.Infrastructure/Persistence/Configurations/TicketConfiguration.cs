@@ -4,7 +4,7 @@ using VSHelpDesk.Domain.Entities;
 
 namespace VSHelpDesk.Infrastructure.Persistence.Configurations;
 
-public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
+public sealed class TicketConfiguration(bool isPostgres) : IEntityTypeConfiguration<Ticket>
 {
     public void Configure(EntityTypeBuilder<Ticket> builder)
     {
@@ -17,12 +17,16 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
         builder.Property(ticket => ticket.CustomerName).IsRequired().HasMaxLength(200);
         builder.Property(ticket => ticket.CustomerEmail).IsRequired().HasMaxLength(255);
         builder.Property(ticket => ticket.Status).IsRequired().HasConversion<int>();
-        builder.Property(ticket => ticket.WaitingCustomerSince).HasColumnType("timestamp with time zone");
-        builder.Property(ticket => ticket.CreatedAt).IsRequired().HasColumnType("timestamp with time zone");
-        builder.Property(ticket => ticket.UpdatedAt).IsRequired().HasColumnType("timestamp with time zone");
-        builder.Property(ticket => ticket.ResolvedAt).HasColumnType("timestamp with time zone");
-        builder.Property(ticket => ticket.LastActivityAt).IsRequired().HasColumnType("timestamp with time zone");
-        builder.Property(ticket => ticket.Version).IsRowVersion();
+
+        if (isPostgres)
+        {
+            builder.Property(ticket => ticket.WaitingCustomerSince).HasColumnType("timestamp with time zone");
+            builder.Property(ticket => ticket.CreatedAt).IsRequired().HasColumnType("timestamp with time zone");
+            builder.Property(ticket => ticket.UpdatedAt).IsRequired().HasColumnType("timestamp with time zone");
+            builder.Property(ticket => ticket.ResolvedAt).HasColumnType("timestamp with time zone");
+            builder.Property(ticket => ticket.LastActivityAt).IsRequired().HasColumnType("timestamp with time zone");
+            builder.Property(ticket => ticket.Version).IsRowVersion();
+        }
 
         builder.HasIndex(ticket => ticket.TicketNumber, "IX_Tickets_TicketNumber")
             .IsUnique();
@@ -36,18 +40,21 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
             .HasDatabaseName("IX_Tickets_Status_WaitingCustomerSince_Id")
             .IsDescending(false, false, false);
 
-        ConfigureTrigramIndex(
-            builder.HasIndex(ticket => ticket.TicketNumber, "IX_Tickets_TicketNumber_Trgm"),
-            "IX_Tickets_TicketNumber_Trgm");
-        ConfigureTrigramIndex(
-            builder.HasIndex(ticket => ticket.Subject),
-            "IX_Tickets_Subject_Trgm");
-        ConfigureTrigramIndex(
-            builder.HasIndex(ticket => ticket.CustomerName),
-            "IX_Tickets_CustomerName_Trgm");
-        ConfigureTrigramIndex(
-            builder.HasIndex(ticket => ticket.CustomerEmail),
-            "IX_Tickets_CustomerEmail_Trgm");
+        if (isPostgres)
+        {
+            ConfigureTrigramIndex(
+                builder.HasIndex(ticket => ticket.TicketNumber, "IX_Tickets_TicketNumber_Trgm"),
+                "IX_Tickets_TicketNumber_Trgm");
+            ConfigureTrigramIndex(
+                builder.HasIndex(ticket => ticket.Subject),
+                "IX_Tickets_Subject_Trgm");
+            ConfigureTrigramIndex(
+                builder.HasIndex(ticket => ticket.CustomerName),
+                "IX_Tickets_CustomerName_Trgm");
+            ConfigureTrigramIndex(
+                builder.HasIndex(ticket => ticket.CustomerEmail),
+                "IX_Tickets_CustomerEmail_Trgm");
+        }
 
         builder.HasOne<User>()
             .WithMany()
