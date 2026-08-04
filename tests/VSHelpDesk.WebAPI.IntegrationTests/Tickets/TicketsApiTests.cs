@@ -1268,6 +1268,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             "Conflict resolve",
             "Ada",
             "ada-resolve-conflict@example.test",
+            DateTime.UtcNow);
         var (authJwt, csrf, supportUserId) = await CookieAuthTestHelper.CaptureSupportLoginAsync(factory);
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -1502,7 +1503,10 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             "ada-assignment-conflict@example.test",
             DateTime.UtcNow.AddHours(-1));
         Assert.True(openTicket.Assign(Guid.NewGuid(), DateTime.UtcNow.AddMinutes(-30)));
-        var (authJwt, csrf, supportUser) = await CookieAuthTestHelper.CaptureSupportLoginAsync(factory);
+        var (authJwt, csrf, supportUserId) = await CookieAuthTestHelper.CaptureSupportLoginAsync(factory);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var supportUser = await db.Users.FirstAsync(u => u.Id == supportUserId);
         var conflictDb = new ConflictOnSaveDbContext(openTicket, supportUser);
         var conflictFactory = factory.WithWebHostBuilder(builder =>
         {
@@ -1740,23 +1744,25 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         public int SaveCallCount { get; private set; }
         public int ClearTrackedCallCount { get; private set; }
 
-        public IQueryable<User> Users => user is not null ? new[] { user }.AsQueryable() : Array.Empty<User>().AsQueryable();
-        public IQueryable<Ticket> Tickets => new[] { ticket }.AsQueryable();
+        public IQueryable<User> Users => user is not null
+            ? new TestAsyncEnumerable<User>(new[] { user })
+            : new TestAsyncEnumerable<User>(Array.Empty<User>());
+        public IQueryable<Ticket> Tickets => new TestAsyncEnumerable<Ticket>(new[] { ticket });
         public IQueryable<TicketMessage> TicketMessages =>
-            Array.Empty<TicketMessage>().AsQueryable();
+            new TestAsyncEnumerable<TicketMessage>(Array.Empty<TicketMessage>());
         public IQueryable<TicketAttachment> TicketAttachments =>
-            Array.Empty<TicketAttachment>().AsQueryable();
+            new TestAsyncEnumerable<TicketAttachment>(Array.Empty<TicketAttachment>());
         public IQueryable<ProcessedEmailMessage> ProcessedEmailMessages =>
-            Array.Empty<ProcessedEmailMessage>().AsQueryable();
+            new TestAsyncEnumerable<ProcessedEmailMessage>(Array.Empty<ProcessedEmailMessage>());
 
         public IQueryable<ApplicationParameter> ApplicationParameters =>
-            Array.Empty<ApplicationParameter>().AsQueryable();
+            new TestAsyncEnumerable<ApplicationParameter>(Array.Empty<ApplicationParameter>());
 
         public IQueryable<ParameterChangeLog> ParameterChangeLogs =>
-            Array.Empty<ParameterChangeLog>().AsQueryable();
+            new TestAsyncEnumerable<ParameterChangeLog>(Array.Empty<ParameterChangeLog>());
 
         public IQueryable<SystemLog> SystemLogs =>
-            Array.Empty<SystemLog>().AsQueryable();
+            new TestAsyncEnumerable<SystemLog>(Array.Empty<SystemLog>());
 
         public void Add<TEntity>(TEntity entity) where TEntity : class
         {

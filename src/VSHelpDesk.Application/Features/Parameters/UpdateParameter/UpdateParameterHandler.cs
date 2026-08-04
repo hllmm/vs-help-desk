@@ -1,6 +1,7 @@
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Parameters;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Parameters.GetParameters;
 using VSHelpDesk.Domain.Entities;
@@ -30,7 +31,7 @@ public sealed class UpdateParameterHandler(
         {
             if (errorCode == ParameterCodes.KeyUnknown)
             {
-                throw new NotFoundException($"Parameter '{command.Key}' was not found.");
+                throw new NotFoundException(ApplicationMessages.Parameters.NotFound(command.Key));
             }
 
             throw new DomainException(errorCode ?? ParameterCodes.ValueInvalid);
@@ -40,7 +41,7 @@ public sealed class UpdateParameterHandler(
 
         var entity = await parameterRepository.GetByKeyAsync(command.Key, cancellationToken)
             ?? await parameterRepository.GetByCodeAsync(command.Key, cancellationToken)
-            ?? throw new NotFoundException($"Parameter '{command.Key}' was not found.");
+            ?? throw new NotFoundException(ApplicationMessages.Parameters.NotFound(command.Key));
 
         var oldValue = entity.Value;
         var newValue = command.Value.Trim();

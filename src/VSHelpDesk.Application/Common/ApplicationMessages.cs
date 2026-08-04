@@ -39,6 +39,7 @@ public static class ApplicationMessages
         public const string FailedToStoreFile = "Failed to store the uploaded file.";
         public const string FailedToPersistMetadata = "Failed to persist attachment metadata.";
         public static string NotFound(object attachmentId) => $"Attachment '{attachmentId}' was not found.";
+        public static string StorageFileNotFound(object attachmentId) => $"Attachment file for '{attachmentId}' was not found in storage.";
     }
 
     public static class Users

@@ -1,3 +1,4 @@
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Tickets.ReadModel;
 
@@ -20,7 +21,7 @@ public sealed class GetTicketDetailsHandler(
 
         if (result is null)
         {
-            throw new NotFoundException($"Ticket '{query.TicketId}' was not found.");
+            throw new NotFoundException(ApplicationMessages.Tickets.NotFound(query.TicketId));
         }
 
         return result.Details with

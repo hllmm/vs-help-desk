@@ -1,5 +1,6 @@
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Storage;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 
 namespace VSHelpDesk.Application.Features.Attachments.GetAttachment;
@@ -16,7 +17,7 @@ public sealed class GetAttachmentHandler(
 
         if (attachment is null)
         {
-            throw new NotFoundException($"Attachment '{query.AttachmentId}' was not found.");
+            throw new NotFoundException(ApplicationMessages.Attachments.NotFound(query.AttachmentId));
         }
 
         try
@@ -32,7 +33,7 @@ public sealed class GetAttachmentHandler(
         catch (FileNotFoundException)
         {
             throw new NotFoundException(
-                $"Attachment file for '{query.AttachmentId}' was not found in storage.");
+                ApplicationMessages.Attachments.StorageFileNotFound(query.AttachmentId));
         }
     }
 }

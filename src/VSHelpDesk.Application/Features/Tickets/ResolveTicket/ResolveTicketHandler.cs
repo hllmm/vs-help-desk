@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 
 namespace VSHelpDesk.Application.Features.Tickets.ResolveTicket;
@@ -26,7 +27,7 @@ public sealed class ResolveTicketHandler(
         var ticket = await ticketRepository.GetByIdAsync(command.TicketId, cancellationToken: cancellationToken);
         if (ticket is null)
         {
-            throw new NotFoundException($"Ticket '{command.TicketId}' was not found.");
+            throw new NotFoundException(ApplicationMessages.Tickets.NotFound(command.TicketId));
         }
 
         var oldStatus = ticket.Status;

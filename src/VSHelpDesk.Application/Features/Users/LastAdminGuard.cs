@@ -1,3 +1,4 @@
+using VSHelpDesk.Application.Common;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Domain.Exceptions;
@@ -25,7 +26,7 @@ public static class LastAdminGuard
         ArgumentNullException.ThrowIfNull(users);
 
         var target = users.FirstOrDefault(u => u.Id == targetUserId)
-            ?? throw new InvalidOperationException($"User '{targetUserId}' was not found.");
+            ?? throw new InvalidOperationException(ApplicationMessages.Users.NotFound(targetUserId));
 
         var isCurrentlyActiveAdmin = target.Role == UserRole.Admin && target.IsActive;
         var willBeActiveAdmin = newRole == UserRole.Admin && newIsActive;
