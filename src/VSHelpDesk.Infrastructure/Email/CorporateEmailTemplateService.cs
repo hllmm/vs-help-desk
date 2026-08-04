@@ -1,17 +1,26 @@
+
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Email;
 
 namespace VSHelpDesk.Infrastructure.Email;
 
-public sealed class CorporateEmailTemplateService : IEmailTemplateService
+public sealed class CorporateEmailTemplateService(
+    IOptions<EmailBrandingOptions> brandingOptions) : IEmailTemplateService
 {
-    private readonly EmailBrandingOptions _brandingOptions;
+    private static readonly Regex HtmlTagRegex = new(
+        "<[^>]+>",
+        RegexOptions.Compiled,
+        TimeSpan.FromMilliseconds(100));
 
-    public CorporateEmailTemplateService(IOptions<EmailBrandingOptions>? brandingOptions = null)
+    private readonly EmailBrandingOptions _branding =
+        brandingOptions?.Value ?? throw new ArgumentNullException(nameof(brandingOptions));
+
+    public CorporateEmailTemplateService()
+        : this(Options.Create(new EmailBrandingOptions()))
     {
-        _brandingOptions = brandingOptions?.Value ?? new EmailBrandingOptions();
     }
 
     public string WrapInCorporateTemplate(
@@ -20,93 +29,58 @@ public sealed class CorporateEmailTemplateService : IEmailTemplateService
         string? actionUrl = null,
         string? actionText = null)
     {
-        var safeTitle = WebUtility.HtmlEncode(title ?? string.Empty);
-        var safeCompanyName = WebUtility.HtmlEncode(_brandingOptions.CompanyName);
-        var safeSystemName = WebUtility.HtmlEncode(_brandingOptions.SystemName);
-        var safeSupportEmail = WebUtility.HtmlEncode(_brandingOptions.SupportEmail);
-        var safeSupportPhone = WebUtility.HtmlEncode(_brandingOptions.SupportPhone);
-        var safeFooterText = WebUtility.HtmlEncode(_brandingOptions.FooterText);
+        var safeTitle = Encode(title);
+        var safeBody = EncodeMultiline(body);
+        var safeCompany = Encode(_branding.CompanyName);
+        var safeSystem = Encode(_branding.SystemName);
+        var safeEmail = Encode(_branding.SupportEmail);
+        var safePhone = Encode(_branding.SupportPhone);
+        var safeAddress = Encode(_branding.Address);
+        var safeFooter = Encode(_branding.FooterText);
 
-        string formattedBody;
-        if (string.IsNullOrWhiteSpace(body))
-        {
-            formattedBody = string.Empty;
-        }
-        else if (IsHtmlContent(body))
-        {
-            formattedBody = body;
-        }
-        else
-        {
-            formattedBody = WebUtility.HtmlEncode(body).Replace("\r\n", "<br />").Replace("\n", "<br />");
-        }
+        var builder = new StringBuilder();
+        builder.AppendLine("<!DOCTYPE html>");
+        builder.AppendLine("<html lang=\"tr\"><head><meta charset=\"UTF-8\">");
+        builder.AppendLine("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
+        builder.AppendLine($"<title>{safeTitle}</title></head>");
+        builder.AppendLine("<body style=\"margin:0;padding:0;background:#f4f6f9;color:#334155;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;\">");
+        builder.AppendLine("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"padding:20px 0;background:#f4f6f9;\"><tr><td align=\"center\">");
+        builder.AppendLine("<table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"width:100%;max-width:600px;background:#fff;border-radius:8px;overflow:hidden;\">");
+        builder.AppendLine($"<tr><td style=\"padding:24px 32px;background:{_branding.HeaderGradientStart};\">");
 
-        var sb = new StringBuilder();
-        sb.AppendLine("<!DOCTYPE html>");
-        sb.AppendLine("<html lang=\"tr\">");
-        sb.AppendLine("<head>");
-        sb.AppendLine("  <meta charset=\"UTF-8\">");
-        sb.AppendLine("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        sb.AppendLine($"  <title>{safeTitle}</title>");
-        sb.AppendLine("  <style>");
-        sb.AppendLine($"    body {{ margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f6f9; color: #333333; }}");
-        sb.AppendLine("    .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }");
-        sb.AppendLine($"    .header {{ background: linear-gradient(135deg, {_brandingOptions.HeaderGradientStart} 0%, {_brandingOptions.HeaderGradientEnd} 100%); padding: 24px 32px; text-align: left; }}");
-        sb.AppendLine("    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.5px; }");
-        sb.AppendLine("    .header .subtitle { color: #94a3b8; font-size: 13px; margin-top: 4px; }");
-        sb.AppendLine("    .content { padding: 32px; font-size: 15px; line-height: 1.6; color: #334155; }");
-        sb.AppendLine("    .content h2 { margin-top: 0; color: #1e293b; font-size: 18px; font-weight: 600; }");
-        sb.AppendLine($"    .action-button {{ display: inline-block; background-color: {_brandingOptions.PrimaryColor}; color: #ffffff !important; font-weight: 600; text-decoration: none; padding: 12px 24px; border-radius: 6px; margin-top: 20px; text-align: center; }}");
-        sb.AppendLine("    .footer { background-color: #f8fafc; padding: 24px 32px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; text-align: center; line-height: 1.5; }");
-        sb.AppendLine($"    .footer a {{ color: {_brandingOptions.PrimaryColor}; text-decoration: none; }}");
-        sb.AppendLine("  </style>");
-        sb.AppendLine("</head>");
-        sb.AppendLine("<body>");
-        sb.AppendLine("  <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"padding: 20px 0; background-color: #f4f6f9;\">");
-        sb.AppendLine("    <tr>");
-        sb.AppendLine("      <td align=\"center\">");
-        sb.AppendLine("        <div class=\"container\">");
-        sb.AppendLine("          <div class=\"header\">");
-
-        if (!string.IsNullOrWhiteSpace(_brandingOptions.LogoUrl))
+        if (TryGetHttpsUrl(_branding.LogoUrl, out var logoUrl))
         {
-            var safeLogoUrl = WebUtility.HtmlEncode(_brandingOptions.LogoUrl);
-            sb.AppendLine($"            <img src=\"{safeLogoUrl}\" alt=\"{safeCompanyName}\" style=\"max-height: 40px; margin-bottom: 12px;\" />");
+            builder.AppendLine($"<img src=\"{Encode(logoUrl)}\" alt=\"{safeCompany}\" style=\"display:block;max-width:180px;max-height:48px;margin:0 0 12px 0;\">");
         }
 
-        sb.AppendLine($"            <h1>{safeCompanyName}</h1>");
-        sb.AppendLine($"            <div class=\"subtitle\">{safeSystemName}</div>");
-        sb.AppendLine("          </div>");
-        sb.AppendLine("          <div class=\"content\">");
-
-        if (!string.IsNullOrWhiteSpace(safeTitle))
+        builder.AppendLine($"<div style=\"color:#fff;font-size:20px;font-weight:600;\">{safeCompany}</div>");
+        builder.AppendLine($"<div style=\"color:#cbd5e1;font-size:13px;margin-top:4px;\">{safeSystem}</div></td></tr>");
+        builder.AppendLine("<tr><td style=\"padding:32px;font-size:15px;line-height:1.6;\">");
+        if (!string.IsNullOrWhiteSpace(title))
         {
-            sb.AppendLine($"            <h2>{safeTitle}</h2>");
+            builder.AppendLine($"<h2 style=\"margin:0 0 18px;color:{_branding.PrimaryColor};font-size:19px;\">{safeTitle}</h2>");
+        }
+        builder.AppendLine($"<div>{safeBody}</div>");
+
+        if (TryGetHttpsUrl(actionUrl, out var safeActionUrl) && !string.IsNullOrWhiteSpace(actionText))
+        {
+            builder.AppendLine($"<div style=\"margin-top:24px;\"><a href=\"{Encode(safeActionUrl)}\" style=\"display:inline-block;background:{_branding.PrimaryColor};color:#fff;text-decoration:none;font-weight:600;padding:12px 24px;border-radius:6px;\">{Encode(actionText)}</a></div>");
         }
 
-        sb.AppendLine($"            <div>{formattedBody}</div>");
-
-        if (!string.IsNullOrWhiteSpace(actionUrl) && !string.IsNullOrWhiteSpace(actionText))
+        builder.AppendLine("</td></tr><tr><td style=\"padding:24px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;text-align:center;color:#64748b;font-size:12px;line-height:1.6;\">");
+        builder.AppendLine($"<div><strong>{safeCompany} Support</strong></div>");
+        builder.AppendLine($"<div>{safeEmail}{Separator(safePhone)}{safePhone}</div>");
+        if (!string.IsNullOrWhiteSpace(_branding.Address))
         {
-            var safeUrl = WebUtility.HtmlEncode(actionUrl);
-            var safeText = WebUtility.HtmlEncode(actionText);
-            sb.AppendLine($"            <div style=\"margin-top: 24px;\"><a href=\"{safeUrl}\" class=\"action-button\">{safeText}</a></div>");
+            builder.AppendLine($"<div>{safeAddress}</div>");
         }
-
-        sb.AppendLine("          </div>");
-        sb.AppendLine("          <div class=\"footer\">");
-        sb.AppendLine($"            <p style=\"margin: 0 0 8px 0;\"><strong>{safeCompanyName} Support</strong></p>");
-        sb.AppendLine($"            <p style=\"margin: 0 0 8px 0;\">Email: {safeSupportEmail} | Phone: {safeSupportPhone}</p>");
-        sb.AppendLine($"            <p style=\"margin: 0;\">{safeFooterText}</p>");
-        sb.AppendLine("          </div>");
-        sb.AppendLine("        </div>");
-        sb.AppendLine("      </td>");
-        sb.AppendLine("    </tr>");
-        sb.AppendLine("  </table>");
-        sb.AppendLine("</body>");
-        sb.AppendLine("</html>");
-
-        return sb.ToString();
+        if (TryGetHttpsUrl(_branding.WebsiteUrl, out var websiteUrl))
+        {
+            builder.AppendLine($"<div><a href=\"{Encode(websiteUrl)}\" style=\"color:{_branding.PrimaryColor};\">{Encode(websiteUrl)}</a></div>");
+        }
+        builder.AppendLine($"<div style=\"margin-top:8px;\">{safeFooter}</div>");
+        builder.AppendLine("</td></tr></table></td></tr></table></body></html>");
+        return builder.ToString();
     }
 
     public string GeneratePlainTextAlternative(
@@ -115,43 +89,59 @@ public sealed class CorporateEmailTemplateService : IEmailTemplateService
         string? actionUrl = null,
         string? actionText = null)
     {
-        var sb = new StringBuilder();
-
+        var builder = new StringBuilder();
         if (!string.IsNullOrWhiteSpace(title))
         {
-            sb.AppendLine($"=== {title.Trim()} ===");
-            sb.AppendLine();
+            builder.AppendLine($"=== {title.Trim()} ===");
+            builder.AppendLine();
         }
 
         if (!string.IsNullOrWhiteSpace(body))
         {
-            var plainBody = IsHtmlContent(body) ? StripTags(body) : body.Trim();
-            sb.AppendLine(plainBody);
-            sb.AppendLine();
+            var plainBody = HtmlTagRegex.IsMatch(body)
+                ? WebUtility.HtmlDecode(HtmlTagRegex.Replace(body, " "))
+                : body;
+            builder.AppendLine(Regex.Replace(plainBody, @"[ \t]{2,}", " ").Trim());
+            builder.AppendLine();
         }
 
-        if (!string.IsNullOrWhiteSpace(actionUrl) && !string.IsNullOrWhiteSpace(actionText))
+        if (TryGetHttpsUrl(actionUrl, out var safeActionUrl) && !string.IsNullOrWhiteSpace(actionText))
         {
-            sb.AppendLine($"[{actionText.Trim()}]: {actionUrl.Trim()}");
-            sb.AppendLine();
+            builder.AppendLine($"[{actionText.Trim()}]: {safeActionUrl}");
+            builder.AppendLine();
         }
 
-        sb.AppendLine("---");
-        sb.AppendLine($"{_brandingOptions.CompanyName} Support");
-        sb.AppendLine($"Email: {_brandingOptions.SupportEmail} | Phone: {_brandingOptions.SupportPhone}");
-        sb.AppendLine(_brandingOptions.FooterText);
-
-        return sb.ToString();
+        builder.AppendLine("---");
+        builder.AppendLine($"{_branding.CompanyName} Support");
+        builder.AppendLine($"Email: {_branding.SupportEmail}");
+        if (!string.IsNullOrWhiteSpace(_branding.SupportPhone))
+        {
+            builder.AppendLine($"Phone: {_branding.SupportPhone.Trim()}");
+        }
+        if (!string.IsNullOrWhiteSpace(_branding.Address)) builder.AppendLine(_branding.Address.Trim());
+        if (TryGetHttpsUrl(_branding.WebsiteUrl, out var websiteUrl)) builder.AppendLine(websiteUrl);
+        builder.AppendLine(_branding.FooterText);
+        return builder.ToString();
     }
 
-    private static bool IsHtmlContent(string text)
-    {
-        var trimmed = text.Trim();
-        return trimmed.StartsWith("<") && (trimmed.EndsWith(">") || trimmed.Contains("</"));
-    }
+    private static string Encode(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
 
-    private static string StripTags(string html)
+    private static string EncodeMultiline(string? value) =>
+        Encode(value).Replace("\r\n", "<br>", StringComparison.Ordinal)
+            .Replace("\n", "<br>", StringComparison.Ordinal);
+
+    private static string Separator(string value) => string.IsNullOrWhiteSpace(value) ? string.Empty : " &nbsp;|&nbsp; ";
+
+    private static bool TryGetHttpsUrl(string? value, out string normalized)
     {
-        return System.Text.RegularExpressions.Regex.Replace(html, "<.*?>", string.Empty);
+        normalized = string.Empty;
+        if (string.IsNullOrWhiteSpace(value) ||
+            !Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) ||
+            !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+        normalized = uri.AbsoluteUri;
+        return true;
     }
 }

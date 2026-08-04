@@ -1,3 +1,6 @@
+
+using VSHelpDesk.Application.Common.Localization;
+
 namespace VSHelpDesk.Application.Common.Exceptions;
 
 public sealed class NotFoundException : Exception
@@ -8,7 +11,7 @@ public sealed class NotFoundException : Exception
     }
 
     public NotFoundException(string entityName, object key)
-        : base($"{entityName} '{key}' numaralı kayıt bulunamadı.")
+        : base(LocalizedApplicationMessages.NotFound(entityName, key))
     {
     }
 }

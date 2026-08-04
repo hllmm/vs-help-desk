@@ -65,6 +65,11 @@ public static class MessageKeys
         public const string FailedToProcessIncomingEmail = "MailProcessing.FailedToProcessIncomingEmail";
     }
 
+    public static class Email
+    {
+        public const string AcknowledgementSubject = "Email.AcknowledgementSubject";
+        public const string AcknowledgementBody = "Email.AcknowledgementBody";
+    }
     public static class Common
     {
         public const string NotFoundTemplate = "Common.NotFoundTemplate";

@@ -43,9 +43,10 @@ public static class DependencyInjection
     {
         services.AddLogging();
         services.AddSingleton<IMessageProvider>(sp =>
-            new DictionaryMessageProvider(
+            new LocalizedDictionaryMessageProvider(
                 TurkishMessages.Messages,
-                sp.GetService<ILogger<DictionaryMessageProvider>>()));
+                EnglishMessages.Messages,
+                sp.GetService<ILogger<LocalizedDictionaryMessageProvider>>()));
 
 
         var connectionString = configuration.GetConnectionString("DefaultConnection");
@@ -71,7 +72,8 @@ public static class DependencyInjection
             }
             else
             {
-                connectionString = "Host=localhost;Database=vs_help_desk_dev;Username=postgres;Password=postgres";
+                throw new InvalidOperationException(
+                    $"ConnectionStrings:DefaultConnection is required for database provider '{provider}'.");
             }
         }
         if (string.IsNullOrWhiteSpace(provider))
@@ -106,6 +108,12 @@ public static class DependencyInjection
 
         var isInMemory = provider.Equals("InMemory", StringComparison.OrdinalIgnoreCase) ||
                          provider.Equals("In-Memory", StringComparison.OrdinalIgnoreCase);
+
+        if (!isPostgres && !isSqlServer && !isSqlite && !isInMemory)
+        {
+            throw new InvalidOperationException(
+                $"Unsupported Database:Provider value '{provider}'. Supported values: Postgres, SqlServer, Sqlite, InMemory.");
+        }
 
         var migrationsAssembly = configuration["Database:MigrationsAssembly"]?.Trim();
         if (string.IsNullOrWhiteSpace(migrationsAssembly))
@@ -251,10 +259,16 @@ public static class DependencyInjection
         {
             var options = sp.GetRequiredService<IOptions<DatabaseLoggingOptions>>().Value;
             var capacity = Math.Clamp(options.QueueCapacity, 10, 50000);
-            return Channel.CreateBounded<SystemLog>(new BoundedChannelOptions(capacity)
-            {
-                FullMode = BoundedChannelFullMode.DropOldest
-            });
+            var metrics = sp.GetRequiredService<SystemLogDropMetrics>();
+            return Channel.CreateBounded<SystemLog>(
+                new BoundedChannelOptions(capacity)
+                {
+                    FullMode = BoundedChannelFullMode.DropOldest,
+                    SingleReader = true,
+                    SingleWriter = false,
+                    AllowSynchronousContinuations = false
+                },
+                _ => metrics.IncrementDroppedCount());
         });
         services.AddSingleton(sp => sp.GetRequiredService<Channel<SystemLog>>().Reader);
         services.AddSingleton(sp => sp.GetRequiredService<Channel<SystemLog>>().Writer);

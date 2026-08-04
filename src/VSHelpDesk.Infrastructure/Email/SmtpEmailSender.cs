@@ -1,3 +1,4 @@
+
 using MailKit.Net.Smtp;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -6,48 +7,51 @@ using VSHelpDesk.Application.Abstractions.Email;
 
 namespace VSHelpDesk.Infrastructure.Email;
 
-public sealed class SmtpEmailSender(
-    IOptions<EmailOptions> emailOptions,
-    ILogger<SmtpEmailSender> logger,
-    IEmailTemplateService? emailTemplateService = null) : IEmailSender
+public sealed class SmtpEmailSender : IEmailSender
 {
+    private readonly IOptions<EmailOptions> _emailOptions;
+    private readonly ILogger<SmtpEmailSender> _logger;
+    private readonly IEmailTemplateService _emailTemplateService;
+
+    public SmtpEmailSender(
+        IOptions<EmailOptions> emailOptions,
+        ILogger<SmtpEmailSender> logger,
+        IEmailTemplateService emailTemplateService)
+    {
+        _emailOptions = emailOptions ?? throw new ArgumentNullException(nameof(emailOptions));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _emailTemplateService = emailTemplateService ?? throw new ArgumentNullException(nameof(emailTemplateService));
+    }
+
+    public SmtpEmailSender(IOptions<EmailOptions> emailOptions, ILogger<SmtpEmailSender> logger)
+        : this(emailOptions, logger, new CorporateEmailTemplateService())
+    {
+    }
+
     public async Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
-
-        var options = emailOptions.Value;
-        var from = CreateMailboxAddress(
-            options.SupportMailboxDisplayName,
-            options.SupportMailboxAddress,
-            "support mailbox address");
-        var to = CreateMailboxAddress(
-            message.ToDisplayName,
-            message.ToAddress,
-            "recipient address");
+        var options = _emailOptions.Value;
+        var from = CreateMailboxAddress(options.SupportMailboxDisplayName, options.SupportMailboxAddress, "support mailbox address");
+        var to = CreateMailboxAddress(message.ToDisplayName, message.ToAddress, "recipient address");
 
         using var mime = new MimeMessage();
         mime.From.Add(from);
         mime.To.Add(to);
         mime.Subject = message.Subject ?? string.Empty;
 
-        var isHtml = message.IsHtml;
-        var htmlBody = message.Body;
+        var htmlBody = message.IsHtml
+            ? message.Body
+            : _emailTemplateService.WrapInCorporateTemplate(message.Subject ?? string.Empty, message.Body);
+        var textBody = !string.IsNullOrWhiteSpace(message.TextBody)
+            ? message.TextBody
+            : _emailTemplateService.GeneratePlainTextAlternative(message.Subject ?? string.Empty, message.Body);
 
-        if (!isHtml && emailTemplateService != null)
+        var bodyBuilder = new BodyBuilder
         {
-            htmlBody = emailTemplateService.WrapInCorporateTemplate(message.Subject ?? string.Empty, message.Body);
-            isHtml = true;
-        }
-
-        var bodyBuilder = new BodyBuilder();
-        if (isHtml)
-        {
-            bodyBuilder.HtmlBody = htmlBody;
-        }
-        else
-        {
-            bodyBuilder.TextBody = message.Body;
-        }
+            HtmlBody = htmlBody,
+            TextBody = textBody
+        };
 
         if (message.Attachments is { Count: > 0 })
         {
@@ -63,26 +67,19 @@ public sealed class SmtpEmailSender(
         }
 
         mime.Body = bodyBuilder.ToMessageBody();
-
         using var client = new SmtpClient();
         var secureSocket = MailTransportSecurity.ToSecureSocketOptions(options.SmtpSecurityMode);
 
         try
         {
             await client.ConnectAsync(options.SmtpHost, options.SmtpPort, secureSocket, cancellationToken);
-
             if (!string.IsNullOrWhiteSpace(options.SmtpUsername))
             {
-                await client.AuthenticateAsync(
-                    options.SmtpUsername,
-                    options.SmtpPassword,
-                    cancellationToken);
+                await client.AuthenticateAsync(options.SmtpUsername, options.SmtpPassword, cancellationToken);
             }
-
             await client.SendAsync(mime, cancellationToken);
             await client.DisconnectAsync(true, cancellationToken);
-
-            logger.LogInformation(
+            _logger.LogInformation(
                 "SMTP send succeeded host={SmtpHost} port={SmtpPort} subjectLength={SubjectLength}",
                 options.SmtpHost,
                 options.SmtpPort,
@@ -90,63 +87,25 @@ public sealed class SmtpEmailSender(
         }
         catch (Exception ex)
         {
-            logger.LogError(
-                ex,
-                "SMTP send failed host={SmtpHost} port={SmtpPort}",
-                options.SmtpHost,
-                options.SmtpPort);
+            _logger.LogError(ex, "SMTP send failed host={SmtpHost} port={SmtpPort}", options.SmtpHost, options.SmtpPort);
             throw;
         }
     }
 
-    private static MailboxAddress CreateMailboxAddress(
-        string? displayName,
-        string address,
-        string label)
+    private static MailboxAddress CreateMailboxAddress(string? displayName, string address, string label)
     {
-        if (string.IsNullOrWhiteSpace(address))
-        {
-            throw new ArgumentException($"The {label} is required.", nameof(address));
-        }
-
-        if (ContainsControlCharacters(address))
-        {
-            throw new ArgumentException(
-                $"The {label} contains invalid control characters.",
-                nameof(address));
-        }
-
+        if (string.IsNullOrWhiteSpace(address)) throw new ArgumentException($"The {label} is required.", nameof(address));
+        if (ContainsControlCharacters(address)) throw new ArgumentException($"The {label} contains invalid control characters.", nameof(address));
         if (!string.IsNullOrEmpty(displayName) && ContainsControlCharacters(displayName))
-        {
-            throw new ArgumentException(
-                $"The {label} display name contains invalid control characters.",
-                nameof(displayName));
-        }
+            throw new ArgumentException($"The {label} display name contains invalid control characters.", nameof(displayName));
 
         var trimmed = address.Trim();
         if (!MailboxAddress.TryParse(trimmed, out var parsed) ||
             !string.Equals(parsed.Address, trimmed, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new ArgumentException(
-                $"The {label} is not a valid mailbox address.",
-                nameof(address));
-        }
+            throw new ArgumentException($"The {label} is not a valid mailbox address.", nameof(address));
 
-        return new MailboxAddress(
-            string.IsNullOrWhiteSpace(displayName) ? string.Empty : displayName.Trim(),
-            parsed.Address);
+        return new MailboxAddress(string.IsNullOrWhiteSpace(displayName) ? string.Empty : displayName.Trim(), parsed.Address);
     }
 
-    private static bool ContainsControlCharacters(string value)
-    {
-        foreach (var ch in value)
-        {
-            if (char.IsControl(ch))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    private static bool ContainsControlCharacters(string value) => value.Any(char.IsControl);
 }

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 
@@ -25,7 +26,8 @@ public sealed class AcknowledgementDispatcher(
     IEmailSender sender,
     TimeProvider timeProvider,
     ILogger<AcknowledgementDispatcher> logger,
-    IEmailTemplateService? templateService = null)
+    IEmailTemplateService? templateService = null,
+    IMessageProvider? messages = null)
 {
     private const string SafeSmtpFailureMessage = "SMTP acknowledgement failed.";
 
@@ -118,12 +120,16 @@ public sealed class AcknowledgementDispatcher(
 
     private EmailMessage BuildAcknowledgement(Ticket ticket)
     {
-        var subject = $"[{ticket.TicketNumber}] We received your support request";
-        var rawBody =
-            $"Hello,{Environment.NewLine}{Environment.NewLine}" +
-            $"We received your message and opened ticket {ticket.TicketNumber}.{Environment.NewLine}" +
-            $"Please keep {ticket.TicketNumber} in the subject when you reply.{Environment.NewLine}{Environment.NewLine}" +
-            "VS Help Desk";
+        var subject = messages?.Get(MessageKeys.Email.AcknowledgementSubject, ticket.TicketNumber)
+            ?? $"[{ticket.TicketNumber}] Destek talebinizi aldık";
+        var rawBody = messages?.Get(
+                MessageKeys.Email.AcknowledgementBody,
+                ticket.TicketNumber,
+                Environment.NewLine)
+            ?? $"Merhaba,{Environment.NewLine}{Environment.NewLine}" +
+               $"Mesajınızı aldık ve {ticket.TicketNumber} numaralı Ticket kaydını oluşturduk.{Environment.NewLine}" +
+               $"Yanıt verirken lütfen konu satırında {ticket.TicketNumber} numarasını koruyun.{Environment.NewLine}{Environment.NewLine}" +
+               "VS Help Desk";
 
         var body = templateService != null
             ? templateService.WrapInCorporateTemplate(subject, rawBody)
@@ -137,6 +143,7 @@ public sealed class AcknowledgementDispatcher(
                 : ticket.CustomerName,
             Subject: subject,
             Body: body,
-            IsHtml: isHtml);
+            IsHtml: isHtml,
+            TextBody: rawBody);
     }
 }

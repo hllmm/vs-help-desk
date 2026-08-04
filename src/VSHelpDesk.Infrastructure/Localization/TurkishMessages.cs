@@ -50,6 +50,8 @@ internal static class TurkishMessages
 
             [MessageKeys.MailProcessing.JobAlreadyRunning] = "'{0}' işi zaten çalışıyor.",
             [MessageKeys.MailProcessing.FailedToProcessIncomingEmail] = "Gelen e-posta işlenemedi.",
+            [MessageKeys.Email.AcknowledgementSubject] = "[{0}] Destek talebinizi aldık",
+            [MessageKeys.Email.AcknowledgementBody] = "Merhaba,{1}{1}Mesajınızı aldık ve {0} numaralı Ticket kaydını oluşturduk.{1}Yanıt verirken lütfen konu satırında {0} numarasını koruyun.{1}{1}VS Help Desk",
 
             [MessageKeys.Common.NotFoundTemplate] = "{0} '{1}' numaralı kayıt bulunamadı.",
             [MessageKeys.Common.OptimisticConcurrencyConflict] = "Varlık başka bir işlem tarafından değiştirildi.",
