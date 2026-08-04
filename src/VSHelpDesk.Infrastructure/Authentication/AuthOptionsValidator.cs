@@ -10,7 +10,11 @@ public sealed class AuthOptionsValidator : IValidateOptions<AuthOptions>
         "CHANGE_ME_DEV_ONLY_MIN_32_CHARS_LONG!!",
         "local-dev-only-signing-key",
         "CHANGE_ME",
-        "changeme"
+        "changeme",
+        "replace-with",
+        "example",
+        "dummy",
+        "local-only"
     ];
 
     public ValidateOptionsResult Validate(string? name, AuthOptions options)

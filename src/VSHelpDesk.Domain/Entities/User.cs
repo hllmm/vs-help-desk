@@ -18,6 +18,8 @@ public sealed class User
 
     public bool IsActive { get; private set; } = true;
 
+    public string SecurityStamp { get; private set; } = Guid.NewGuid().ToString("N");
+
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
 
     public DateTime? LastLoginAt { get; private set; }
@@ -38,9 +40,22 @@ public sealed class User
         Email = email;
         PasswordHash = passwordHash;
         Role = role;
+        SecurityStamp = Guid.NewGuid().ToString("N");
     }
 
-    public void AssignRole(UserRole role) => Role = role;
+    public void RefreshSecurityStamp()
+    {
+        SecurityStamp = Guid.NewGuid().ToString("N");
+    }
+
+    public void AssignRole(UserRole role)
+    {
+        if (Role != role)
+        {
+            Role = role;
+            RefreshSecurityStamp();
+        }
+    }
 
     public void RecordLogin(DateTime loginDate)
     {
@@ -49,10 +64,21 @@ public sealed class User
 
     public void Deactivate()
     {
-        IsActive = false;
+        if (IsActive)
+        {
+            IsActive = false;
+            RefreshSecurityStamp();
+        }
     }
 
-    public void Activate() => IsActive = true;
+    public void Activate()
+    {
+        if (!IsActive)
+        {
+            IsActive = true;
+            RefreshSecurityStamp();
+        }
+    }
 
     public void UpdateProfile(string fullName, string email)
     {
@@ -79,5 +105,6 @@ public sealed class User
         }
 
         PasswordHash = passwordHash;
+        RefreshSecurityStamp();
     }
 }

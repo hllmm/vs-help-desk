@@ -86,7 +86,7 @@ describe('useTicketReply', () => {
       outcome = await result.current.submit(`  ${exact}  `)
     })
 
-    expect(outcome).toEqual({ kind: 'delivered', messageSaved: true })
+    expect(outcome).toEqual({ kind: 'delivered', messageSaved: true, messageId: 'msg-1' })
     expect(replyToTicket).toHaveBeenCalledWith('ticket-1', { content: exact })
     const body = replyToTicket.mock.calls[0]?.[1] as { content: string }
     expect(body.content.length).toBe(SUPPORT_REPLY_MAX_LENGTH)
@@ -102,7 +102,7 @@ describe('useTicketReply', () => {
       outcome = await result.current.submit('  Merhaba  ')
     })
 
-    expect(outcome).toEqual({ kind: 'delivered', messageSaved: true })
+    expect(outcome).toEqual({ kind: 'delivered', messageSaved: true, messageId: 'msg-1' })
     expect(replyToTicket).toHaveBeenCalledWith('ticket-1', {
       content: 'Merhaba',
     })
@@ -124,7 +124,7 @@ describe('useTicketReply', () => {
       outcome = await result.current.submit('x'.repeat(200))
     })
 
-    expect(outcome).toEqual({ kind: 'smtp-failed', messageSaved: true })
+    expect(outcome).toEqual({ kind: 'smtp-failed', messageSaved: true, messageId: 'msg-1' })
   })
 
   it('maps ticket-state-conflict to state-conflict with messageSaved true', async () => {
@@ -143,7 +143,7 @@ describe('useTicketReply', () => {
       outcome = await result.current.submit('x'.repeat(200))
     })
 
-    expect(outcome).toEqual({ kind: 'state-conflict', messageSaved: true })
+    expect(outcome).toEqual({ kind: 'state-conflict', messageSaved: true, messageId: 'msg-1' })
   })
 
   it('maps 409 to pre-send-conflict with messageSaved false', async () => {
@@ -249,7 +249,7 @@ describe('useTicketReply', () => {
       outcome = await result.current.submit('x'.repeat(200))
     })
 
-    expect(outcome).toEqual({ kind: 'server-error', messageSaved: true })
+    expect(outcome).toEqual({ kind: 'server-error', messageSaved: true, messageId: 'msg-1' })
   })
 
   it('returns the same in-flight promise and posts only once while submitting', async () => {
@@ -277,7 +277,7 @@ describe('useTicketReply', () => {
       outcome = await first
     })
 
-    expect(outcome).toEqual({ kind: 'delivered', messageSaved: true })
+    expect(outcome).toEqual({ kind: 'delivered', messageSaved: true, messageId: 'msg-1' })
     expect(replyToTicket).toHaveBeenCalledTimes(1)
     expect(result.current.isSubmitting).toBe(false)
   })

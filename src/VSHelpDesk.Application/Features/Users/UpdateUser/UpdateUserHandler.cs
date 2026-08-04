@@ -1,3 +1,4 @@
+using System.Transactions;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Features.Users.CreateUser;
@@ -10,6 +11,7 @@ public sealed class UpdateUserHandler(
     IUserRepository userRepository,
     IUnitOfWork unitOfWork)
 {
+    private static readonly SemaphoreSlim AdminUpdateLock = new(1, 1);
     public async Task<UserListItemDto> HandleAsync(
         UpdateUserCommand command,
         CancellationToken cancellationToken = default)
@@ -20,37 +22,51 @@ public sealed class UpdateUserHandler(
         var email = CreateUserHandler.ValidateEmail(command.Email);
         var role = CreateUserHandler.ParseRole(command.Role);
 
-        var user = await userRepository.GetByIdAsync(command.Id, cancellationToken)
-            ?? throw new NotFoundException(nameof(User), command.Id);
-
-        LastAdminGuard.EnsureCanDemoteOrDeactivate(
-            userRepository.GetListQueryable(),
-            command.Id,
-            role,
-            command.IsActive);
-
-        user.UpdateProfile(fullName, email);
-        user.AssignRole(role);
-        if (command.IsActive)
+        await AdminUpdateLock.WaitAsync(cancellationToken);
+        try
         {
-            user.Activate();
+            using var scope = new TransactionScope(
+                TransactionScopeOption.Required,
+                new TransactionOptions { IsolationLevel = IsolationLevel.Serializable },
+                TransactionScopeAsyncFlowOption.Enabled);
+
+            var user = await userRepository.GetByIdAsync(command.Id, cancellationToken)
+                ?? throw new NotFoundException(nameof(User), command.Id);
+
+            LastAdminGuard.EnsureCanDemoteOrDeactivate(
+                userRepository.GetListQueryable(),
+                command.Id,
+                role,
+                command.IsActive);
+
+            user.UpdateProfile(fullName, email);
+            user.AssignRole(role);
+            if (command.IsActive)
+            {
+                user.Activate();
+            }
+            else
+            {
+                user.Deactivate();
+            }
+
+            userRepository.Update(user);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+            scope.Complete();
+
+            return new UserListItemDto(
+                user.Id,
+                user.FullName,
+                user.Username,
+                user.Email,
+                user.Role.ToString(),
+                user.IsActive,
+                user.CreatedAt,
+                user.LastLoginAt);
         }
-        else
+        finally
         {
-            user.Deactivate();
+            AdminUpdateLock.Release();
         }
-
-        userRepository.Update(user);
-        await unitOfWork.SaveChangesAsync(cancellationToken);
-
-        return new UserListItemDto(
-            user.Id,
-            user.FullName,
-            user.Username,
-            user.Email,
-            user.Role.ToString(),
-            user.IsActive,
-            user.CreatedAt,
-            user.LastLoginAt);
     }
 }

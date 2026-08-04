@@ -11,10 +11,12 @@ export default defineConfig({
     restoreMocks: true,
     unstubEnvs: true,
     unstubGlobals: true,
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: [
       '**/node_modules/**',
       '**/dist/**',
       '**/e2e/**',
+      '**/scripts/**',
       '**/.{idea,git,cache,output,temp}/**',
     ],
   },

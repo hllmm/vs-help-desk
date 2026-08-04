@@ -7,6 +7,7 @@ import {
   type ReactElement,
 } from 'react'
 import { ApiError } from '../../api/client'
+import { uploadAttachment } from '../../api/attachmentsApi'
 import {
   messageForReplyOutcome,
   SUPPORT_REPLY_MAX_LENGTH,
@@ -56,8 +57,10 @@ export function TicketReplyForm({
 }: TicketReplyFormProps): ReactElement {
   const { isSubmitting, submit } = useTicketReply(ticketId)
   const [draft, setDraft] = useState('')
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [outcome, setOutcome] = useState<LocalOutcome | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const noticeRef = useRef<HTMLParagraphElement>(null)
   const focusTargetRef = useRef<'textarea' | 'notice' | null>(null)
   const baseId = useId()
@@ -129,7 +132,18 @@ export function TicketReplyForm({
     }
 
     if (result.messageSaved) {
+      if (selectedFile && result.messageId) {
+        try {
+          await uploadAttachment(result.messageId, selectedFile)
+        } catch {
+          // File upload failed after message saved; still refresh
+        }
+      }
       setDraft('')
+      setSelectedFile(null)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
       try {
         await onRefresh()
       } catch {
@@ -227,6 +241,23 @@ export function TicketReplyForm({
               {validationFailure.message}
             </p>
           ) : null}
+        </div>
+
+        <div className="ticket-reply__field">
+          <label htmlFor={`${baseId}-file`} className="ticket-reply__label">
+            Dosya Eki (Maks 10MB)
+          </label>
+          <input
+            id={`${baseId}-file`}
+            ref={fileInputRef}
+            type="file"
+            className="ticket-reply__file-input"
+            disabled={isSubmitting}
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null
+              setSelectedFile(file)
+            }}
+          />
         </div>
 
         {transportOutcome ? (

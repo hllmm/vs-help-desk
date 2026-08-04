@@ -44,6 +44,26 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
             return "application/pdf";
         }
 
+        if (header.Length >= 6 &&
+            header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x38)
+        {
+            return "image/gif";
+        }
+
+        if (header.Length >= 12 &&
+            header[0] == 0x52 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x46 &&
+            header[8] == 0x57 && header[9] == 0x45 && header[10] == 0x42 && header[11] == 0x50)
+        {
+            return "image/webp";
+        }
+
+        // Zip archive / OpenXML (docx, xlsx)
+        if (header.Length >= 4 &&
+            header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04)
+        {
+            return "application/zip";
+        }
+
         // PE executable / DLL
         if (header.Length >= 2 && header[0] == 0x4D && header[1] == 0x5A)
         {
@@ -72,6 +92,12 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
         // When we can detect a strong signature, require an exact match to the declaration.
         if (detected is not null)
         {
+            if (detected is "application/zip" &&
+                declared.StartsWith("application/vnd.openxmlformats-officedocument.", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
             return string.Equals(detected, declared, StringComparison.OrdinalIgnoreCase);
         }
 

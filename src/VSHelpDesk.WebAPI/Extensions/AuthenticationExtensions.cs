@@ -54,6 +54,32 @@ public static class AuthenticationExtensions
                         }
 
                         return Task.CompletedTask;
+                    },
+                    OnTokenValidated = async context =>
+                    {
+                        var userIdClaim = context.Principal?.FindFirst("sub")?.Value;
+                        if (!Guid.TryParse(userIdClaim, out var userId))
+                        {
+                            context.Fail("Invalid user claim.");
+                            return;
+                        }
+
+                        var userRepo = context.HttpContext.RequestServices
+                            .GetRequiredService<VSHelpDesk.Application.Abstractions.Persistence.Repositories.IUserRepository>();
+                        var user = await userRepo.GetByIdAsync(userId, context.HttpContext.RequestAborted);
+
+                        if (user is null || !user.IsActive)
+                        {
+                            context.Fail("User account is inactive or deleted.");
+                            return;
+                        }
+
+                        var stampClaim = context.Principal?.FindFirst("security_stamp")?.Value;
+                        if (!string.IsNullOrEmpty(stampClaim) &&
+                            !string.Equals(stampClaim, user.SecurityStamp, StringComparison.Ordinal))
+                        {
+                            context.Fail("Token has been revoked due to security settings change.");
+                        }
                     }
                 };
             });

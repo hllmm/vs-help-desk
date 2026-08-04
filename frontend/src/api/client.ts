@@ -170,6 +170,59 @@ export async function apiBlobRequest(
   return response.blob()
 }
 
+/**
+ * Multipart form data upload helper with automatic CSRF token submission.
+ */
+export async function apiFormRequest<T>(
+  path: string,
+  formData: FormData,
+  options: Omit<RequestOptions, 'body'> = {},
+): Promise<T> {
+  const method = (options.method ?? 'POST').toUpperCase()
+  const headers = new Headers()
+  headers.set('Accept', 'application/json')
+
+  if (UNSAFE_METHODS.has(method)) {
+    const csrf = getCsrfToken()
+    if (csrf) {
+      headers.set('X-CSRF-Token', csrf)
+    }
+  }
+
+  const response = await fetch(buildApiUrl(path), {
+    method,
+    headers,
+    credentials: 'include',
+    body: formData,
+    signal: options.signal,
+  })
+
+  if (response.status === 401 && !options.skipAuthRedirect) {
+    expireSession()
+    throw new ApiError(401, 'Unauthorized')
+  }
+
+  const text = await response.text()
+  let parsed: unknown = null
+  if (text) {
+    try {
+      parsed = JSON.parse(text) as unknown
+    } catch {
+      parsed = text
+    }
+  }
+
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      messageFromErrorBody(parsed, response.status),
+      parsed,
+    )
+  }
+
+  return parsed as T
+}
+
 export function getApiBaseUrl(): string {
   return normalizeApiBaseUrl(
     import.meta.env.VITE_API_BASE_URL as string | undefined,

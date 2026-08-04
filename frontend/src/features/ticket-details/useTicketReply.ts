@@ -19,6 +19,7 @@ export type ReplyOutcomeKind =
 export type ReplySubmissionOutcome = {
   kind: ReplyOutcomeKind
   messageSaved: boolean
+  messageId?: string
 }
 
 export const REPLY_OUTCOME_MESSAGES = {
@@ -84,7 +85,7 @@ function mapSuccessResult(result: SupportReplyResult): ReplySubmissionOutcome {
     result.ticketStateUpdated === true &&
     notice === null
   ) {
-    return { kind: 'delivered', messageSaved: true }
+    return { kind: 'delivered', messageSaved: true, messageId: result.messageId }
   }
 
   if (
@@ -92,7 +93,7 @@ function mapSuccessResult(result: SupportReplyResult): ReplySubmissionOutcome {
     result.emailDelivered === false &&
     result.ticketStateUpdated === false
   ) {
-    return { kind: 'smtp-failed', messageSaved: true }
+    return { kind: 'smtp-failed', messageSaved: true, messageId: result.messageId }
   }
 
   if (
@@ -100,11 +101,11 @@ function mapSuccessResult(result: SupportReplyResult): ReplySubmissionOutcome {
     result.emailDelivered === true &&
     result.ticketStateUpdated === false
   ) {
-    return { kind: 'state-conflict', messageSaved: true }
+    return { kind: 'state-conflict', messageSaved: true, messageId: result.messageId }
   }
 
   // HTTP 200 proves the message was saved even when the combination is unexpected.
-  return { kind: 'server-error', messageSaved: true }
+  return { kind: 'server-error', messageSaved: true, messageId: result.messageId }
 }
 
 function mapThrownError(error: unknown): ReplySubmissionOutcome {

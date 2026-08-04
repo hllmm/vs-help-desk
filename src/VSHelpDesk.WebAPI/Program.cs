@@ -1,3 +1,4 @@
+using System.Net;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -104,9 +105,14 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.ForwardedHeaders =
         Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
         | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
-    // Company single-proxy: clear known networks so docker bridge works; lock down at edge.
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
+
+    // Trust standard private IP ranges (Docker bridge, Kubernetes pods, local loopback & LAN proxies)
+    options.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+    options.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
+    options.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
+    options.KnownIPNetworks.Add(new IPNetwork(IPAddress.Parse("127.0.0.1"), 32));
 });
 
 var app = builder.Build();

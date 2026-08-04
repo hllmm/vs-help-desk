@@ -8,7 +8,11 @@ public sealed class JobsOptionsValidator : IValidateOptions<JobsOptions>
     [
         "dev-jobs-api-key-change-me",
         "CHANGE_ME",
-        "changeme"
+        "changeme",
+        "replace-with",
+        "example",
+        "dummy",
+        "local-only"
     ];
 
     public ValidateOptionsResult Validate(string? name, JobsOptions options)

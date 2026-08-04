@@ -498,10 +498,8 @@ deploy/k8s/**/secrets.local.yaml
 performance/compose-stats*.ndjson
 performance/ticket-read-performance.json
 
-# Private workspace notes (Docs folder intentionally untracked)
-docs/
-
 # AI agent directories
+docs/
 .antigravity/
 .gemini/
 
