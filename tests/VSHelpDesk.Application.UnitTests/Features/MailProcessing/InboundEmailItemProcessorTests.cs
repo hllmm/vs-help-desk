@@ -1,7 +1,9 @@
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Abstractions.Security;
 using VSHelpDesk.Application.Abstractions.Storage;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Features.Attachments;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
@@ -224,7 +226,15 @@ public sealed class InboundEmailItemProcessorTests
         context.TicketsList.Add(existing);
         var classifier = new AlwaysOptimisticConflictClassifier();
         var time = new FixedTimeProvider(FixedNow);
-        var create = new CreateTicketHandler(context, context, context, new SequenceNumbers("VS-000407"), time, classifier);
+        var create = new CreateTicketHandler(
+            context,
+            context,
+            context,
+            new SequenceNumbers("VS-000407"),
+            time,
+            classifier,
+            new PassthroughHtmlSanitizer(),
+            new StubMessageProvider());
         var reply = new AppendCustomerReplyHandler(context, context, context, time, classifier);
         var dispatcher = new AcknowledgementDispatcher(
             context,
@@ -375,7 +385,15 @@ public sealed class InboundEmailItemProcessorTests
     {
         var time = new FixedTimeProvider(FixedNow);
         var classifier = new NeverConflictClassifier();
-        var create = new CreateTicketHandler(context, context, context, new SequenceNumbers(number), time, classifier);
+        var create = new CreateTicketHandler(
+            context,
+            context,
+            context,
+            new SequenceNumbers(number),
+            time,
+            classifier,
+            new PassthroughHtmlSanitizer(),
+            new StubMessageProvider());
         var reply = new AppendCustomerReplyHandler(context, context, context, time, classifier);
         var dispatcher = new AcknowledgementDispatcher(
             context,
@@ -437,6 +455,18 @@ public sealed class InboundEmailItemProcessorTests
         public bool IsProcessedEmailIdempotencyConflict(Exception exception) => false;
 
         public bool IsOptimisticConcurrencyConflict(Exception exception) => true;
+    }
+
+    private sealed class PassthroughHtmlSanitizer : IHtmlSanitizerService
+    {
+        public string SanitizeHtml(string inputHtml) => inputHtml;
+        public string ToPlainText(string inputHtml) => inputHtml;
+    }
+
+    private sealed class StubMessageProvider : IMessageProvider
+    {
+        public string Get(string key) => key;
+        public string Get(string key, params object[] args) => key;
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

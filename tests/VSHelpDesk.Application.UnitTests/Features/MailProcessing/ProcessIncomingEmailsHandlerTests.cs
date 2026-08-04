@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
@@ -301,6 +302,20 @@ public sealed class ProcessIncomingEmailsHandlerTests
     }
 
     [Fact]
+    public async Task FetchFailure_ReturnsLocalizedMessage()
+    {
+        var receiver = new FakeReceiver([]) { ThrowOnFetch = true };
+        var handler = CreateHandler(receiver, new ScriptedFactory([]));
+
+        var result = await handler.HandleAsync(
+            new ProcessIncomingEmailsCommand(),
+            CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("localized-fetch-failure", result.Error);
+    }
+
+    [Fact]
     public async Task GateBusy_ThrowsJobAlreadyRunningException()
     {
         var handler = new ProcessIncomingEmailsHandler(
@@ -308,6 +323,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
             new FixedSettings(),
             new ScriptedFactory([]),
             new BusyGate(),
+            new StubMessageProvider(),
             NullLogger<ProcessIncomingEmailsHandler>.Instance);
 
         var exception = await Assert.ThrowsAsync<JobAlreadyRunningException>(() =>
@@ -346,6 +362,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
             new FixedSettings(),
             factory,
             new AlwaysEnterGate(),
+            new StubMessageProvider(),
             NullLogger<ProcessIncomingEmailsHandler>.Instance);
 
     private static IncomingEmail Mail(
@@ -388,6 +405,16 @@ public sealed class ProcessIncomingEmailsHandlerTests
         }
     }
 
+    private sealed class StubMessageProvider : IMessageProvider
+    {
+        public string Get(string key) =>
+            key == MessageKeys.MailProcessing.FailedToFetchUnreadEmails
+                ? "localized-fetch-failure"
+                : key;
+
+        public string Get(string key, params object[] args) => Get(key);
+    }
+
     private sealed class BusyGate : IProcessIncomingEmailsGate
     {
         public Task<IProcessIncomingEmailsLease?> TryAcquireAsync(
@@ -399,10 +426,18 @@ public sealed class ProcessIncomingEmailsHandlerTests
     {
         public List<EmailReceiptHandle> Marked { get; } = [];
         public HashSet<string> ThrowOnMarkValues { get; init; } = new(StringComparer.Ordinal);
+        public bool ThrowOnFetch { get; init; }
 
         public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult(messages);
+            CancellationToken cancellationToken = default)
+        {
+            if (ThrowOnFetch)
+            {
+                throw new InvalidOperationException("Receiver unavailable");
+            }
+
+            return Task.FromResult(messages);
+        }
 
         public Task MarkAsProcessedAsync(
             EmailReceiptHandle receiptHandle,

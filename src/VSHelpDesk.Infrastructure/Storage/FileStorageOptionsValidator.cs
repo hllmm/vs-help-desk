@@ -18,6 +18,18 @@ public sealed class FileStorageOptionsValidator : IValidateOptions<FileStorageOp
                 "The FileStorage:MaxFileSizeBytes configuration value must be positive.");
         }
 
+        if (options.OrphanCleanupPeriodMinutes <= 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "The FileStorage:OrphanCleanupPeriodMinutes configuration value must be positive.");
+        }
+
+        if (options.OrphanGracePeriodMinutes <= 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "The FileStorage:OrphanGracePeriodMinutes configuration value must be positive.");
+        }
+
         if (options.AllowedContentTypes is null || options.AllowedContentTypes.Length == 0)
         {
             return ValidateOptionsResult.Fail(

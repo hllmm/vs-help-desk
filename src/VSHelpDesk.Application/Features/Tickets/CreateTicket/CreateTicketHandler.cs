@@ -16,8 +16,8 @@ public sealed class CreateTicketHandler(
     ITicketNumberGenerator ticketNumberGenerator,
     TimeProvider timeProvider,
     IDatabaseErrorClassifier databaseErrorClassifier,
-    IHtmlSanitizerService? htmlSanitizerService = null,
-    IMessageProvider? messages = null)
+    IHtmlSanitizerService htmlSanitizerService,
+    IMessageProvider messages)
 {
     public async Task<Result<CreateTicketResult>> HandleAsync(
         CreateTicketCommand command,
@@ -46,9 +46,7 @@ public sealed class CreateTicketHandler(
             now);
 
         // Inbound mail: store sanitized plain text/HTML body.
-        var sanitizedContent = htmlSanitizerService is not null
-            ? htmlSanitizerService.SanitizeHtml(command.Content)
-            : command.Content;
+        var sanitizedContent = htmlSanitizerService.SanitizeHtml(command.Content);
         var content = InboundMailLimits.NormalizeBody(sanitizedContent);
         var firstMessage = new TicketMessage(
             ticket.Id,
@@ -119,26 +117,26 @@ public sealed class CreateTicketHandler(
             WasAlreadyProcessed: true);
     }
 
-    private static string? Validate(CreateTicketCommand command, IMessageProvider? messages)
+    private static string? Validate(CreateTicketCommand command, IMessageProvider messages)
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
-            return messages?.Get(MessageKeys.Tickets.IdempotencyKeyRequired) ?? "IdempotencyKey zorunludur.";
+            return messages.Get(MessageKeys.Tickets.IdempotencyKeyRequired);
         }
 
         if (string.IsNullOrWhiteSpace(command.Subject))
         {
-            return messages?.Get(MessageKeys.Tickets.SubjectRequired) ?? "Ticket konusu (Subject) zorunludur.";
+            return messages.Get(MessageKeys.Tickets.SubjectRequired);
         }
 
         if (string.IsNullOrWhiteSpace(command.CustomerName))
         {
-            return messages?.Get(MessageKeys.Tickets.CustomerNameRequired) ?? "Müşteri adı (CustomerName) zorunludur.";
+            return messages.Get(MessageKeys.Tickets.CustomerNameRequired);
         }
 
         if (string.IsNullOrWhiteSpace(command.CustomerEmail))
         {
-            return messages?.Get(MessageKeys.Tickets.CustomerEmailRequired) ?? "Müşteri e-postası (CustomerEmail) zorunludur.";
+            return messages.Get(MessageKeys.Tickets.CustomerEmailRequired);
         }
 
         return null;

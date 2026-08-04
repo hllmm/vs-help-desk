@@ -13,6 +13,15 @@ public sealed class FileStorageOptions
     /// <summary>Default 10 MiB — mentor-approved baseline for internship.</summary>
     public long MaxFileSizeBytes { get; init; } = 10 * 1024 * 1024;
 
+    /// <summary>How often the orphan cleanup pass runs.</summary>
+    public int OrphanCleanupPeriodMinutes { get; init; } = 30;
+
+    /// <summary>
+    /// Minimum file age before a storage-only file may be deleted. This prevents
+    /// cleanup from racing a file upload whose database transaction has not committed yet.
+    /// </summary>
+    public int OrphanGracePeriodMinutes { get; init; } = 60;
+
     public string[] AllowedContentTypes { get; init; } =
     [
         "application/pdf",

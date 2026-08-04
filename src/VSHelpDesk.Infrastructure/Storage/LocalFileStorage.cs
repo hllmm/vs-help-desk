@@ -6,7 +6,7 @@ using VSHelpDesk.Application.Abstractions.Storage;
 namespace VSHelpDesk.Infrastructure.Storage;
 
 /// <summary>Disk storage under a configurable root outside wwwroot (BR-012, BR-017).</summary>
-public sealed class LocalFileStorage : IFileStorage
+public sealed class LocalFileStorage : IFileStorage, IFileStorageInspector
 {
     private readonly string absoluteRoot;
     private readonly ILogger<LocalFileStorage> logger;
@@ -115,6 +115,27 @@ public sealed class LocalFileStorage : IFileStorage
             .ToList();
 
         return Task.FromResult<IReadOnlyList<string>>(files);
+    }
+
+
+    public Task<IReadOnlyList<StoredFileEntry>> ListStoredFileEntriesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!Directory.Exists(absoluteRoot))
+        {
+            return Task.FromResult<IReadOnlyList<StoredFileEntry>>(Array.Empty<StoredFileEntry>());
+        }
+
+        var files = new DirectoryInfo(absoluteRoot)
+            .EnumerateFiles()
+            .Select(file => new StoredFileEntry(
+                file.Name,
+                new DateTimeOffset(file.LastWriteTimeUtc, TimeSpan.Zero),
+                file.Length))
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<StoredFileEntry>>(files);
     }
 
     private string ResolveExistingPath(string storedFileName)

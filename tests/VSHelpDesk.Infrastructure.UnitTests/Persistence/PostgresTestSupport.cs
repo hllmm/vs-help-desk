@@ -19,6 +19,23 @@ internal static class PostgresTestConnection
             "true",
             StringComparison.OrdinalIgnoreCase);
 
+    internal static bool IsPostgresProvider
+    {
+        get
+        {
+            var configured = Environment.GetEnvironmentVariable("Database__Provider");
+            if (!string.IsNullOrWhiteSpace(configured))
+            {
+                return configured.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
+                       configured.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase) ||
+                       configured.Equals("Npgsql", StringComparison.OrdinalIgnoreCase);
+            }
+
+            var connection = TryGet();
+            return connection?.Contains("Host=", StringComparison.OrdinalIgnoreCase) == true;
+        }
+    }
+
     public static string? TryGet()
     {
         var fromEnvironment = Environment.GetEnvironmentVariable("ConnectionStrings__DefaultConnection");
@@ -73,6 +90,12 @@ public sealed class PostgresFactAttribute : FactAttribute
 {
     public PostgresFactAttribute()
     {
+        if (!PostgresTestConnection.IsPostgresProvider)
+        {
+            Skip = "PostgreSQL-specific test skipped because Database__Provider is not PostgreSQL.";
+            return;
+        }
+
         if (!PostgresTestConnection.IsCi
             && string.IsNullOrWhiteSpace(PostgresTestConnection.TryGet()))
         {
@@ -88,6 +111,11 @@ public sealed class PostgresAvailabilityTests
     [Fact]
     public void PostgresConnection_Configured_Or_SkipReasonIsExplicit()
     {
+        if (!PostgresTestConnection.IsPostgresProvider)
+        {
+            return;
+        }
+
         var connection = PostgresTestConnection.TryGet();
         if (string.IsNullOrWhiteSpace(connection))
         {

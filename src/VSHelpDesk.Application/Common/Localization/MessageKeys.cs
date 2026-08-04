@@ -63,6 +63,7 @@ public static class MessageKeys
     {
         public const string JobAlreadyRunning = "MailProcessing.JobAlreadyRunning";
         public const string FailedToProcessIncomingEmail = "MailProcessing.FailedToProcessIncomingEmail";
+        public const string FailedToFetchUnreadEmails = "MailProcessing.FailedToFetchUnreadEmails";
     }
 
     public static class Email

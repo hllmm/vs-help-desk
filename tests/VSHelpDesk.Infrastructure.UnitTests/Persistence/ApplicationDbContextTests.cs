@@ -13,6 +13,7 @@ using VSHelpDesk.Infrastructure.Persistence.ReadModel;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Persistence;
 
+[Collection("Environment variable tests")]
 public sealed class ApplicationDbContextTests
 {
     [Fact]
@@ -323,12 +324,15 @@ public sealed class ApplicationDbContextTests
     [Fact]
     public void ApplicationDbContextFactory_MissingEnvironmentConnection_ThrowsClearConfigurationError()
     {
-        const string environmentKey = "ConnectionStrings__DefaultConnection";
-        var originalValue = Environment.GetEnvironmentVariable(environmentKey);
+        const string connectionKey = "ConnectionStrings__DefaultConnection";
+        const string providerKey = "Database__Provider";
+        var originalConnection = Environment.GetEnvironmentVariable(connectionKey);
+        var originalProvider = Environment.GetEnvironmentVariable(providerKey);
 
         try
         {
-            Environment.SetEnvironmentVariable(environmentKey, null);
+            Environment.SetEnvironmentVariable(connectionKey, null);
+            Environment.SetEnvironmentVariable(providerKey, "Postgres");
             var factory = new ApplicationDbContextFactory();
 
             var exception = Assert.Throws<InvalidOperationException>(
@@ -338,7 +342,38 @@ public sealed class ApplicationDbContextTests
         }
         finally
         {
-            Environment.SetEnvironmentVariable(environmentKey, originalValue);
+            Environment.SetEnvironmentVariable(connectionKey, originalConnection);
+            Environment.SetEnvironmentVariable(providerKey, originalProvider);
+        }
+    }
+
+    [Theory]
+    [InlineData("Postgres", "Host=localhost;Database=test;Username=test", "Npgsql.EntityFrameworkCore.PostgreSQL")]
+    [InlineData("SqlServer", "Server=localhost;Database=test;User Id=sa;Password=Password123!", "Microsoft.EntityFrameworkCore.SqlServer")]
+    [InlineData("Sqlite", "Data Source=test.db", "Microsoft.EntityFrameworkCore.Sqlite")]
+    public void ApplicationDbContextFactory_UsesConfiguredProvider(
+        string provider,
+        string connectionString,
+        string expectedProviderName)
+    {
+        const string connectionKey = "ConnectionStrings__DefaultConnection";
+        const string providerKey = "Database__Provider";
+        var originalConnection = Environment.GetEnvironmentVariable(connectionKey);
+        var originalProvider = Environment.GetEnvironmentVariable(providerKey);
+
+        try
+        {
+            Environment.SetEnvironmentVariable(connectionKey, connectionString);
+            Environment.SetEnvironmentVariable(providerKey, provider);
+
+            using var context = new ApplicationDbContextFactory().CreateDbContext([]);
+
+            Assert.Equal(expectedProviderName, context.Database.ProviderName);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(connectionKey, originalConnection);
+            Environment.SetEnvironmentVariable(providerKey, originalProvider);
         }
     }
 

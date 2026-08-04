@@ -64,6 +64,40 @@ public sealed class DbProviderSwitchingTests
         Assert.IsType<HtmlSanitizerService>(sanitizer);
     }
 
+    [Theory]
+    [InlineData("Host=localhost;Database=test;Username=postgres", "Npgsql.EntityFrameworkCore.PostgreSQL")]
+    [InlineData("Server=localhost;Database=test;User Id=sa;Password=Password123!", "Microsoft.EntityFrameworkCore.SqlServer")]
+    [InlineData("Data Source=localhost;Initial Catalog=test;Integrated Security=true;TrustServerCertificate=true", "Microsoft.EntityFrameworkCore.SqlServer")]
+    [InlineData("Data Source=test.db", "Microsoft.EntityFrameworkCore.Sqlite")]
+    public void AddInfrastructure_InfersProviderFromConnectionString(
+        string connectionString,
+        string expectedProviderName)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:DefaultConnection"] = connectionString,
+                ["Auth:SecretKey"] = "SuperSecretKeyOfAtLeast32BytesLengthForTesting!",
+                ["Email:SmtpHost"] = "localhost",
+                ["Email:SmtpPort"] = "25",
+                ["Email:FromAddress"] = "support@example.test",
+                ["FileStorage:RootPath"] = "test_storage"
+            })
+            .Build();
+        var services = new ServiceCollection();
+        services.AddSingleton<IHostEnvironment>(new FakeHostEnvironment
+        {
+            ContentRootPath = Directory.GetCurrentDirectory()
+        });
+
+        services.AddInfrastructure(configuration);
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        Assert.Equal(expectedProviderName, context.Database.ProviderName);
+    }
+
     [Fact]
     public void AddInfrastructure_ConfiguresCustomMigrationsAssembly()
     {

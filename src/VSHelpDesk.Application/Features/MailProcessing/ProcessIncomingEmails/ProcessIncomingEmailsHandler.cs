@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
 
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
@@ -16,6 +17,7 @@ public sealed class ProcessIncomingEmailsHandler(
     IEmailBoundarySettings emailBoundarySettings,
     IInboundEmailItemProcessorFactory itemProcessorFactory,
     IProcessIncomingEmailsGate processIncomingEmailsGate,
+    IMessageProvider messageProvider,
     ILogger<ProcessIncomingEmailsHandler> logger)
 {
     public async Task<Result<ProcessIncomingEmailsResult>> HandleAsync(
@@ -68,7 +70,7 @@ public sealed class ProcessIncomingEmailsHandler(
                 "ProcessIncomingEmails fetch failed receiverMode={ReceiverMode}",
                 mode);
             return Result.Failure<ProcessIncomingEmailsResult>(
-                "Failed to fetch unread emails from the configured receiver.");
+                messageProvider.Get(MessageKeys.MailProcessing.FailedToFetchUnreadEmails));
         }
 
         var createdTicketNumbers = new List<string>();

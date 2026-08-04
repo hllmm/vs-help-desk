@@ -44,6 +44,7 @@ internal static class EnglishMessages
             [MessageKeys.Parameters.NameRequired] = "Parameter name is required.",
             [MessageKeys.MailProcessing.JobAlreadyRunning] = "Job '{0}' is already running.",
             [MessageKeys.MailProcessing.FailedToProcessIncomingEmail] = "The incoming email could not be processed.",
+            [MessageKeys.MailProcessing.FailedToFetchUnreadEmails] = "Unread emails could not be fetched from the configured receiver.",
             [MessageKeys.Email.AcknowledgementSubject] = "[{0}] We received your support request",
             [MessageKeys.Email.AcknowledgementBody] = "Hello,{1}{1}We received your message and opened ticket {0}.{1}Please keep {0} in the subject when you reply.{1}{1}VS Help Desk",
             [MessageKeys.Common.NotFoundTemplate] = "{0} record '{1}' could not be found.",

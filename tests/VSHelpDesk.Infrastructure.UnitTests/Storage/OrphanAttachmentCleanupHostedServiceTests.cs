@@ -39,7 +39,9 @@ public sealed class OrphanAttachmentCleanupHostedServiceTests : IDisposable
 
         var options = Options.Create(new FileStorageOptions { RootPath = _tempStorageDir });
         var hostEnv = new FakeHostEnv { ContentRootPath = _tempStorageDir };
-        services.AddSingleton<IFileStorage>(new LocalFileStorage(options, hostEnv, NullLogger<LocalFileStorage>.Instance));
+        var localStorage = new LocalFileStorage(options, hostEnv, NullLogger<LocalFileStorage>.Instance);
+        services.AddSingleton<IFileStorage>(localStorage);
+        services.AddSingleton<IFileStorageInspector>(localStorage);
 
         _serviceProvider = services.BuildServiceProvider();
     }
@@ -51,6 +53,7 @@ public sealed class OrphanAttachmentCleanupHostedServiceTests : IDisposable
         var orphanFileName = "orphan_file_123.pdf";
         var filePath = Path.Combine(_tempStorageDir, orphanFileName);
         await File.WriteAllTextAsync(filePath, "Orphan file content");
+        File.SetLastWriteTimeUtc(filePath, DateTime.UtcNow.AddHours(-2));
 
         var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var service = new OrphanAttachmentCleanupHostedService(
@@ -62,6 +65,23 @@ public sealed class OrphanAttachmentCleanupHostedServiceTests : IDisposable
 
         // Assert
         Assert.False(File.Exists(filePath), "Physical file without DB record should be deleted.");
+    }
+
+    [Fact]
+    public async Task Cleanup_PreservesRecentPhysicalFile_WhenDbRecordIsNotCommittedYet()
+    {
+        var recentFileName = "recent_upload.pdf";
+        var filePath = Path.Combine(_tempStorageDir, recentFileName);
+        await File.WriteAllTextAsync(filePath, "Upload in progress");
+        File.SetLastWriteTimeUtc(filePath, DateTime.UtcNow);
+        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
+        var service = new OrphanAttachmentCleanupHostedService(
+            scopeFactory,
+            NullLogger<OrphanAttachmentCleanupHostedService>.Instance);
+
+        await service.CleanupOrphanAttachmentsAsync(CancellationToken.None);
+
+        Assert.True(File.Exists(filePath), "A recent storage-only file must survive the grace period.");
     }
 
     [Fact]

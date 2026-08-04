@@ -1,5 +1,7 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Abstractions.Security;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -246,7 +248,9 @@ public sealed class CreateTicketHandlerTests
             context,
             numbers,
             new FixedTimeProvider(CreateTime),
-            classifier ?? new FakeDatabaseErrorClassifier());
+            classifier ?? new FakeDatabaseErrorClassifier(),
+            new PassthroughHtmlSanitizer(),
+            new StubMessageProvider());
 
     private sealed class FakeDatabaseErrorClassifier : IDatabaseErrorClassifier
     {
@@ -433,6 +437,27 @@ public sealed class CreateTicketHandlerTests
 
             return Task.FromResult(numbers[index++]);
         }
+    }
+
+
+    private sealed class PassthroughHtmlSanitizer : IHtmlSanitizerService
+    {
+        public string SanitizeHtml(string inputHtml) => inputHtml;
+        public string ToPlainText(string inputHtml) => inputHtml;
+    }
+
+    private sealed class StubMessageProvider : IMessageProvider
+    {
+        public string Get(string key) => key switch
+        {
+            MessageKeys.Tickets.IdempotencyKeyRequired => "IdempotencyKey zorunludur.",
+            MessageKeys.Tickets.SubjectRequired => "Ticket konusu (Subject) zorunludur.",
+            MessageKeys.Tickets.CustomerNameRequired => "Müşteri adı (CustomerName) zorunludur.",
+            MessageKeys.Tickets.CustomerEmailRequired => "Müşteri e-postası (CustomerEmail) zorunludur.",
+            _ => key
+        };
+
+        public string Get(string key, params object[] args) => Get(key);
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

@@ -49,72 +49,13 @@ public static class DependencyInjection
                 sp.GetService<ILogger<LocalizedDictionaryMessageProvider>>()));
 
 
-        var connectionString = configuration.GetConnectionString("DefaultConnection");
-        var provider = configuration["Database:Provider"]?.Trim();
-
-        if (string.IsNullOrWhiteSpace(connectionString) && string.IsNullOrWhiteSpace(provider))
-        {
-            throw new InvalidOperationException(
-                "The ConnectionStrings:DefaultConnection configuration value is required.");
-        }
-
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(provider, "In-Memory", StringComparison.OrdinalIgnoreCase))
-            {
-                connectionString = "VSHelpDeskDb";
-            }
-            else if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(provider, "SQLite", StringComparison.OrdinalIgnoreCase))
-            {
-                connectionString = "Data Source=vshelpdesk.db";
-            }
-            else
-            {
-                throw new InvalidOperationException(
-                    $"ConnectionStrings:DefaultConnection is required for database provider '{provider}'.");
-            }
-        }
-        if (string.IsNullOrWhiteSpace(provider))
-        {
-            if (connectionString.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase) ||
-                connectionString.EndsWith(".db", StringComparison.OrdinalIgnoreCase) ||
-                connectionString.Contains(":memory:", StringComparison.OrdinalIgnoreCase))
-            {
-                provider = "Sqlite";
-            }
-            else if (connectionString.Equals("InMemory", StringComparison.OrdinalIgnoreCase) ||
-                     connectionString.Contains("InMemory", StringComparison.OrdinalIgnoreCase))
-            {
-                provider = "InMemory";
-            }
-            else
-            {
-                provider = "Postgres";
-            }
-        }
-
-        var isPostgres = provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase) ||
-                         provider.Equals("PostgreSQL", StringComparison.OrdinalIgnoreCase) ||
-                         provider.Equals("Npgsql", StringComparison.OrdinalIgnoreCase);
-
-        var isSqlServer = provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase) ||
-                          provider.Equals("MSSQL", StringComparison.OrdinalIgnoreCase) ||
-                          provider.Equals("SQLServer", StringComparison.OrdinalIgnoreCase);
-
-        var isSqlite = provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase) ||
-                       provider.Equals("SQLite", StringComparison.OrdinalIgnoreCase);
-
-        var isInMemory = provider.Equals("InMemory", StringComparison.OrdinalIgnoreCase) ||
-                         provider.Equals("In-Memory", StringComparison.OrdinalIgnoreCase);
-
-        if (!isPostgres && !isSqlServer && !isSqlite && !isInMemory)
-        {
-            throw new InvalidOperationException(
-                $"Unsupported Database:Provider value '{provider}'. Supported values: Postgres, SqlServer, Sqlite, InMemory.");
-        }
-
+        var configuredConnection = configuration.GetConnectionString("DefaultConnection");
+        var provider = DatabaseProviderConfiguration.Resolve(
+            configuration["Database:Provider"],
+            configuredConnection);
+        var connectionString = DatabaseProviderConfiguration.ResolveConnectionString(
+            provider,
+            configuredConnection);
         var migrationsAssembly = configuration["Database:MigrationsAssembly"]?.Trim();
         if (string.IsNullOrWhiteSpace(migrationsAssembly))
         {
@@ -122,25 +63,14 @@ public static class DependencyInjection
         }
 
         services.AddDbContext<ApplicationDbContext>(options =>
-        {
-            if (isSqlServer)
-            {
-                options.UseSqlServer(connectionString, b => b.MigrationsAssembly(migrationsAssembly));
-            }
-            else if (isSqlite)
-            {
-                options.UseSqlite(connectionString, b => b.MigrationsAssembly(migrationsAssembly));
-            }
-            else if (isInMemory)
-            {
-                options.UseInMemoryDatabase(string.IsNullOrWhiteSpace(connectionString) ? "VSHelpDeskDb" : connectionString);
-            }
-            else
-            {
-                options.UseNpgsql(connectionString, b => b.MigrationsAssembly(migrationsAssembly));
-            }
-        });
+            DatabaseProviderConfiguration.Configure(
+                options,
+                provider,
+                connectionString,
+                migrationsAssembly));
 
+        var isPostgres = provider == DatabaseProviderKind.Postgres;
+        var isSqlServer = provider == DatabaseProviderKind.SqlServer;
         services.AddScoped<IApplicationDbContext>(
             serviceProvider => serviceProvider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<ITicketRepository, EfTicketRepository>();
@@ -239,7 +169,11 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(FileStorageOptions.SectionName))
             .ValidateOnStart();
         services.AddSingleton<IAttachmentUploadPolicy, ConfiguredAttachmentUploadPolicy>();
-        services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddSingleton<LocalFileStorage>();
+        services.AddSingleton<IFileStorage>(serviceProvider =>
+            serviceProvider.GetRequiredService<LocalFileStorage>());
+        services.AddSingleton<IFileStorageInspector>(serviceProvider =>
+            serviceProvider.GetRequiredService<LocalFileStorage>());
 
         // Singleton factory: each call opens/disposes an async scope; no scoped ctor deps.
         services.AddSingleton<IInboundEmailItemProcessorFactory, ScopedInboundEmailItemProcessorFactory>();
