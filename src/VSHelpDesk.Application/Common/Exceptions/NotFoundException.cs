@@ -8,7 +8,7 @@ public sealed class NotFoundException : Exception
     }
 
     public NotFoundException(string entityName, object key)
-        : base(ApplicationMessages.Common.NotFoundTemplate(entityName, key))
+        : base($"{entityName} '{key}' numaralı kayıt bulunamadı.")
     {
     }
 }

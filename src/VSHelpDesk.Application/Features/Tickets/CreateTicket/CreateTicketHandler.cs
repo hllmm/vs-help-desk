@@ -1,11 +1,10 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
-using VSHelpDesk.Application.Common;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
-
 using VSHelpDesk.Application.Abstractions.Security;
 
 namespace VSHelpDesk.Application.Features.Tickets.CreateTicket;
@@ -17,13 +16,14 @@ public sealed class CreateTicketHandler(
     ITicketNumberGenerator ticketNumberGenerator,
     TimeProvider timeProvider,
     IDatabaseErrorClassifier databaseErrorClassifier,
-    IHtmlSanitizerService? htmlSanitizerService = null)
+    IHtmlSanitizerService? htmlSanitizerService = null,
+    IMessageProvider? messages = null)
 {
     public async Task<Result<CreateTicketResult>> HandleAsync(
         CreateTicketCommand command,
         CancellationToken cancellationToken)
     {
-        var validationError = Validate(command);
+        var validationError = Validate(command, messages);
         if (validationError is not null)
         {
             return Result.Failure<CreateTicketResult>(validationError);
@@ -119,26 +119,26 @@ public sealed class CreateTicketHandler(
             WasAlreadyProcessed: true);
     }
 
-    private static string? Validate(CreateTicketCommand command)
+    private static string? Validate(CreateTicketCommand command, IMessageProvider? messages)
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
-            return ApplicationMessages.Tickets.IdempotencyKeyRequired;
+            return messages?.Get(MessageKeys.Tickets.IdempotencyKeyRequired) ?? "IdempotencyKey zorunludur.";
         }
 
         if (string.IsNullOrWhiteSpace(command.Subject))
         {
-            return ApplicationMessages.Tickets.SubjectRequired;
+            return messages?.Get(MessageKeys.Tickets.SubjectRequired) ?? "Ticket konusu (Subject) zorunludur.";
         }
 
         if (string.IsNullOrWhiteSpace(command.CustomerName))
         {
-            return ApplicationMessages.Tickets.CustomerNameRequired;
+            return messages?.Get(MessageKeys.Tickets.CustomerNameRequired) ?? "Müşteri adı (CustomerName) zorunludur.";
         }
 
         if (string.IsNullOrWhiteSpace(command.CustomerEmail))
         {
-            return ApplicationMessages.Tickets.CustomerEmailRequired;
+            return messages?.Get(MessageKeys.Tickets.CustomerEmailRequired) ?? "Müşteri e-postası (CustomerEmail) zorunludur.";
         }
 
         return null;

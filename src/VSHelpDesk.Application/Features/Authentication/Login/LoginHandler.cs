@@ -1,6 +1,6 @@
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
-using VSHelpDesk.Application.Common;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
 
 namespace VSHelpDesk.Application.Features.Authentication.Login;
@@ -10,8 +10,11 @@ public sealed class LoginHandler(
     IUnitOfWork unitOfWork,
     IPasswordHasher passwordHasher,
     ITokenService tokenService,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IMessageProvider? messages = null)
 {
+    private readonly IMessageProvider _messages = messages ?? FallbackMessageProvider.Instance;
+
     public async Task<Result<LoginResult>> HandleAsync(LoginCommand command, CancellationToken cancellationToken)
     {
         var user = await userRepository.GetByUsernameAsync(command.Username, cancellationToken);
@@ -20,7 +23,7 @@ public sealed class LoginHandler(
         // BR-015: inactive users receive the same safe response as invalid credentials.
         if (user is null || !user.IsActive || !passwordIsValid)
         {
-            return Result.Failure<LoginResult>(ApplicationMessages.Auth.InvalidCredentials);
+            return Result.Failure<LoginResult>(_messages.Get(MessageKeys.Auth.InvalidCredentials));
         }
 
         user.RecordLogin(timeProvider.GetUtcNow().UtcDateTime);

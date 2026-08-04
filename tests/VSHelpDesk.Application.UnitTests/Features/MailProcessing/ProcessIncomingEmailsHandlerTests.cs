@@ -314,7 +314,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
             handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None));
 
         Assert.Equal(
-            ApplicationMessages.MailProcessing.JobAlreadyRunning("process-incoming-emails"),
+            "'process-incoming-emails' işi zaten çalışıyor.",
             exception.Message);
     }
 

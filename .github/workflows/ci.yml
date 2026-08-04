@@ -175,6 +175,38 @@ jobs:
           done
           echo "All ${#expected[@]} read-path schema artifacts are present."
 
+  sqlserver-contract:
+    name: Backend contract tests (SQL Server 2022)
+    runs-on: ubuntu-latest
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "CiSqlServerPassword123!"
+        ports:
+          - 1433:1433
+    env:
+      CI: "true"
+      Database__Provider: "SqlServer"
+      ConnectionStrings__DefaultConnection: >-
+        Server=localhost,1433;Database=VS_HelpDesk_CI;User Id=sa;Password=CiSqlServerPassword123!;TrustServerCertificate=True;
+      Auth__SigningKey: ci-signing-key-with-at-least-32-bytes!!
+      Jobs__ApiKey: ci-jobs-api-key-32-characters!!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore VSHelpDesk.slnx
+      - name: Restore tools
+        run: dotnet tool restore
+      - name: Build
+        run: dotnet build VSHelpDesk.slnx --no-restore -c Release
+      - name: Infrastructure contract tests
+        run: dotnet test tests/VSHelpDesk.Infrastructure.UnitTests --no-build -c Release --nologo
+
   performance:
     name: Manual ticket-read load profile (100k fixture)
     if: github.event_name == 'workflow_dispatch' && inputs.run_performance

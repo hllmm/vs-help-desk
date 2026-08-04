@@ -1103,7 +1103,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
             using var doc = JsonDocument.Parse(json);
             Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
             Assert.Equal(
-                ApplicationMessages.Http.Conflict,
+                "İstek, mevcut durumla çakışıyor.",
                 doc.RootElement.GetProperty("title").GetString());
             Assert.DoesNotContain(customerEmail, json, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(replyContent, json, StringComparison.OrdinalIgnoreCase);
@@ -1299,7 +1299,7 @@ public sealed class TicketsApiTests : IClassFixture<CustomWebApplicationFactory>
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
         Assert.Equal(
-            ApplicationMessages.Http.Conflict,
+            "İstek, mevcut durumla çakışıyor.",
             doc.RootElement.GetProperty("title").GetString());
         Assert.Equal(1, conflictDb.SaveCallCount);
         Assert.Equal(0, conflictDb.ClearTrackedCallCount);

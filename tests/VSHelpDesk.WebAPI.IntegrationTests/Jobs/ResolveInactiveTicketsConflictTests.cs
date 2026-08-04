@@ -50,7 +50,7 @@ public sealed class ResolveInactiveTicketsConflictTests : IClassFixture<CustomWe
         var root = doc.RootElement;
         Assert.Equal(409, root.GetProperty("status").GetInt32());
         Assert.Equal(
-            ApplicationMessages.Http.Conflict,
+            "İstek, mevcut durumla çakışıyor.",
             root.GetProperty("title").GetString());
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("connection", json, StringComparison.OrdinalIgnoreCase);

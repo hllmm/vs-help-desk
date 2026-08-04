@@ -29,8 +29,6 @@ using VSHelpDesk.Infrastructure.Persistence.Sequences;
 using VSHelpDesk.Infrastructure.Processing;
 using VSHelpDesk.Infrastructure.Security;
 using VSHelpDesk.Infrastructure.Storage;
-using VSHelpDesk.Application.Common.Localization;
-using VSHelpDesk.Infrastructure.Localization;
 
 namespace VSHelpDesk.Infrastructure;
 
@@ -44,8 +42,10 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         services.AddLogging();
-        services.AddSingleton<IMessageProvider>(
-            new DictionaryMessageProvider(TurkishMessages.Messages));
+        services.AddSingleton<IMessageProvider>(sp =>
+            new DictionaryMessageProvider(
+                TurkishMessages.Messages,
+                sp.GetService<ILogger<DictionaryMessageProvider>>()));
 
 
         var connectionString = configuration.GetConnectionString("DefaultConnection");
@@ -107,15 +107,21 @@ public static class DependencyInjection
         var isInMemory = provider.Equals("InMemory", StringComparison.OrdinalIgnoreCase) ||
                          provider.Equals("In-Memory", StringComparison.OrdinalIgnoreCase);
 
+        var migrationsAssembly = configuration["Database:MigrationsAssembly"]?.Trim();
+        if (string.IsNullOrWhiteSpace(migrationsAssembly))
+        {
+            migrationsAssembly = typeof(ApplicationDbContext).Assembly.FullName;
+        }
+
         services.AddDbContext<ApplicationDbContext>(options =>
         {
             if (isSqlServer)
             {
-                options.UseSqlServer(connectionString);
+                options.UseSqlServer(connectionString, b => b.MigrationsAssembly(migrationsAssembly));
             }
             else if (isSqlite)
             {
-                options.UseSqlite(connectionString);
+                options.UseSqlite(connectionString, b => b.MigrationsAssembly(migrationsAssembly));
             }
             else if (isInMemory)
             {
@@ -123,7 +129,7 @@ public static class DependencyInjection
             }
             else
             {
-                options.UseNpgsql(connectionString);
+                options.UseNpgsql(connectionString, b => b.MigrationsAssembly(migrationsAssembly));
             }
         });
 
@@ -167,6 +173,21 @@ public static class DependencyInjection
                     serviceProvider.GetRequiredService<
                         ILogger<PostgresResolveInactiveTicketsGate>>()));
         }
+        else if (isSqlServer)
+        {
+            services.AddScoped<ISequenceValueAllocator, SqlServerSequenceAllocator>();
+            services.AddSingleton<IDatabaseErrorClassifier, SqlServerDatabaseErrorClassifier>();
+            services.AddSingleton<IProcessIncomingEmailsGate>(serviceProvider =>
+                new SqlServerProcessIncomingEmailsGate(
+                    connectionString,
+                    serviceProvider.GetRequiredService<
+                        ILogger<SqlServerProcessIncomingEmailsGate>>()));
+            services.AddSingleton<IResolveInactiveTicketsGate>(serviceProvider =>
+                new SqlServerResolveInactiveTicketsGate(
+                    connectionString,
+                    serviceProvider.GetRequiredService<
+                        ILogger<SqlServerResolveInactiveTicketsGate>>()));
+        }
         else
         {
             services.AddScoped<ISequenceValueAllocator, FallbackSequenceAllocator>();
@@ -179,6 +200,12 @@ public static class DependencyInjection
         services.AddOptions<EmailOptions>()
             .Bind(configuration.GetSection(EmailOptions.SectionName))
             .ValidateOnStart();
+
+        services.AddSingleton<IValidateOptions<EmailBrandingOptions>, EmailBrandingOptionsValidator>();
+        services.AddOptions<EmailBrandingOptions>()
+            .Bind(configuration.GetSection(EmailBrandingOptions.SectionName))
+            .ValidateOnStart();
+
         services.AddSingleton<IEmailBoundarySettings, EmailBoundarySettings>();
         services.AddSingleton<IEmailTemplateService, CorporateEmailTemplateService>();
         services.AddScoped<IEmailSender, SmtpEmailSender>();
@@ -212,19 +239,35 @@ public static class DependencyInjection
 
         services.AddHostedService<OrphanAttachmentCleanupHostedService>();
 
-        var channel = Channel.CreateBounded<SystemLog>(new BoundedChannelOptions(10_000)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest
-        });
+        services.AddSingleton<IValidateOptions<DatabaseLoggingOptions>, DatabaseLoggingOptionsValidator>();
+        services.AddOptions<DatabaseLoggingOptions>()
+            .Bind(configuration.GetSection(DatabaseLoggingOptions.SectionName))
+            .ValidateOnStart();
 
-        services.AddSingleton(channel);
-        services.AddSingleton(channel.Reader);
-        services.AddSingleton(channel.Writer);
+        services.AddSingleton<ILogPropertySanitizer, LogPropertySanitizer>();
+        services.AddSingleton<SystemLogDropMetrics>();
+
+        services.AddSingleton<Channel<SystemLog>>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<DatabaseLoggingOptions>>().Value;
+            var capacity = Math.Clamp(options.QueueCapacity, 10, 50000);
+            return Channel.CreateBounded<SystemLog>(new BoundedChannelOptions(capacity)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest
+            });
+        });
+        services.AddSingleton(sp => sp.GetRequiredService<Channel<SystemLog>>().Reader);
+        services.AddSingleton(sp => sp.GetRequiredService<Channel<SystemLog>>().Writer);
 
         services.AddSingleton<ILoggerProvider, DbLoggerProvider>(sp =>
-            new DbLoggerProvider(sp.GetRequiredService<ChannelWriter<SystemLog>>(), LogLevel.Error));
+            new DbLoggerProvider(
+                sp.GetRequiredService<ChannelWriter<SystemLog>>(),
+                sp.GetRequiredService<IOptions<DatabaseLoggingOptions>>(),
+                sp.GetService<ILogPropertySanitizer>(),
+                sp.GetService<SystemLogDropMetrics>()));
 
         services.AddHostedService<DbLogBackgroundWriter>();
+        services.AddHostedService<DbLogRetentionHostedService>();
 
         return services;
     }

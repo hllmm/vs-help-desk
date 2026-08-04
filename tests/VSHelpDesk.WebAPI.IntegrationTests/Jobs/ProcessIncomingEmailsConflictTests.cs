@@ -46,7 +46,7 @@ public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<CustomWeb
         var root = doc.RootElement;
         Assert.Equal(409, root.GetProperty("status").GetInt32());
         Assert.Equal(
-            ApplicationMessages.Http.Conflict,
+            "İstek, mevcut durumla çakışıyor.",
             root.GetProperty("title").GetString());
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("connection", json, StringComparison.OrdinalIgnoreCase);
@@ -68,7 +68,7 @@ public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<CustomWeb
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         Assert.Equal(409, doc.RootElement.GetProperty("status").GetInt32());
         Assert.Equal(
-            ApplicationMessages.Http.Conflict,
+            "İstek, mevcut durumla çakışıyor.",
             doc.RootElement.GetProperty("title").GetString());
     }
 

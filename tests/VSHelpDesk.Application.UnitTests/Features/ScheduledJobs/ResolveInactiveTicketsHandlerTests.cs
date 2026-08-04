@@ -235,7 +235,7 @@ public sealed class ResolveInactiveTicketsHandlerTests
             handler.HandleAsync(new ResolveInactiveTicketsCommand(), CancellationToken.None));
 
         Assert.Equal(
-            ApplicationMessages.MailProcessing.JobAlreadyRunning("resolve-inactive-tickets"),
+            "'resolve-inactive-tickets' işi zaten çalışıyor.",
             ex.Message);
         Assert.Equal(0, db.TicketQueryCount);
         Assert.Empty(factory.CalledTicketIds);

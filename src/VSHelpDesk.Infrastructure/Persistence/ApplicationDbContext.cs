@@ -101,6 +101,28 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             typeof(ApplicationDbContext).Assembly,
             configurationType => configurationType != typeof(TicketConfiguration));
         modelBuilder.ApplyConfiguration(new TicketConfiguration(isPostgres));
+
+        if (!isPostgres)
+        {
+            // "timestamp with time zone" is PostgreSQL-specific. SQL Server and
+            // SQLite fall back to provider-native temporal column types so the
+            // schema can be created (and the contract suite can run) on all
+            // supported providers.
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            {
+                foreach (var property in entityType.GetProperties())
+                {
+                    if (string.Equals(
+                            property.GetColumnType(),
+                            "timestamp with time zone",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        property.SetColumnType(null);
+                    }
+                }
+            }
+        }
+
         base.OnModelCreating(modelBuilder);
     }
 }

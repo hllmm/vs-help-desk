@@ -1,14 +1,17 @@
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Storage;
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 
 namespace VSHelpDesk.Application.Features.Attachments.GetAttachment;
 
 public sealed class GetAttachmentHandler(
     ITicketAttachmentRepository attachmentRepository,
-    IFileStorage fileStorage)
+    IFileStorage fileStorage,
+    IMessageProvider? messages = null)
 {
+    private readonly IMessageProvider _messages = messages ?? FallbackMessageProvider.Instance;
+
     public async Task<GetAttachmentResult> HandleAsync(
         GetAttachmentQuery query,
         CancellationToken cancellationToken)
@@ -17,7 +20,7 @@ public sealed class GetAttachmentHandler(
 
         if (attachment is null)
         {
-            throw new NotFoundException(ApplicationMessages.Attachments.NotFound(query.AttachmentId));
+            throw new NotFoundException(_messages.Get(MessageKeys.Attachments.NotFound, query.AttachmentId));
         }
 
         try
@@ -33,7 +36,7 @@ public sealed class GetAttachmentHandler(
         catch (FileNotFoundException)
         {
             throw new NotFoundException(
-                ApplicationMessages.Attachments.StorageFileNotFound(query.AttachmentId));
+                _messages.Get(MessageKeys.Attachments.StorageFileNotFound, query.AttachmentId));
         }
     }
 }

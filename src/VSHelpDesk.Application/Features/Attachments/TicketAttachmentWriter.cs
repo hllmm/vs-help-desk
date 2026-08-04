@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Storage;
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.IO;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Domain.Entities;
 
 namespace VSHelpDesk.Application.Features.Attachments;
@@ -19,8 +19,11 @@ public sealed class TicketAttachmentWriter(
     IFileStorage fileStorage,
     IAttachmentUploadPolicy uploadPolicy,
     TimeProvider timeProvider,
-    ILogger<TicketAttachmentWriter> logger) : ITicketAttachmentWriter
+    ILogger<TicketAttachmentWriter> logger,
+    IMessageProvider? messages = null) : ITicketAttachmentWriter
 {
+    private readonly IMessageProvider _messages = messages ?? FallbackMessageProvider.Instance;
+
     public async Task<TicketAttachmentWriteResult> TryWriteAsync(
         Guid ticketMessageId,
         string fileName,
@@ -33,37 +36,37 @@ public sealed class TicketAttachmentWriter(
 
         if (string.IsNullOrWhiteSpace(fileName))
         {
-            return TicketAttachmentWriteResult.Skipped(ApplicationMessages.Attachments.FileNameRequired);
+            return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FileNameRequired));
         }
 
         if (declaredSize <= 0)
         {
-            return TicketAttachmentWriteResult.Skipped(ApplicationMessages.Attachments.FileContentRequired);
+            return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FileContentRequired));
         }
 
         if (declaredSize > uploadPolicy.MaxFileSizeBytes)
         {
             return TicketAttachmentWriteResult.Skipped(
-                ApplicationMessages.Attachments.MaxSizeBytesExceeded(uploadPolicy.MaxFileSizeBytes));
+                _messages.Get(MessageKeys.Attachments.MaxSizeBytesExceeded, uploadPolicy.MaxFileSizeBytes));
         }
 
         if (!uploadPolicy.IsContentTypeAllowed(contentType))
         {
             return TicketAttachmentWriteResult.Skipped(
-                ApplicationMessages.Attachments.ContentTypeNotAllowed(contentType));
+                _messages.Get(MessageKeys.Attachments.ContentTypeNotAllowed, contentType));
         }
 
         var messageExists = await ticketRepository.MessageExistsAsync(ticketMessageId, cancellationToken);
         if (!messageExists)
         {
             return TicketAttachmentWriteResult.Skipped(
-                ApplicationMessages.Attachments.MessageNotFound(ticketMessageId));
+                _messages.Get(MessageKeys.Attachments.MessageNotFound, ticketMessageId));
         }
 
         var safeFileName = Path.GetFileName(fileName.Trim());
         if (string.IsNullOrWhiteSpace(safeFileName))
         {
-            return TicketAttachmentWriteResult.Skipped(ApplicationMessages.Attachments.FileNameRequired);
+            return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FileNameRequired));
         }
 
         // Sniff leading bytes before persisting (do not trust declared Content-Type alone).
@@ -100,7 +103,7 @@ public sealed class TicketAttachmentWriter(
                 ex,
                 "Failed to read attachment header for messageId={MessageId}",
                 ticketMessageId);
-            return TicketAttachmentWriteResult.Skipped(ApplicationMessages.Attachments.FailedToReadFile);
+            return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
         }
 
         try
@@ -110,7 +113,7 @@ public sealed class TicketAttachmentWriter(
                     header.AsSpan(0, Math.Max(read, 0))))
             {
                 return TicketAttachmentWriteResult.Skipped(
-                    ApplicationMessages.Attachments.ContentTypeMismatch);
+                    _messages.Get(MessageKeys.Attachments.ContentTypeMismatch));
             }
 
             StoredFile stored;
@@ -128,20 +131,20 @@ public sealed class TicketAttachmentWriter(
                     ex,
                     "Failed to write attachment to storage for messageId={MessageId}",
                     ticketMessageId);
-                return TicketAttachmentWriteResult.Skipped(ApplicationMessages.Attachments.FailedToStoreFile);
+                return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToStoreFile));
             }
 
             if (stored.FileSize > uploadPolicy.MaxFileSizeBytes)
             {
                 await TryDeleteAsync(stored.StoredFileName, cancellationToken);
                 return TicketAttachmentWriteResult.Skipped(
-                    ApplicationMessages.Attachments.MaxSizeBytesExceeded(uploadPolicy.MaxFileSizeBytes));
+                    _messages.Get(MessageKeys.Attachments.MaxSizeBytesExceeded, uploadPolicy.MaxFileSizeBytes));
             }
 
             if (stored.FileSize <= 0)
             {
                 await TryDeleteAsync(stored.StoredFileName, cancellationToken);
-                return TicketAttachmentWriteResult.Skipped(ApplicationMessages.Attachments.FileContentRequired);
+                return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FileContentRequired));
             }
 
             var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -166,7 +169,7 @@ public sealed class TicketAttachmentWriter(
                     "Failed to persist attachment metadata; rolling back storage file={StoredFileName}",
                     stored.StoredFileName);
                 await TryDeleteAsync(stored.StoredFileName, cancellationToken);
-                return TicketAttachmentWriteResult.Skipped(ApplicationMessages.Attachments.FailedToPersistMetadata);
+                return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToPersistMetadata));
             }
 
             logger.LogInformation(

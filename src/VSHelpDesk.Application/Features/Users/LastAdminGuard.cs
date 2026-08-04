@@ -1,4 +1,3 @@
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
 using VSHelpDesk.Domain.Exceptions;
@@ -6,7 +5,7 @@ using VSHelpDesk.Domain.Exceptions;
 namespace VSHelpDesk.Application.Features.Users;
 
 /// <summary>
-/// Ensures the system always retains at least one active Admin (Role == Admin &amp;&amp; IsActive).
+/// Ensures the system always retains at least one active Admin (Role == Admin && IsActive).
 /// </summary>
 public static class LastAdminGuard
 {
@@ -26,7 +25,7 @@ public static class LastAdminGuard
         ArgumentNullException.ThrowIfNull(users);
 
         var target = users.FirstOrDefault(u => u.Id == targetUserId)
-            ?? throw new InvalidOperationException(ApplicationMessages.Users.NotFound(targetUserId));
+            ?? throw new InvalidOperationException($"'{targetUserId}' numaralı kullanıcı bulunamadı.");
 
         var isCurrentlyActiveAdmin = target.Role == UserRole.Admin && target.IsActive;
         var willBeActiveAdmin = newRole == UserRole.Admin && newIsActive;

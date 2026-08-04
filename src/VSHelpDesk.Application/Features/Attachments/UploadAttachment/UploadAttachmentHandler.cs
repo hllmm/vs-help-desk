@@ -1,7 +1,7 @@
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Storage;
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
 
 namespace VSHelpDesk.Application.Features.Attachments.UploadAttachment;
@@ -12,8 +12,11 @@ namespace VSHelpDesk.Application.Features.Attachments.UploadAttachment;
 /// </summary>
 public sealed class UploadAttachmentHandler(
     ITicketAttachmentWriter attachmentWriter,
-    ITicketAttachmentRepository attachmentRepository)
+    ITicketAttachmentRepository attachmentRepository,
+    IMessageProvider? messages = null)
 {
+    private readonly IMessageProvider _messages = messages ?? FallbackMessageProvider.Instance;
+
     public async Task<Result<UploadAttachmentResult>> HandleAsync(
         UploadAttachmentCommand command,
         CancellationToken cancellationToken)
@@ -28,19 +31,19 @@ public sealed class UploadAttachmentHandler(
 
         if (!result.WasStored)
         {
-            var notFoundReason = ApplicationMessages.Attachments.MessageNotFound(command.TicketMessageId);
+            var notFoundReason = _messages.Get(MessageKeys.Attachments.MessageNotFound, command.TicketMessageId);
             if (result.SkipReason == notFoundReason)
             {
                 throw new NotFoundException(result.SkipReason);
             }
 
-            return Result.Failure<UploadAttachmentResult>(result.SkipReason ?? ApplicationMessages.Attachments.FailedToStoreFile);
+            return Result.Failure<UploadAttachmentResult>(result.SkipReason ?? _messages.Get(MessageKeys.Attachments.FailedToStoreFile));
         }
 
         var attachment = await attachmentRepository.GetByIdAsync(result.AttachmentId!.Value, cancellationToken);
         if (attachment is null)
         {
-            throw new NotFoundException(ApplicationMessages.Attachments.NotFound(result.AttachmentId!.Value));
+            throw new NotFoundException(_messages.Get(MessageKeys.Attachments.NotFound, result.AttachmentId!.Value));
         }
 
         return Result.Success(new UploadAttachmentResult(

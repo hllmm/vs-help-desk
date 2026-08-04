@@ -18,7 +18,7 @@ namespace VSHelpDesk.WebAPI.IntegrationTests.Authentication;
 
 public sealed class AuthControllerTests
 {
-    private const string GenericFailure = VSHelpDesk.Application.Common.ApplicationMessages.Auth.InvalidCredentials;
+    private const string GenericFailure = "Geçersiz kullanıcı adı veya şifre.";
     private static readonly DateTimeOffset LoginTime = new(2026, 7, 24, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]

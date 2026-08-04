@@ -1,7 +1,6 @@
 using System.Threading.Channels;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using VSHelpDesk.Application.Abstractions.Persistence;
+using Microsoft.Extensions.Options;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Infrastructure.Logging;
 
@@ -10,11 +9,12 @@ namespace VSHelpDesk.Infrastructure.UnitTests.Logging;
 public sealed class DbLoggerProviderTests
 {
     private readonly Channel<SystemLog> _channel = Channel.CreateUnbounded<SystemLog>();
+    private readonly IOptions<DatabaseLoggingOptions> _options = Options.Create(new DatabaseLoggingOptions());
 
     [Fact]
     public void CreateLogger_ReturnsLoggerInstance()
     {
-        var provider = new DbLoggerProvider(_channel.Writer);
+        var provider = new DbLoggerProvider(_channel.Writer, _options);
         var logger = provider.CreateLogger("TestCategory");
 
         Assert.NotNull(logger);
@@ -23,7 +23,7 @@ public sealed class DbLoggerProviderTests
     [Fact]
     public void DbLogger_InformationLevel_DoesNotPersistToDb()
     {
-        var provider = new DbLoggerProvider(_channel.Writer);
+        var provider = new DbLoggerProvider(_channel.Writer, _options);
         var logger = provider.CreateLogger("TestCategory");
 
         logger.LogInformation("This should be ignored");
@@ -34,7 +34,7 @@ public sealed class DbLoggerProviderTests
     [Fact]
     public void DbLogger_ErrorAndCriticalLevel_PersistsSystemLogToDb()
     {
-        var provider = new DbLoggerProvider(_channel.Writer);
+        var provider = new DbLoggerProvider(_channel.Writer, _options);
         var logger = provider.CreateLogger("TestCategory");
         var ex = new InvalidOperationException("Test exception");
 
@@ -56,7 +56,7 @@ public sealed class DbLoggerProviderTests
     [Fact]
     public void DbLogger_EFCoreCategory_FiltersOutToPreventRecursion()
     {
-        var provider = new DbLoggerProvider(_channel.Writer);
+        var provider = new DbLoggerProvider(_channel.Writer, _options);
         var logger = provider.CreateLogger("Microsoft.EntityFrameworkCore.Database.Command");
 
         logger.LogError("Database connection error");

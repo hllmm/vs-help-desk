@@ -1,7 +1,5 @@
 using System.Threading.Channels;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Domain.Entities;
 
 namespace VSHelpDesk.Infrastructure.Logging;
@@ -10,13 +8,22 @@ public sealed class DbLogger : ILogger
 {
     private readonly string _categoryName;
     private readonly ChannelWriter<SystemLog> _writer;
-    private readonly LogLevel _minLogLevel;
+    private readonly DatabaseLoggingOptions _options;
+    private readonly ILogPropertySanitizer? _sanitizer;
+    private readonly SystemLogDropMetrics? _dropMetrics;
 
-    public DbLogger(string categoryName, ChannelWriter<SystemLog> writer, LogLevel minLogLevel = LogLevel.Error)
+    public DbLogger(
+        string categoryName,
+        ChannelWriter<SystemLog> writer,
+        DatabaseLoggingOptions options,
+        ILogPropertySanitizer? sanitizer = null,
+        SystemLogDropMetrics? dropMetrics = null)
     {
         _categoryName = categoryName ?? string.Empty;
         _writer = writer ?? throw new ArgumentNullException(nameof(writer));
-        _minLogLevel = minLogLevel;
+        _options = options ?? new DatabaseLoggingOptions();
+        _sanitizer = sanitizer;
+        _dropMetrics = dropMetrics;
     }
 
     public IDisposable? BeginScope<TState>(TState state) where TState : notnull
@@ -26,7 +33,7 @@ public sealed class DbLogger : ILogger
 
     public bool IsEnabled(LogLevel logLevel)
     {
-        return logLevel >= _minLogLevel && logLevel != LogLevel.None;
+        return logLevel >= _options.MinimumLevel && logLevel != LogLevel.None;
     }
 
     public void Log<TState>(
@@ -43,13 +50,22 @@ public sealed class DbLogger : ILogger
 
         // Avoid infinite recursion loops if EF Core or database infrastructure emits error logs
         if (_categoryName.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.OrdinalIgnoreCase) ||
-            _categoryName.StartsWith("Npgsql", StringComparison.OrdinalIgnoreCase))
+            _categoryName.StartsWith("Npgsql", StringComparison.OrdinalIgnoreCase) ||
+            _categoryName.StartsWith("Microsoft.Data.SqlClient", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         var message = formatter != null ? formatter(state, exception) : state?.ToString() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(message) && exception == null)
+        var exceptionString = exception?.ToString();
+
+        if (_options.SanitizePII && _sanitizer != null)
+        {
+            message = _sanitizer.Sanitize(message) ?? message;
+            exceptionString = _sanitizer.Sanitize(exceptionString);
+        }
+
+        if (string.IsNullOrWhiteSpace(message) && string.IsNullOrWhiteSpace(exceptionString))
         {
             return;
         }
@@ -59,16 +75,19 @@ public sealed class DbLogger : ILogger
             var logEntry = new SystemLog(
                 logLevel: logLevel.ToString(),
                 message: message,
-                exception: exception?.ToString(),
+                exception: exceptionString,
                 categoryName: _categoryName,
                 eventId: eventId.Id != 0 ? eventId.Id : null,
                 createdAt: DateTime.UtcNow);
 
-            _writer.TryWrite(logEntry);
+            if (!_writer.TryWrite(logEntry))
+            {
+                _dropMetrics?.IncrementDroppedCount();
+            }
         }
         catch
         {
-            // Fallback: Prevent logging failures from interrupting application execution
+            _dropMetrics?.IncrementDroppedCount();
         }
     }
 }

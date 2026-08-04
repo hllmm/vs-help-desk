@@ -1,17 +1,16 @@
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
-
-using VSHelpDesk.Application.Common;
 
 namespace VSHelpDesk.Application.UnitTests.Features.Authentication.Login;
 
 public sealed class LoginHandlerTests
 {
-    private static readonly string GenericFailure = ApplicationMessages.Auth.InvalidCredentials;
+    private static readonly string GenericFailure = "Geçersiz kullanıcı adı veya şifre.";
     private static readonly DateTimeOffset LoginTime = new(2026, 7, 20, 10, 30, 0, TimeSpan.Zero);
 
     [Fact]
@@ -107,7 +106,13 @@ public sealed class LoginHandlerTests
         FakeApplicationDbContext context,
         FakePasswordHasher passwordHasher,
         FakeTokenService tokenService) =>
-        new(context, context, passwordHasher, tokenService, new FixedTimeProvider(LoginTime));
+        new(context, context, passwordHasher, tokenService, new FixedTimeProvider(LoginTime), new FakeMessageProvider());
+
+    private sealed class FakeMessageProvider : IMessageProvider
+    {
+        public string Get(string key) => GenericFailure;
+        public string Get(string key, params object[] args) => GenericFailure;
+    }
 
     private static User CreateUser(string username = "active.user") =>
         new("Active User", username, $"{username}@example.test", "stored-password-hash", UserRole.Support);

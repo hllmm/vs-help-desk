@@ -56,15 +56,19 @@ public sealed class TicketConfiguration(bool isPostgres) : IEntityTypeConfigurat
                 "IX_Tickets_CustomerEmail_Trgm");
         }
 
+        var userDeleteBehavior = isPostgres
+            ? DeleteBehavior.SetNull
+            : DeleteBehavior.NoAction;
+
         builder.HasOne<User>()
             .WithMany()
             .HasForeignKey(ticket => ticket.AssignedUserId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(userDeleteBehavior);
 
         builder.HasOne<User>()
             .WithMany()
             .HasForeignKey(ticket => ticket.ClosedByUserId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(userDeleteBehavior);
     }
 
     private static void ConfigureTrigramIndex(

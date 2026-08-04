@@ -1,4 +1,4 @@
 namespace VSHelpDesk.Application.Common.Exceptions;
 
-public sealed class JobAlreadyRunningException(string jobName)
-    : ConflictApplicationException(ApplicationMessages.MailProcessing.JobAlreadyRunning(jobName));
+public sealed class JobAlreadyRunningException(string jobName, string? customMessage = null)
+    : ConflictApplicationException(customMessage ?? $"'{jobName}' işi zaten çalışıyor.");

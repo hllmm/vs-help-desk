@@ -2,8 +2,8 @@ using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -20,7 +20,8 @@ public sealed class SupportReplyToTicketHandler(
     ICurrentUserService currentUserService,
     TimeProvider timeProvider,
     ILogger<SupportReplyToTicketHandler> logger,
-    IHtmlSanitizerService? htmlSanitizerService = null)
+    IHtmlSanitizerService? htmlSanitizerService = null,
+    IMessageProvider? messages = null)
 {
     public async Task<Result<SupportReplyToTicketResult>> HandleAsync(
         SupportReplyToTicketCommand command,
@@ -45,7 +46,7 @@ public sealed class SupportReplyToTicketHandler(
         var ticket = await ticketRepository.GetByIdAsync(command.TicketId, cancellationToken: cancellationToken);
         if (ticket is null)
         {
-            throw new NotFoundException(ApplicationMessages.Tickets.NotFound(command.TicketId));
+            throw new NotFoundException(messages?.Get(MessageKeys.Tickets.NotFound, command.TicketId) ?? $"'{command.TicketId}' numaralı Ticket bulunamadı.");
         }
 
         if (ticket.Status == TicketStatus.Resolved)
@@ -158,7 +159,7 @@ public sealed class SupportReplyToTicketHandler(
         var reloaded = await ticketRepository.GetByIdAsync(ticket.Id, cancellationToken: cancellationToken);
         if (reloaded is null)
         {
-            throw new NotFoundException(ApplicationMessages.Tickets.NotFound(ticket.Id));
+            throw new NotFoundException(messages?.Get(MessageKeys.Tickets.NotFound, ticket.Id) ?? $"'{ticket.Id}' numaralı Ticket bulunamadı.");
         }
 
         // Concurrent resolve (or other illegal transition) after SMTP: message already saved and

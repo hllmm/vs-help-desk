@@ -1,12 +1,11 @@
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
-
 using VSHelpDesk.Application.Abstractions.Security;
 
 namespace VSHelpDesk.Application.Features.Tickets.ReplyToTicket;
@@ -17,7 +16,8 @@ public sealed class AppendCustomerReplyHandler(
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider,
     IDatabaseErrorClassifier databaseErrorClassifier,
-    IHtmlSanitizerService? htmlSanitizerService = null)
+    IHtmlSanitizerService? htmlSanitizerService = null,
+    IMessageProvider? messages = null)
 {
     public async Task<Result<AppendCustomerReplyResult>> HandleAsync(
         AppendCustomerReplyCommand command,
@@ -25,12 +25,14 @@ public sealed class AppendCustomerReplyHandler(
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
-            return Result.Failure<AppendCustomerReplyResult>(ApplicationMessages.Tickets.IdempotencyKeyRequired);
+            return Result.Failure<AppendCustomerReplyResult>(
+                messages?.Get(MessageKeys.Tickets.IdempotencyKeyRequired) ?? "IdempotencyKey zorunludur.");
         }
 
         if (string.IsNullOrWhiteSpace(command.TicketNumber))
         {
-            return Result.Failure<AppendCustomerReplyResult>(ApplicationMessages.Tickets.TicketNumberRequired);
+            return Result.Failure<AppendCustomerReplyResult>(
+                messages?.Get(MessageKeys.Tickets.TicketNumberRequired) ?? "Ticket numarası (TicketNumber) zorunludur.");
         }
 
         try
@@ -70,7 +72,7 @@ public sealed class AppendCustomerReplyHandler(
         if (ticket is null)
         {
             return Result.Failure<AppendCustomerReplyResult>(
-                ApplicationMessages.Tickets.NotFound(command.TicketNumber));
+                messages?.Get(MessageKeys.Tickets.NotFound, command.TicketNumber) ?? $"'{command.TicketNumber}' numaralı Ticket bulunamadı.");
         }
 
         // Optional From binding when caller supplies a customer address (ProcessIncoming).
@@ -81,7 +83,7 @@ public sealed class AppendCustomerReplyHandler(
                 StringComparison.OrdinalIgnoreCase))
         {
             return Result.Failure<AppendCustomerReplyResult>(
-                ApplicationMessages.Tickets.FromAddressMismatch);
+                messages?.Get(MessageKeys.Tickets.FromAddressMismatch) ?? "Gönderen adresi, Ticket müşteri e-postasıyla eşleşmiyor.");
         }
 
         var statusBefore = ticket.Status;

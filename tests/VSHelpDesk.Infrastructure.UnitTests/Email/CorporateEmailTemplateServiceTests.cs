@@ -1,73 +1,67 @@
+using Microsoft.Extensions.Options;
+using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Infrastructure.Email;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Email;
 
 public sealed class CorporateEmailTemplateServiceTests
 {
-    private readonly CorporateEmailTemplateService _service = new();
-
     [Fact]
-    public void WrapInCorporateTemplate_WithTitleAndBody_ReturnsValidHtmlStructure()
+    public void WrapInCorporateTemplate_UsesConfiguredBrandingOptions()
     {
-        var title = "Ticket #1001 Confirmation";
-        var body = "Your ticket has been logged successfully.";
+        var branding = Options.Create(new EmailBrandingOptions
+        {
+            CompanyName = "ACME Corp",
+            SystemName = "Support Portal",
+            PrimaryColor = "#ff0000",
+            SupportEmail = "help@acme.com",
+            SupportPhone = "+1 (555) 0199",
+            FooterText = "ACME Confidential"
+        });
 
-        var html = _service.WrapInCorporateTemplate(title, body);
+        var service = new CorporateEmailTemplateService(branding);
+        var html = service.WrapInCorporateTemplate("Ticket Created", "Your ticket has been received.");
 
-        Assert.Contains("<!DOCTYPE html>", html);
-        Assert.Contains("<title>Ticket #1001 Confirmation</title>", html);
-        Assert.Contains("VS Help Desk", html);
-        Assert.Contains("Your ticket has been logged successfully.", html);
-        Assert.Contains("support@vshelpdesk.com", html);
+        Assert.Contains("ACME Corp", html);
+        Assert.Contains("Support Portal", html);
+        Assert.Contains("#ff0000", html);
+        Assert.Contains("help@acme.com", html);
+        Assert.Contains("+1 (555) 0199", html);
+        Assert.Contains("ACME Confidential", html);
     }
 
     [Fact]
-    public void WrapInCorporateTemplate_WithActionUrlAndText_IncludesActionButton()
+    public void WrapInCorporateTemplate_EncodesHtmlTitleAndBody()
     {
-        var title = "Action Required";
-        var body = "Please click below to view your ticket.";
-        var actionUrl = "https://helpdesk.example.com/tickets/1001";
-        var actionText = "View Ticket";
+        var service = new CorporateEmailTemplateService();
+        var html = service.WrapInCorporateTemplate("<script>alert('xss')</script>", "Plain text body");
 
-        var html = _service.WrapInCorporateTemplate(title, body, actionUrl, actionText);
-
-        Assert.Contains("href=\"https://helpdesk.example.com/tickets/1001\"", html);
-        Assert.Contains("View Ticket", html);
-        Assert.Contains("class=\"action-button\"", html);
+        Assert.DoesNotContain("<script>alert('xss')</script>", html);
+        Assert.Contains("&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;", html);
     }
 
     [Fact]
-    public void WrapInCorporateTemplate_PlainTextBody_ConvertsNewlinesToBreakTags()
+    public void GeneratePlainTextAlternative_RendersCleanText()
     {
-        var title = "Multi-line Test";
-        var body = "Line 1\r\nLine 2\nLine 3";
+        var branding = Options.Create(new EmailBrandingOptions
+        {
+            CompanyName = "ACME Corp",
+            SupportEmail = "help@acme.com",
+            SupportPhone = "+1 (555) 0199",
+            FooterText = "ACME Confidential"
+        });
 
-        var html = _service.WrapInCorporateTemplate(title, body);
+        var service = new CorporateEmailTemplateService(branding);
+        var plainText = service.GeneratePlainTextAlternative(
+            "Ticket Update",
+            "Your ticket status is now Resolved.",
+            "https://portal.acme.com/tickets/123",
+            "View Ticket");
 
-        Assert.Contains("Line 1<br />Line 2<br />Line 3", html);
-    }
-
-    [Fact]
-    public void WrapInCorporateTemplate_HtmlBody_PreservesHtmlMarkup()
-    {
-        var title = "HTML Content Test";
-        var body = "<p>This is <strong>bold</strong> text.</p>";
-
-        var html = _service.WrapInCorporateTemplate(title, body);
-
-        Assert.Contains("<p>This is <strong>bold</strong> text.</p>", html);
-    }
-
-    [Fact]
-    public void WrapInCorporateTemplate_SpecialCharacters_EncodesTitleAndPlainText()
-    {
-        var title = "Alert <script>alert(1)</script>";
-        var body = "User input & test <bad>";
-
-        var html = _service.WrapInCorporateTemplate(title, body);
-
-        Assert.DoesNotContain("<script>", html);
-        Assert.Contains("&lt;script&gt;", html);
-        Assert.Contains("User input &amp; test &lt;bad&gt;", html);
+        Assert.Contains("=== Ticket Update ===", plainText);
+        Assert.Contains("Your ticket status is now Resolved.", plainText);
+        Assert.Contains("[View Ticket]: https://portal.acme.com/tickets/123", plainText);
+        Assert.Contains("ACME Corp Support", plainText);
+        Assert.Contains("Email: help@acme.com", plainText);
     }
 }

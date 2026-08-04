@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text.Json;
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Domain.Exceptions;
 
 namespace VSHelpDesk.WebAPI.Middleware;
@@ -25,7 +25,7 @@ public sealed class ExceptionHandlingMiddleware
         _logger = logger;
     }
 
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, IMessageProvider messages)
     {
         try
         {
@@ -33,11 +33,11 @@ public sealed class ExceptionHandlingMiddleware
         }
         catch (Exception ex)
         {
-            await HandleExceptionAsync(context, ex);
+            await HandleExceptionAsync(context, ex, messages);
         }
     }
 
-    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
+    private async Task HandleExceptionAsync(HttpContext context, Exception exception, IMessageProvider messages)
     {
         var unwrapped = exception switch
         {
@@ -47,16 +47,17 @@ public sealed class ExceptionHandlingMiddleware
         };
 
         // Client titles stay stable/non-sensitive; full detail is logged server-side.
-        var (statusCode, title) = unwrapped switch
+        var (statusCode, messageKey) = unwrapped switch
         {
-            RequestValidationException => (HttpStatusCode.BadRequest, ApplicationMessages.Http.BadRequest),
-            NotFoundException => (HttpStatusCode.NotFound, ApplicationMessages.Http.NotFound),
-            UnauthorizedApplicationException => (HttpStatusCode.Unauthorized, ApplicationMessages.Http.Unauthorized),
-            ConflictApplicationException =>
-                (HttpStatusCode.Conflict, ApplicationMessages.Http.Conflict),
-            DomainException => (HttpStatusCode.BadRequest, ApplicationMessages.Http.DomainRuleViolation),
-            _ => (HttpStatusCode.InternalServerError, ApplicationMessages.Http.UnexpectedError)
+            RequestValidationException => (HttpStatusCode.BadRequest, MessageKeys.Http.BadRequest),
+            NotFoundException => (HttpStatusCode.NotFound, MessageKeys.Http.NotFound),
+            UnauthorizedApplicationException => (HttpStatusCode.Unauthorized, MessageKeys.Http.Unauthorized),
+            ConflictApplicationException => (HttpStatusCode.Conflict, MessageKeys.Http.Conflict),
+            DomainException => (HttpStatusCode.BadRequest, MessageKeys.Http.DomainRuleViolation),
+            _ => (HttpStatusCode.InternalServerError, MessageKeys.Http.UnexpectedError)
         };
+
+        var title = messages.Get(messageKey);
 
         if (exception is RequestValidationException requestValidationException)
         {

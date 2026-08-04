@@ -135,7 +135,7 @@ public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFac
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains(VSHelpDesk.Application.Common.ApplicationMessages.Auth.InvalidCredentials, body, StringComparison.Ordinal);
+        Assert.Contains("Geçersiz kullanıcı adı veya şifre.", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -148,7 +148,7 @@ public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFac
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
-        Assert.Contains(VSHelpDesk.Application.Common.ApplicationMessages.Auth.InvalidCredentials, body, StringComparison.Ordinal);
+        Assert.Contains("Geçersiz kullanıcı adı veya şifre.", body, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -164,7 +164,7 @@ public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFac
 
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
             var body = await response.Content.ReadAsStringAsync();
-            Assert.Contains(VSHelpDesk.Application.Common.ApplicationMessages.Auth.InvalidCredentials, body, StringComparison.Ordinal);
+            Assert.Contains("Geçersiz kullanıcı adı veya şifre.", body, StringComparison.Ordinal);
         }
         finally
         {

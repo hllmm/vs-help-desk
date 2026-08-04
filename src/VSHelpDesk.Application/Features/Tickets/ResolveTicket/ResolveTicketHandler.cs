@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 
 namespace VSHelpDesk.Application.Features.Tickets.ResolveTicket;
 
@@ -11,8 +11,11 @@ public sealed class ResolveTicketHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
     TimeProvider timeProvider,
-    ILogger<ResolveTicketHandler> logger)
+    ILogger<ResolveTicketHandler> logger,
+    IMessageProvider? messages = null)
 {
+    private readonly IMessageProvider _messages = messages ?? FallbackMessageProvider.Instance;
+
     public async Task<ResolveTicketResult> HandleAsync(
         ResolveTicketCommand command,
         CancellationToken cancellationToken)
@@ -27,7 +30,7 @@ public sealed class ResolveTicketHandler(
         var ticket = await ticketRepository.GetByIdAsync(command.TicketId, cancellationToken: cancellationToken);
         if (ticket is null)
         {
-            throw new NotFoundException(ApplicationMessages.Tickets.NotFound(command.TicketId));
+            throw new NotFoundException(_messages.Get(MessageKeys.Tickets.NotFound, command.TicketId));
         }
 
         var oldStatus = ticket.Status;

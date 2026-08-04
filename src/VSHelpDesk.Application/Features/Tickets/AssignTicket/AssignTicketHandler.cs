@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Domain.Exceptions;
 
 namespace VSHelpDesk.Application.Features.Tickets.AssignTicket;
@@ -13,8 +13,11 @@ public sealed class AssignTicketHandler(
     IUnitOfWork unitOfWork,
     ICurrentUserService currentUserService,
     TimeProvider timeProvider,
-    ILogger<AssignTicketHandler> logger)
+    ILogger<AssignTicketHandler> logger,
+    IMessageProvider? messages = null)
 {
+    private readonly IMessageProvider _messages = messages ?? FallbackMessageProvider.Instance;
+
     public async Task<AssignTicketResult> HandleAsync(
         AssignTicketCommand command,
         CancellationToken cancellationToken)
@@ -29,7 +32,7 @@ public sealed class AssignTicketHandler(
         var ticket = await ticketRepository.GetByIdAsync(command.TicketId, cancellationToken: cancellationToken);
         if (ticket is null)
         {
-            throw new NotFoundException(ApplicationMessages.Tickets.NotFound(command.TicketId));
+            throw new NotFoundException(_messages.Get(MessageKeys.Tickets.NotFound, command.TicketId));
         }
 
         var oldAssigneeUserId = ticket.AssignedUserId;

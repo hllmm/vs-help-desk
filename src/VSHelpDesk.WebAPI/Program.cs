@@ -1,11 +1,13 @@
+using System.Globalization;
 using System.Net;
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application;
 using VSHelpDesk.Application.Abstractions.Authentication;
-using VSHelpDesk.Application.Common;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
@@ -41,9 +43,10 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.OnRejected = async (context, token) =>
     {
+        var messages = context.HttpContext.RequestServices.GetRequiredService<IMessageProvider>();
         context.HttpContext.Response.ContentType = "application/json";
         await context.HttpContext.Response.WriteAsJsonAsync(
-            new { message = ApplicationMessages.Http.RateLimitExceeded },
+            new { message = messages.Get(MessageKeys.Http.RateLimitExceeded) },
             token);
     };
 
@@ -120,6 +123,14 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+
+var supportedCultures = new[] { new CultureInfo("tr-TR"), new CultureInfo("en-US") };
+app.UseRequestLocalization(new RequestLocalizationOptions
+{
+    DefaultRequestCulture = new RequestCulture("tr-TR"),
+    SupportedCultures = supportedCultures,
+    SupportedUICultures = supportedCultures
+});
 
 if (app.Environment.IsDevelopment())
 {

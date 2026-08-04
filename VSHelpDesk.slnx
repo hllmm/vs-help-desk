@@ -8,6 +8,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/VSHelpDesk.Application.UnitTests/VSHelpDesk.Application.UnitTests.csproj" />
     <Project Path="tests/VSHelpDesk.Domain.UnitTests/VSHelpDesk.Domain.UnitTests.csproj" />
+    <Project Path="tests/VSHelpDesk.Infrastructure.IntegrationTests/VSHelpDesk.Infrastructure.IntegrationTests.csproj" />
     <Project Path="tests/VSHelpDesk.Infrastructure.UnitTests/VSHelpDesk.Infrastructure.UnitTests.csproj" />
     <Project Path="tests/VSHelpDesk.WebAPI.IntegrationTests/VSHelpDesk.WebAPI.IntegrationTests.csproj" />
   </Folder>

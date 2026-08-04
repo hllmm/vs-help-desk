@@ -1,5 +1,5 @@
-using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.ReadModel;
 
@@ -7,8 +7,11 @@ namespace VSHelpDesk.Application.Features.Tickets.GetTicketMessages;
 
 public sealed class GetTicketMessagesHandler(
     ITicketDetailReadRepository ticketDetailReadRepository,
-    TicketMessageCursorCodec ticketMessageCursorCodec)
+    TicketMessageCursorCodec ticketMessageCursorCodec,
+    IMessageProvider? messages = null)
 {
+    private readonly IMessageProvider _messages = messages ?? FallbackMessageProvider.Instance;
+
     public async Task<TicketMessagePageDto> HandleAsync(
         GetTicketMessagesQuery query,
         CancellationToken cancellationToken = default)
@@ -25,7 +28,7 @@ public sealed class GetTicketMessagesHandler(
 
         if (result is null)
         {
-            throw new NotFoundException(ApplicationMessages.Tickets.NotFound(query.TicketId));
+            throw new NotFoundException(_messages.Get(MessageKeys.Tickets.NotFound, query.TicketId));
         }
 
         return new TicketMessagePageDto(
