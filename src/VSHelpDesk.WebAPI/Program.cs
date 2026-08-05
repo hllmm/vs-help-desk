@@ -140,10 +140,14 @@ builder.Services.AddCors(options =>
 });
 
 // Trust reverse-proxy headers — 2-hop chain: edge/Ingress -> web nginx -> API.
+// Note: TrustedNetworks binds via indexed keys (ForwardedHeaders:TrustedNetworks:0). If operator overrides
+// with fewer CIDRs via env var, stale indices from appsettings.json survive. Prefer overriding the whole
+// array in appsettings.Production.json or setting a complete list.
 var trustedNetworks = builder.Configuration
     .GetSection("ForwardedHeaders:TrustedNetworks")
     .Get<string[]>() ?? ["127.0.0.1/32", "::1/128"];
 var forwardLimit = builder.Configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit") ?? 2;
+if (forwardLimit < 1 || forwardLimit > 10) throw new InvalidOperationException("ForwardedHeaders:ForwardLimit must be 1-10");
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {

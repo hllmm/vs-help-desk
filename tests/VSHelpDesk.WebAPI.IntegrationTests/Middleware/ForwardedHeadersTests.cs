@@ -111,9 +111,8 @@ public sealed class ForwardedHeadersTests
         using var response = await client.SendAsync(request);
         var json = await response.Content.ReadAsStringAsync();
         var data = JsonSerializer.Deserialize<RemoteIpResponse>(json, JsonOpts);
-        // With only loopback trusted and ForwardLimit 2, the chain walk stops at first untrusted (10.0.0.5), so RemoteIp should be 10.0.0.5? Or loopback?
-        // Instead assert it is NOT the attacker-injected 203.0.113.7, proving untrusted entries not blindly trusted.
-        Assert.NotEqual("203.0.113.7", data!.ip);
+        // With only loopback trusted and ForwardLimit 2, chain walk stops at first untrusted (10.0.0.5), so RemoteIp is 10.0.0.5 — not the attacker-injected 203.0.113.7.
+        Assert.Equal("10.0.0.5", data!.ip);
     }
 
     [Fact]

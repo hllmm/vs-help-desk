@@ -15,7 +15,7 @@ data:
     # 2-hop chain: edge -> web nginx -> API. Map must be in http context.
     map $http_x_forwarded_proto $forwarded_proto {
         default $scheme;
-        "~." $http_x_forwarded_proto;
+        "~.+" $http_x_forwarded_proto;
     }
 
     server {
