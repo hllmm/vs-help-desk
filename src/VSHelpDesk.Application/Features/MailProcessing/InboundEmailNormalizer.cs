@@ -65,6 +65,17 @@ public static class InboundEmailNormalizer
                 InboundMailLimits.BoundProcessingNote("Sender authentication failed (DMARC)."));
         }
 
+        var attachments = email.Attachments ?? Array.Empty<IncomingEmailAttachment>();
+        if (attachments.Count > InboundMailLimits.MaxAttachmentsPerMessage)
+        {
+            return new InboundEmailNormalizationResult(
+                InboundEmailPolicyOutcome.Quarantine,
+                Email: null,
+                identity,
+                InboundMailLimits.BoundProcessingNote(
+                    $"Too many attachments: {attachments.Count} exceeds limit {InboundMailLimits.MaxAttachmentsPerMessage}."));
+        }
+
         var normalized = new NormalizedIncomingEmail(
             IdempotencyKey: identity.IdempotencyKey,
             SourceMessageId: identity.SourceMessageId,
@@ -74,7 +85,7 @@ public static class InboundEmailNormalizer
             Subject: InboundMailLimits.NormalizeSubject(email.Subject),
             Body: InboundMailLimits.NormalizeBody(email.Body),
             ReceivedAt: email.ReceivedAt,
-            Attachments: email.Attachments ?? Array.Empty<IncomingEmailAttachment>(),
+            Attachments: attachments,
             AuthenticationResults: email.AuthenticationResults);
 
         return new InboundEmailNormalizationResult(

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Infrastructure.Storage;
 
 namespace VSHelpDesk.Infrastructure.Email;
@@ -14,9 +15,11 @@ public sealed class ImapEmailReceiver(
     IOptions<FileStorageOptions> fileStorageOptions,
     IImapMailboxClient mailboxClient,
     HtmlToPlainTextConverter htmlConverter,
-    ILogger<ImapEmailReceiver> logger) : IEmailReceiver
+    ILogger<ImapEmailReceiver> logger,
+    IOptions<MailboxQuotaOptions>? quotaOptions = null) : IEmailReceiver
 {
     private const int CopyBufferSize = 8192;
+    private readonly MailboxQuotaOptions quota = quotaOptions?.Value ?? new MailboxQuotaOptions();
 
     public async Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
         CancellationToken cancellationToken = default)
@@ -77,9 +80,27 @@ public sealed class ImapEmailReceiver(
                 item.Uid));
 
         var hasTextBody = !string.IsNullOrWhiteSpace(message.TextBody);
-        var body = hasTextBody
-            ? message.TextBody
-            : htmlConverter.Convert(message.HtmlBody);
+        string body;
+        if (hasTextBody)
+        {
+            body = message.TextBody!;
+        }
+        else
+        {
+            var htmlBody = message.HtmlBody ?? string.Empty;
+            // Bound HTML parsing: pre-truncate huge bodies to avoid unbounded HtmlAgilityPack work.
+            var htmlLimit = InboundMailLimits.MaxBodyLength * 4;
+            if (htmlBody.Length > htmlLimit)
+            {
+                logger.LogWarning(
+                    "IMAP html body truncated before conversion originalLength={OriginalLength} limit={Limit} quarantined=quota-exceeded",
+                    htmlBody.Length,
+                    htmlLimit);
+                htmlBody = htmlBody[..htmlLimit];
+            }
+
+            body = htmlConverter.Convert(htmlBody);
+        }
 
         var mailbox = message.From.Mailboxes.FirstOrDefault();
         // MimeKit's MessageId property returns the token without angle brackets.
@@ -182,10 +203,28 @@ public sealed class ImapEmailReceiver(
     private IReadOnlyList<IncomingEmailAttachment> MapAttachments(MimeMessage message)
     {
         var maxFileSizeBytes = fileStorageOptions.Value.MaxFileSizeBytes;
-        var attachments = new List<IncomingEmailAttachment>();
+        var maxAttachmentsPerMessage = quota.MaxAttachmentsPerMessage > 0
+            ? quota.MaxAttachmentsPerMessage
+            : InboundMailLimits.MaxAttachmentsPerMessage;
+        var attachments = new List<IncomingEmailAttachment>(Math.Min(8, maxAttachmentsPerMessage));
 
+        var truncatedAttachments = false;
         foreach (var attachment in message.Attachments)
         {
+            if (attachments.Count >= maxAttachmentsPerMessage)
+            {
+                if (!truncatedAttachments)
+                {
+                    truncatedAttachments = true;
+                    logger.LogWarning(
+                        "IMAP attachments truncated per-message count={Count} maxAttachmentsPerMessage={Max} quarantined=quota-exceeded",
+                        attachments.Count,
+                        maxAttachmentsPerMessage);
+                }
+
+                continue;
+            }
+
             if (attachment is not MimePart part)
             {
                 continue;

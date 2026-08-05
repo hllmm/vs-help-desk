@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -5,6 +6,7 @@ using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
+using VSHelpDesk.Application.Features.MailProcessing;
 
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
@@ -81,10 +83,43 @@ public sealed class ProcessIncomingEmailsHandler(
         var alreadyProcessed = 0;
         var quarantined = 0;
         var retryableFailures = 0;
+        long aggregateDecodedBytes = 0;
 
         foreach (var mail in unread)
         {
             var itemReference = ToItemReference(mail.ReceiptHandle);
+
+            var mailAttachmentBytes = mail.Attachments.Sum(a => a.FileSize);
+            if (aggregateDecodedBytes + mailAttachmentBytes > InboundMailLimits.MaxAggregateBytesPerRun)
+            {
+                logger.LogWarning(
+                    "ProcessIncomingEmails aggregate quota exceeded itemReference={ItemReference} aggregateDecodedBytes={Aggregate} mailBytes={MailBytes} maxAggregateBytesPerRun={Max} quarantined=quota-exceeded",
+                    itemReference,
+                    aggregateDecodedBytes,
+                    mailAttachmentBytes,
+                    InboundMailLimits.MaxAggregateBytesPerRun);
+
+                quarantined++;
+                failures.Add(new ProcessIncomingEmailFailure("aggregate-quota-exceeded", itemReference));
+
+                try
+                {
+                    await emailReceiver.MarkAsProcessedAsync(mail.ReceiptHandle, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "ProcessIncomingEmails MarkAsProcessed failed for quota-quarantined item itemReference={ItemReference} receiptKind={ReceiptKind}",
+                        itemReference,
+                        mail.ReceiptHandle.Kind);
+                    failures.Add(new ProcessIncomingEmailFailure("mark-seen-failed", itemReference));
+                }
+
+                continue;
+            }
+
+            aggregateDecodedBytes += mailAttachmentBytes;
 
             InboundEmailItemResult item;
             try

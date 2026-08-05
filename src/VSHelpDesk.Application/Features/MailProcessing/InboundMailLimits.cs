@@ -10,6 +10,11 @@ public static class InboundMailLimits
     public const int MaxBodyLength = 256 * 1024;
     public const int MaxProcessingNoteLength = 500;
 
+    public const int MaxMessagesPerRun = 100;
+    public const int MaxAttachmentsPerMessage = 10;
+    public const long MaxAggregateBytesPerRun = 50 * 1024 * 1024;
+    public const long MaxRawMessageBytes = 5 * 1024 * 1024;
+
     public const string EmptySubjectPlaceholder = "Konusuz e-posta";
     public const string EmptyBodyPlaceholder = "İleti içeriği bulunamadı.";
 
