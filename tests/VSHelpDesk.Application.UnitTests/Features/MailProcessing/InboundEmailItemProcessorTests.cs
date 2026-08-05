@@ -95,7 +95,8 @@ public sealed class InboundEmailItemProcessorTests
             "<msg-reply@test>",
             "prior@example.test",
             "Re: [VS-000050] Original",
-            "Still broken");
+            "Still broken",
+            authenticationResults: TrustedAuthHeader);
 
         var result = await processor.ProcessAsync(mail, CancellationToken.None);
 
@@ -160,7 +161,8 @@ public sealed class InboundEmailItemProcessorTests
             "<msg-reopen@test>",
             "prior@example.test",
             "[VS-000060] Re: Resolved case",
-            "Broke again");
+            "Broke again",
+            authenticationResults: TrustedAuthHeader);
 
         var result = await processor.ProcessAsync(mail, CancellationToken.None);
 
@@ -184,7 +186,8 @@ public sealed class InboundEmailItemProcessorTests
             "<msg-spoof@test>",
             "attacker@evil.test",
             "Re: [VS-000070] Owned by Ada",
-            "Inject");
+            "Inject",
+            authenticationResults: TrustedAuthHeader);
 
         var result = await processor.ProcessAsync(mail, CancellationToken.None);
 
@@ -266,7 +269,8 @@ public sealed class InboundEmailItemProcessorTests
             "<msg-concurrency@test>",
             "prior@example.test",
             "Re: [VS-000080] Busy ticket",
-            "Retry me");
+            "Retry me",
+            authenticationResults: TrustedAuthHeader);
 
         var result = await processor.ProcessAsync(mail, CancellationToken.None);
 
@@ -345,6 +349,60 @@ public sealed class InboundEmailItemProcessorTests
     }
 
     [Fact]
+    public async Task SpoofedReply_WithoutDmarcPass_IsQuarantined()
+    {
+        var context = new FakeDb();
+        var existing = Ticket.Create(
+            "VS-000090",
+            "Spoof target",
+            "Victim",
+            "victim@example.test",
+            FixedNow.UtcDateTime);
+        context.TicketsList.Add(existing);
+        var processor = CreateProcessor(context, new RecordingSender(), "VS-000413");
+        var mail = Mail(
+            "<msg-spoof-quarantine@test>",
+            "victim@example.test",
+            "Re: [VS-000090] Spoof target",
+            "Inject as victim",
+            authenticationResults: null); // missing dmarc=pass -> untrusted
+
+        var result = await processor.ProcessAsync(mail, CancellationToken.None);
+
+        Assert.Equal(InboundEmailItemOutcome.Quarantined, result.Outcome);
+        Assert.Empty(context.TicketMessagesList);
+        var processed = Assert.Single(context.ProcessedEmailMessagesList);
+        Assert.Equal(ProcessedEmailDisposition.Quarantined, processed.Disposition);
+        Assert.Contains("authentication failed", processed.ProcessingNote!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SpoofedReply_WithDmarcPass_AllowsAppend()
+    {
+        var context = new FakeDb();
+        var existing = Ticket.Create(
+            "VS-000091",
+            "Real target",
+            "Victim",
+            "victim@example.test",
+            FixedNow.UtcDateTime);
+        existing.MarkAsWaitingCustomerReply(FixedNow.UtcDateTime.AddMinutes(-30));
+        context.TicketsList.Add(existing);
+        var processor = CreateProcessor(context, new RecordingSender(), "VS-000414");
+        var mail = Mail(
+            "<msg-real-reply@test>",
+            "victim@example.test",
+            "Re: [VS-000091] Real target",
+            "Real reply",
+            authenticationResults: TrustedAuthHeader);
+
+        var result = await processor.ProcessAsync(mail, CancellationToken.None);
+
+        Assert.Equal(InboundEmailItemOutcome.AppendedReply, result.Outcome);
+        Assert.Single(context.TicketMessagesList);
+    }
+
+    [Fact]
     public async Task AppendReply_WithAllowedAttachment_StoresOnCustomerMessage()
     {
         var context = new FakeDb();
@@ -366,7 +424,8 @@ public sealed class InboundEmailItemProcessorTests
             attachments:
             [
                 new IncomingEmailAttachment("reply.txt", "text/plain", bytes.Length, bytes)
-            ]);
+            ],
+            authenticationResults: TrustedAuthHeader);
 
         var result = await processor.ProcessAsync(mail, CancellationToken.None);
 
@@ -423,13 +482,16 @@ public sealed class InboundEmailItemProcessorTests
             logger ?? NullLogger<InboundEmailItemProcessor>.Instance);
     }
 
+    private const string TrustedAuthHeader = "mx.example.test; dmarc=pass header.from=example.test";
+
     private static IncomingEmail Mail(
         string? messageId,
         string? from,
         string subject,
         string body,
         EmailReceiptHandle? receipt = null,
-        IReadOnlyList<IncomingEmailAttachment>? attachments = null) =>
+        IReadOnlyList<IncomingEmailAttachment>? attachments = null,
+        string? authenticationResults = null) =>
         new(
             MessageId: messageId,
             ReceiptHandle: receipt ?? new EmailReceiptHandle(
@@ -441,7 +503,8 @@ public sealed class InboundEmailItemProcessorTests
             Body: body,
             IsHtml: false,
             ReceivedAt: FixedNow.UtcDateTime,
-            Attachments: attachments ?? Array.Empty<IncomingEmailAttachment>());
+            Attachments: attachments ?? Array.Empty<IncomingEmailAttachment>(),
+            AuthenticationResults: authenticationResults);
 
     private sealed class NeverConflictClassifier : IDatabaseErrorClassifier
     {

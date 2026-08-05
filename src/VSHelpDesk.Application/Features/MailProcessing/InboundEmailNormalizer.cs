@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Domain.Tickets;
 
 namespace VSHelpDesk.Application.Features.MailProcessing;
 
@@ -19,7 +20,8 @@ public sealed record NormalizedIncomingEmail(
     string Subject,
     string Body,
     DateTime ReceivedAt,
-    IReadOnlyList<IncomingEmailAttachment> Attachments);
+    IReadOnlyList<IncomingEmailAttachment> Attachments,
+    string? AuthenticationResults = null);
 
 public sealed record InboundEmailNormalizationResult(
     InboundEmailPolicyOutcome Outcome,
@@ -48,6 +50,21 @@ public static class InboundEmailNormalizer
                 InboundMailLimits.BoundProcessingNote(quarantineNote));
         }
 
+        // Trust-boundary: unauthenticated From+ticket-number must not allow append.
+        // If subject contains a ticket number but Authentication-Results lacks dmarc=pass,
+        // quarantine at the boundary. This prevents spoofed replies from attacker@evil
+        // impersonating the ticket's customer. Production MTA must add Authentication-Results
+        // with dmarc=pass and strip client-supplied headers.
+        if (TicketNumberParser.TryFindInText(email.Subject, out _) &&
+            !HasTrustedAuthentication(email.AuthenticationResults))
+        {
+            return new InboundEmailNormalizationResult(
+                InboundEmailPolicyOutcome.Quarantine,
+                Email: null,
+                identity,
+                InboundMailLimits.BoundProcessingNote("Sender authentication failed (DMARC)."));
+        }
+
         var normalized = new NormalizedIncomingEmail(
             IdempotencyKey: identity.IdempotencyKey,
             SourceMessageId: identity.SourceMessageId,
@@ -57,7 +74,8 @@ public static class InboundEmailNormalizer
             Subject: InboundMailLimits.NormalizeSubject(email.Subject),
             Body: InboundMailLimits.NormalizeBody(email.Body),
             ReceivedAt: email.ReceivedAt,
-            Attachments: email.Attachments ?? Array.Empty<IncomingEmailAttachment>());
+            Attachments: email.Attachments ?? Array.Empty<IncomingEmailAttachment>(),
+            AuthenticationResults: email.AuthenticationResults);
 
         return new InboundEmailNormalizationResult(
             InboundEmailPolicyOutcome.Process,
@@ -123,4 +141,8 @@ public static class InboundEmailNormalizer
 
         return false;
     }
+
+    internal static bool HasTrustedAuthentication(string? header) =>
+        !string.IsNullOrWhiteSpace(header) &&
+        header.Contains("dmarc=pass", StringComparison.OrdinalIgnoreCase);
 }

@@ -90,6 +90,12 @@ public sealed class ImapEmailReceiver(
             ? DateTime.UtcNow
             : message.Date.UtcDateTime;
 
+        // Trust-boundary: Authentication-Results is added by the trusted MTA and must
+        // be stripped from client-supplied headers upstream. We pass the raw header
+        // through as IncomingEmail.AuthenticationResults; verification requires
+        // dmarc=pass (case-insensitive). Missing or failing header is untrusted.
+        var authenticationResults = message.Headers["Authentication-Results"];
+
         return new IncomingEmail(
             MessageId: messageId,
             ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Imap, receiptValue),
@@ -99,7 +105,8 @@ public sealed class ImapEmailReceiver(
             Body: body,
             IsHtml: false,
             ReceivedAt: receivedAt,
-            Attachments: MapAttachments(message));
+            Attachments: MapAttachments(message),
+            AuthenticationResults: authenticationResults);
     }
 
     /// <summary>

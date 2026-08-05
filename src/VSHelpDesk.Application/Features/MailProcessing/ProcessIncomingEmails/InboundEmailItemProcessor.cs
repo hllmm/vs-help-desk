@@ -58,10 +58,22 @@ public sealed class InboundEmailItemProcessor(
             return await BuildAlreadyProcessedAsync(identity.IdempotencyKey, existing, cancellationToken);
         }
 
+        // Trust-boundary defense-in-depth: if normalizer was bypassed, still quarantine unauthenticated
+        // ticket-number replies. Normalizer already quarantines, but processor must not allow append
+        // when Authentication-Results lacks dmarc=pass.
+        if (TicketNumberParser.TryFindInText(normalized.Subject, out var ticketNumberForAuth) &&
+            !HasTrustedAuthentication(email.AuthenticationResults))
+        {
+            return await QuarantineAsync(
+                identity,
+                "Sender authentication failed (DMARC).",
+                cancellationToken);
+        }
+
         try
         {
             if (TicketNumberParser.TryFindInText(normalized.Subject, out var ticketNumber) &&
-                await TryGetMatchingCustomerTicketAsync(ticketNumber, normalized.FromAddress, cancellationToken))
+                await TryGetMatchingCustomerTicketAsync(ticketNumber, normalized.FromAddress, email.AuthenticationResults, cancellationToken))
             {
                 return await AppendAsync(normalized, ticketNumber, cancellationToken);
             }
@@ -310,6 +322,7 @@ public sealed class InboundEmailItemProcessor(
     private async Task<bool> TryGetMatchingCustomerTicketAsync(
         string ticketNumber,
         string fromAddress,
+        string? authenticationResults,
         CancellationToken cancellationToken)
     {
         var found = await ticketRepository.GetByNumberAsync(ticketNumber, cancellationToken);
@@ -323,8 +336,20 @@ public sealed class InboundEmailItemProcessor(
             return false;
         }
 
+        // Trust-boundary: matched sender but without dmarc=pass must not append.
+        // Return false so caller treats as new ticket (processor already quarantines above;
+        // this guard ensures defense-in-depth if quarantine is bypassed).
+        if (!HasTrustedAuthentication(authenticationResults))
+        {
+            return false;
+        }
+
         return true;
     }
+
+    private static bool HasTrustedAuthentication(string? header) =>
+        !string.IsNullOrWhiteSpace(header) &&
+        header.Contains("dmarc=pass", StringComparison.OrdinalIgnoreCase);
 
     private async Task<InboundEmailItemResult> BuildAlreadyProcessedAsync(
         string idempotencyKey,

@@ -78,11 +78,79 @@ public sealed class InboundEmailNormalizerTests
         Assert.Equal("İleti içeriği bulunamadı.", result.Email.Body);
     }
 
+    [Fact]
+    public void Normalize_WhenNoAuthVerdict_QuarantinesSpoofedReply()
+    {
+        var email = new IncomingEmail(
+            "<id@host>",
+            new EmailReceiptHandle(EmailReceiptKind.Fake, "fake\0x"),
+            "attacker@evil.com",
+            "Attacker",
+            "Re: [VS-000042] test",
+            "body",
+            false,
+            DateTime.UtcNow,
+            Array.Empty<IncomingEmailAttachment>());
+        // No AuthenticationResults -> untrusted
+        var result = InboundEmailNormalizer.Normalize(email);
+        Assert.Equal(InboundEmailPolicyOutcome.Quarantine, result.Outcome);
+        Assert.Contains("authentication failed", result.ProcessingNote!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Normalize_WhenDmarcPass_AllowsReplyWithTicketNumber()
+    {
+        var email = new IncomingEmail(
+            "<id2@host>",
+            new EmailReceiptHandle(EmailReceiptKind.Fake, "fake\0y"),
+            "customer@example.test",
+            "Customer",
+            "Re: [VS-000042] test",
+            "body",
+            false,
+            DateTime.UtcNow,
+            Array.Empty<IncomingEmailAttachment>(),
+            AuthenticationResults: "mx.test; dmarc=pass header.from=example.test");
+        var result = InboundEmailNormalizer.Normalize(email);
+        Assert.Equal(InboundEmailPolicyOutcome.Process, result.Outcome);
+        Assert.NotNull(result.Email);
+    }
+
+    [Fact]
+    public void Normalize_WhenAuthHeaderMissingButNoTicketNumber_StillProcesses()
+    {
+        var result = InboundEmailNormalizer.Normalize(Mail(
+            fromAddress: "customer@example.test",
+            fromDisplayName: "Customer",
+            subject: "Help no ticket",
+            body: "Body"));
+        Assert.Equal(InboundEmailPolicyOutcome.Process, result.Outcome);
+    }
+
+    [Fact]
+    public void Normalize_WhenDmarcFail_QuarantinesReply()
+    {
+        var email = new IncomingEmail(
+            "<id3@host>",
+            new EmailReceiptHandle(EmailReceiptKind.Fake, "fake\0z"),
+            "attacker@evil.com",
+            "Attacker",
+            "Re: [VS-000042] test",
+            "body",
+            false,
+            DateTime.UtcNow,
+            Array.Empty<IncomingEmailAttachment>(),
+            AuthenticationResults: "mx.test; dmarc=fail spf=fail");
+        var result = InboundEmailNormalizer.Normalize(email);
+        Assert.Equal(InboundEmailPolicyOutcome.Quarantine, result.Outcome);
+    }
+
     private static IncomingEmail Mail(
         string? fromAddress,
         string? fromDisplayName,
         string? subject,
-        string? body) =>
+        string? body,
+        string? authenticationResults = null) =>
         new(
             MessageId: "<msg@test>",
             ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, "fake\0fixture-norm"),
@@ -92,5 +160,6 @@ public sealed class InboundEmailNormalizerTests
             Body: body,
             IsHtml: false,
             ReceivedAt: new DateTime(2026, 7, 20, 12, 0, 0, DateTimeKind.Utc),
-            Attachments: Array.Empty<IncomingEmailAttachment>());
+            Attachments: Array.Empty<IncomingEmailAttachment>(),
+            AuthenticationResults: authenticationResults);
 }
