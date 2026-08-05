@@ -68,6 +68,10 @@ public sealed class AuthOptionsValidator : IValidateOptions<AuthOptions>
         {
             failures.Add("The Auth:ExpirationMinutes configuration value must be positive.");
         }
+        else if (options.ExpirationMinutes < 15 || options.ExpirationMinutes > 60)
+        {
+            failures.Add("The Auth:ExpirationMinutes must be between 15 and 60 minutes (short-lived token with SecurityStamp revocation).");
+        }
 
         return failures;
     }

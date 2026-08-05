@@ -42,7 +42,7 @@ public sealed class AuthenticationServicesTests
             Issuer = "VSHelpDesk",
             Audience = "VSHelpDesk.Client",
             SigningKey = "test-signing-key-with-at-least-32-bytes!",
-            ExpirationMinutes = 480
+            ExpirationMinutes = 60
         };
         var user = new User("Active User", "active.user", "active.user@example.test", "password-hash", UserRole.Support);
         var tokenService = new JwtTokenService(Options.Create(options), new FixedTimeProvider(TokenIssuedAt));
@@ -88,7 +88,7 @@ public sealed class AuthenticationServicesTests
             Issuer = "VSHelpDesk",
             Audience = "VSHelpDesk.Client",
             SigningKey = "test-signing-key-with-at-least-32-bytes!",
-            ExpirationMinutes = 480
+            ExpirationMinutes = 60
         };
         var admin = new User("Admin User", "admin.user", "admin@example.test", "password-hash", UserRole.Admin);
         var tokenService = new JwtTokenService(Options.Create(options), new FixedTimeProvider(TokenIssuedAt));
@@ -107,7 +107,7 @@ public sealed class AuthenticationServicesTests
             Issuer = "VSHelpDesk",
             Audience = "VSHelpDesk.Client",
             SigningKey = "too-short",
-            ExpirationMinutes = 480
+            ExpirationMinutes = 60
         };
 
         var exception = Assert.Throws<InvalidOperationException>(
@@ -124,7 +124,7 @@ public sealed class AuthenticationServicesTests
             Issuer = "VSHelpDesk",
             Audience = "VSHelpDesk.Client",
             SigningKey = "CHANGE_ME_DEV_ONLY_MIN_32_CHARS_LONG!!",
-            ExpirationMinutes = 480
+            ExpirationMinutes = 60
         };
 
         var exception = Assert.Throws<InvalidOperationException>(
@@ -145,7 +145,7 @@ public sealed class AuthenticationServicesTests
             Issuer = "VSHelpDesk",
             Audience = "VSHelpDesk.Client",
             SigningKey = keyWithPlaceholder,
-            ExpirationMinutes = 480
+            ExpirationMinutes = 60
         };
 
         var result = validator.Validate(null, options);
@@ -162,7 +162,7 @@ public sealed class AuthenticationServicesTests
                 ["Auth:Issuer"] = "VSHelpDesk",
                 ["Auth:Audience"] = "VSHelpDesk.Client",
                 ["Auth:SigningKey"] = "too-short",
-                ["Auth:ExpirationMinutes"] = "480",
+                ["Auth:ExpirationMinutes"] = "60",
                 ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=metadata_test;Username=test_user",
                 ["Email:ReceiverMode"] = "Fake",
                 ["Email:SmtpHost"] = "localhost",

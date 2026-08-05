@@ -143,7 +143,7 @@ public sealed class AuthControllerTests
             Issuer = "VSHelpDesk",
             Audience = "VSHelpDesk",
             SigningKey = "unit-test-signing-key-with-32-bytes!!",
-            ExpirationMinutes = 480
+            ExpirationMinutes = 60
         });
 
         var controller = new AuthController(handler, env, authOptions)
