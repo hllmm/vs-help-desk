@@ -11,6 +11,13 @@ metadata:
     app.kubernetes.io/part-of: vs-help-desk
 data:
   default.conf: |
+    # Preserve original X-Forwarded-Proto from Ingress/edge; fallback to $scheme.
+    # 2-hop chain: edge -> web nginx -> API. Map must be in http context.
+    map $http_x_forwarded_proto $forwarded_proto {
+        default $scheme;
+        "~." $http_x_forwarded_proto;
+    }
+
     server {
         listen 80;
         server_name _;
@@ -30,7 +37,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $forwarded_proto;
         }
 
         # API + health proxy to the ASP.NET Service (same-origin via Ingress → web)
@@ -40,7 +47,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $forwarded_proto;
             client_max_body_size 25m;
         }
 
@@ -50,7 +57,7 @@ data:
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-Proto $forwarded_proto;
         }
 
         # SPA fallback

@@ -71,6 +71,9 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<ApplicationDbContext>("database");
 
 // Login abuse protection (single-instance memory partitioner).
+// Partition key uses httpContext.Connection.RemoteIpAddress AFTER ForwardedHeaders sanitization
+// (UseForwardedHeaders runs before UseRateLimiter). ForwardLimit=2 models edge+web nginx (see ForwardedHeadersOptions).
+// X-Login-Username is normalized (Trim+LowerInvariant) and only partitions — not trusted for auth.
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -136,16 +139,19 @@ builder.Services.AddCors(options =>
         });
 });
 
-// Trust reverse-proxy headers (nginx / company edge).
+// Trust reverse-proxy headers — 2-hop chain: edge/Ingress -> web nginx -> API.
 var trustedNetworks = builder.Configuration
     .GetSection("ForwardedHeaders:TrustedNetworks")
     .Get<string[]>() ?? ["127.0.0.1/32", "::1/128"];
+var forwardLimit = builder.Configuration.GetValue<int?>("ForwardedHeaders:ForwardLimit") ?? 2;
 
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders =
         Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
         | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    options.ForwardLimit = forwardLimit;
+    options.RequireHeaderSymmetry = false;
     options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 
@@ -204,6 +210,27 @@ app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.Health
 // Backward-compatible liveness alias used by older smoke scripts.
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "VSHelpDesk.WebAPI" }))
     .AllowAnonymous();
+
+if (app.Environment.IsDevelopment())
+{
+    // Diagnostic probes for ForwardedHeaders integration tests (SEC-005).
+    // Expose sanitized RemoteIpAddress and Request.Scheme after UseForwardedHeaders.
+    app.MapGet("/__test/remote-ip", (HttpContext ctx) => Results.Ok(new
+    {
+        ip = ctx.Connection.RemoteIpAddress?.ToString(),
+        scheme = ctx.Request.Scheme
+    })).AllowAnonymous();
+
+    app.MapGet("/__test/rate-limit-key", (HttpContext ctx) =>
+    {
+        var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var usernameHeader = ctx.Request.Headers["X-Login-Username"].FirstOrDefault()?.Trim().ToLowerInvariant();
+        var key = string.IsNullOrWhiteSpace(usernameHeader)
+            ? $"login:{ip}"
+            : $"login:{ip}:{usernameHeader}";
+        return Results.Ok(new { partitionKey = key, ip, scheme = ctx.Request.Scheme });
+    }).AllowAnonymous();
+}
 
 app.Run();
 
