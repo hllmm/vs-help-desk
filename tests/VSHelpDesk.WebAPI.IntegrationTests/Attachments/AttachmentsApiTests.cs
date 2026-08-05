@@ -195,6 +195,37 @@ public sealed class AttachmentsApiTests : IClassFixture<CustomWebApplicationFact
         }
     }
 
+    [Theory]
+    [InlineData(null, "Dosya yüklenmesi zorunludur.")]
+    [InlineData("en-US", "A file is required.")]
+    public async Task Upload_WithoutFile_ReturnsLocalizedMessage(
+        string? language,
+        string expectedMessage)
+    {
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+        using (client)
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/ticket-messages/{Guid.NewGuid()}/attachments")
+            {
+                Content = new MultipartFormDataContent()
+            };
+
+            if (!string.IsNullOrWhiteSpace(language))
+            {
+                request.Headers.AcceptLanguage.ParseAdd(language);
+            }
+
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.Contains(expectedMessage, body, StringComparison.Ordinal);
+        }
+    }
+
     private async Task<Guid> SeedMessageAsync()
     {
         await using var scope = factory.Services.CreateAsyncScope();

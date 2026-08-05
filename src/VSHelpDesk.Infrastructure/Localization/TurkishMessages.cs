@@ -26,6 +26,7 @@ internal static class TurkishMessages
             [MessageKeys.Tickets.ContentRequired] = "İçerik (Content) zorunludur.",
             [MessageKeys.Tickets.ConcurrentUpdate] = "Eşzamanlı güncelleme nedeniyle Ticket güncellenemedi.",
 
+            [MessageKeys.Attachments.FileRequired] = "Dosya yüklenmesi zorunludur.",
             [MessageKeys.Attachments.FileNameRequired] = "Dosya adı (FileName) zorunludur.",
             [MessageKeys.Attachments.FileContentRequired] = "Dosya içeriği (FileContent) zorunludur.",
             [MessageKeys.Attachments.MaxSizeBytesExceeded] = "Dosya izin verilen azami {0} bayt boyutunu aşıyor.",

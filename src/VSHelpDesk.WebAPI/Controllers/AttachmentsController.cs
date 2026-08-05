@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Features.Attachments.GetAttachment;
 using VSHelpDesk.Application.Features.Attachments.UploadAttachment;
 
@@ -12,7 +13,8 @@ namespace VSHelpDesk.WebAPI.Controllers;
 [Authorize]
 public sealed class AttachmentsController(
     UploadAttachmentHandler uploadAttachmentHandler,
-    GetAttachmentHandler getAttachmentHandler) : ControllerBase
+    GetAttachmentHandler getAttachmentHandler,
+    IMessageProvider messageProvider) : ControllerBase
 {
     /// <summary>POST api/ticket-messages/{messageId}/attachments</summary>
     [HttpPost("api/ticket-messages/{messageId:guid}/attachments")]
@@ -24,7 +26,10 @@ public sealed class AttachmentsController(
     {
         if (file is null || file.Length <= 0)
         {
-            return BadRequest(new { message = "file is required." });
+            return BadRequest(new
+            {
+                message = messageProvider.Get(MessageKeys.Attachments.FileRequired)
+            });
         }
 
         await using var stream = file.OpenReadStream();

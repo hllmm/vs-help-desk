@@ -64,4 +64,47 @@ public sealed class CorporateEmailTemplateServiceTests
         Assert.Contains("ACME Corp Support", plainText);
         Assert.Contains("Email: help@acme.com", plainText);
     }
+
+    [Fact]
+    public void WrapInCorporateTemplate_WithoutLogo_DoesNotRenderImage()
+    {
+        var service = new CorporateEmailTemplateService(
+            Options.Create(new EmailBrandingOptions { LogoUrl = null }));
+
+        var html = service.WrapInCorporateTemplate("Ticket", "Body");
+
+        Assert.DoesNotContain("<img", html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void WrapInCorporateTemplate_WithHttpsLogo_RendersConfiguredImage()
+    {
+        var service = new CorporateEmailTemplateService(
+            Options.Create(new EmailBrandingOptions
+            {
+                CompanyName = "ACME Corp",
+                LogoUrl = "https://cdn.example.test/acme-logo.png"
+            }));
+
+        var html = service.WrapInCorporateTemplate("Ticket", "Body");
+
+        Assert.Contains("<img", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("https://cdn.example.test/acme-logo.png", html);
+        Assert.Contains("alt=\"ACME Corp\"", html);
+    }
+
+    [Fact]
+    public void WrapInCorporateTemplate_HtmlBody_SanitizesDangerousMarkup()
+    {
+        var service = new CorporateEmailTemplateService();
+
+        var html = service.WrapInCorporateTemplate(
+            "Ticket",
+            "<p>Hello <strong>world</strong></p><script>alert(1)</script>",
+            bodyIsHtml: true);
+
+        Assert.Contains("<strong>world</strong>", html);
+        Assert.DoesNotContain("<script", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("alert(1)", html, StringComparison.Ordinal);
+    }
 }

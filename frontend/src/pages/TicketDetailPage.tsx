@@ -1,5 +1,5 @@
 import { useMemo, type ReactElement } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router'
 import { TicketReplyForm } from '../features/ticket-details/TicketReplyForm'
 import { TicketAssignmentPanel } from '../features/ticket-details/TicketAssignmentPanel'
 import { TicketResolutionPanel } from '../features/ticket-details/TicketResolutionPanel'

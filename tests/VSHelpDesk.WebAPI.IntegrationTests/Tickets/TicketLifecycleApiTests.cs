@@ -119,14 +119,14 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
             // 5. Support reply guard
             sender.Sent.Clear();
             using (var replyRequest = new HttpRequestMessage(
-                       HttpMethod.Post,
-                       $"/api/tickets/{ticketId}/replies")
-                   {
-                       Content = JsonContent.Create(new
-                       {
-                           content = "Should never persist on resolved lifecycle ticket."
-                       })
-                   })
+                HttpMethod.Post,
+                $"/api/tickets/{ticketId}/replies")
+            {
+                Content = JsonContent.Create(new
+                {
+                    content = "Should never persist on resolved lifecycle ticket."
+                })
+            })
             {
                 CookieAuthTestHelper.AddCsrf(replyRequest, csrf);
                 using var replyResponse = await client.SendAsync(replyRequest);

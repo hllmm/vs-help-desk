@@ -30,6 +30,9 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      AllowedHosts: ${ALLOWED_HOSTS:?Set ALLOWED_HOSTS to the production host name}
+      # Leave empty for the default same-origin nginx deployment.
+      Cors__AllowedOrigins__0: ${CORS_ALLOWED_ORIGIN:-}
       ConnectionStrings__DefaultConnection: >-
         Host=db;Port=5432;Database=${POSTGRES_DB:-VS_HelpDesk_DB};Username=${POSTGRES_USER:-stajyer};Password=${POSTGRES_PASSWORD}
       Auth__SigningKey: ${AUTH_SIGNING_KEY:?Set AUTH_SIGNING_KEY (>=32 bytes)}
@@ -38,18 +41,32 @@ services:
       SeedAdmin__Enabled: "false"
       FileStorage__RootPath: /var/vshelpdesk/attachments
       Email__ReceiverMode: ${EMAIL_RECEIVER_MODE:-Imap}
-      Email__SmtpHost: ${EMAIL_SMTP_HOST:-}
+      Email__SmtpHost: ${EMAIL_SMTP_HOST:?Set EMAIL_SMTP_HOST}
       Email__SmtpPort: ${EMAIL_SMTP_PORT:-587}
       Email__SmtpSecurityMode: ${EMAIL_SMTP_SECURITY:-StartTls}
-      Email__SmtpUsername: ${EMAIL_SMTP_USERNAME:-}
-      Email__SmtpPassword: ${EMAIL_SMTP_PASSWORD:-}
-      Email__ImapHost: ${EMAIL_IMAP_HOST:-}
+      Email__SmtpUsername: ${EMAIL_SMTP_USERNAME:?Set EMAIL_SMTP_USERNAME}
+      Email__SmtpPassword: ${EMAIL_SMTP_PASSWORD:?Set EMAIL_SMTP_PASSWORD}
+      Email__SupportMailboxAddress: ${EMAIL_SUPPORT_MAILBOX_ADDRESS:?Set EMAIL_SUPPORT_MAILBOX_ADDRESS}
+      Email__SupportMailboxDisplayName: "${EMAIL_SUPPORT_MAILBOX_DISPLAY_NAME:-VS Help Desk}"
+      Email__ImapHost: ${EMAIL_IMAP_HOST:?Set EMAIL_IMAP_HOST}
       Email__ImapPort: ${EMAIL_IMAP_PORT:-993}
       Email__ImapSecurityMode: ${EMAIL_IMAP_SECURITY:-SslOnConnect}
-      Email__ImapUsername: ${EMAIL_IMAP_USERNAME:-}
-      Email__ImapPassword: ${EMAIL_IMAP_PASSWORD:-}
-      Email__ImapAccountId: ${EMAIL_IMAP_ACCOUNT_ID:-}
+      Email__ImapUsername: ${EMAIL_IMAP_USERNAME:?Set EMAIL_IMAP_USERNAME}
+      Email__ImapPassword: ${EMAIL_IMAP_PASSWORD:?Set EMAIL_IMAP_PASSWORD}
+      Email__ImapAccountId: ${EMAIL_IMAP_ACCOUNT_ID:?Set EMAIL_IMAP_ACCOUNT_ID}
       Email__ImapFolder: ${EMAIL_IMAP_FOLDER:-INBOX}
+      EmailBranding__CompanyName: "${EMAIL_BRANDING_COMPANY_NAME:-VS Help Desk}"
+      EmailBranding__SystemName: "${EMAIL_BRANDING_SYSTEM_NAME:-Corporate Customer Support System}"
+      EmailBranding__LogoUrl: ${EMAIL_BRANDING_LOGO_URL:-}
+      EmailBranding__RequireLogo: ${EMAIL_BRANDING_REQUIRE_LOGO:-false}
+      EmailBranding__WebsiteUrl: ${EMAIL_BRANDING_WEBSITE_URL:-}
+      EmailBranding__Address: "${EMAIL_BRANDING_ADDRESS:-}"
+      EmailBranding__SupportEmail: ${EMAIL_BRANDING_SUPPORT_EMAIL:?Set EMAIL_BRANDING_SUPPORT_EMAIL}
+      EmailBranding__SupportPhone: "${EMAIL_BRANDING_SUPPORT_PHONE:-}"
+      EmailBranding__PrimaryColor: "${EMAIL_BRANDING_PRIMARY_COLOR:-#2563eb}"
+      EmailBranding__HeaderGradientStart: "${EMAIL_BRANDING_HEADER_GRADIENT_START:-#1e293b}"
+      EmailBranding__HeaderGradientEnd: "${EMAIL_BRANDING_HEADER_GRADIENT_END:-#0f172a}"
+      EmailBranding__FooterText: "${EMAIL_BRANDING_FOOTER_TEXT:-© 2026 VS Help Desk. All rights reserved.}"
     volumes:
       - vshelpdesk_files:/var/vshelpdesk/attachments
     depends_on:

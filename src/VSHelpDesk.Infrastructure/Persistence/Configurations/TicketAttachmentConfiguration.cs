@@ -23,11 +23,11 @@ public sealed class TicketAttachmentConfiguration : IEntityTypeConfiguration<Tic
             .HasColumnType("timestamp with time zone");
 
         builder.HasIndex(attachment => new
-            {
-                attachment.TicketMessageId,
-                attachment.CreatedAt,
-                attachment.Id
-            })
+        {
+            attachment.TicketMessageId,
+            attachment.CreatedAt,
+            attachment.Id
+        })
             .HasDatabaseName("IX_TicketAttachments_TicketMessageId_CreatedAt_Id");
         builder.HasIndex(attachment => attachment.StoredFileName).IsUnique();
 
