@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Net;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Localization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -19,7 +21,38 @@ using VSHelpDesk.WebAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var messages = context.HttpContext.RequestServices
+                .GetRequiredService<IMessageProvider>();
+
+            var isAttachmentUpload =
+                context.ActionDescriptor.RouteValues.TryGetValue("controller", out var controller) &&
+                context.ActionDescriptor.RouteValues.TryGetValue("action", out var action) &&
+                string.Equals(controller, "Attachments", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(action, "Upload", StringComparison.OrdinalIgnoreCase);
+
+            if (isAttachmentUpload)
+            {
+                return new BadRequestObjectResult(new
+                {
+                    message = messages.Get(MessageKeys.Attachments.FileRequired)
+                });
+            }
+
+            var problemDetailsFactory = context.HttpContext.RequestServices
+                .GetRequiredService<ProblemDetailsFactory>();
+            var problemDetails = problemDetailsFactory.CreateValidationProblemDetails(
+                context.HttpContext,
+                context.ModelState,
+                statusCode: StatusCodes.Status400BadRequest);
+
+            return new BadRequestObjectResult(problemDetails);
+        };
+    });
 builder.Services.AddOpenApi();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, HttpCurrentUserService>();
@@ -75,8 +108,13 @@ builder.Services.AddRateLimiter(options =>
 });
 
 // React SPA (Vite) — only configured development origins (see Cors:AllowedOrigins).
-var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? Array.Empty<string>();
+var corsOrigins = (builder.Configuration
+        .GetSection("Cors:AllowedOrigins")
+        .Get<string[]>() ?? Array.Empty<string>())
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Select(origin => origin.Trim())
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(

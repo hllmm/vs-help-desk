@@ -30,6 +30,7 @@ public static class MessageKeys
 
     public static class Attachments
     {
+        public const string FileRequired = "Attachments.FileRequired";
         public const string FileNameRequired = "Attachments.FileNameRequired";
         public const string FileContentRequired = "Attachments.FileContentRequired";
         public const string MaxSizeBytesExceeded = "Attachments.MaxSizeBytesExceeded";

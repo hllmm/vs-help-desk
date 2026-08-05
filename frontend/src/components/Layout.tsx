@@ -4,7 +4,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { Link, NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router'
 import { useAuth } from '../auth/authState'
 
 const MOBILE_NAV_QUERY = '(max-width: 47.99rem)'

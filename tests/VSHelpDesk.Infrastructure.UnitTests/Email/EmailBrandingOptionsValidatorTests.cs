@@ -39,4 +39,40 @@ public sealed class EmailBrandingOptionsValidatorTests
         Assert.True(result.Failed);
         Assert.Contains(result.Failures, f => f.Contains("PrimaryColor"));
     }
+    [Fact]
+    public void Validate_EmptyOptionalLogo_ReturnsSuccess()
+    {
+        var options = new EmailBrandingOptions
+        {
+            CompanyName = "My Company",
+            SystemName = "Help Desk",
+            LogoUrl = string.Empty,
+            RequireLogo = false,
+            SupportEmail = "support@example.test",
+            FooterText = "Footer"
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public void Validate_HttpLogo_ReturnsFail()
+    {
+        var options = new EmailBrandingOptions
+        {
+            CompanyName = "My Company",
+            SystemName = "Help Desk",
+            LogoUrl = "http://cdn.example.test/logo.png",
+            SupportEmail = "support@example.test",
+            FooterText = "Footer"
+        };
+
+        var result = _validator.Validate(null, options);
+
+        Assert.True(result.Failed);
+        Assert.Contains(result.Failures, failure => failure.Contains("LogoUrl"));
+    }
+
 }

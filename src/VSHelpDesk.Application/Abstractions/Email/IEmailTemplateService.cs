@@ -9,7 +9,8 @@ public interface IEmailTemplateService
         string title,
         string body,
         string? actionUrl = null,
-        string? actionText = null);
+        string? actionText = null,
+        bool bodyIsHtml = false);
 
     string GeneratePlainTextAlternative(
         string title,

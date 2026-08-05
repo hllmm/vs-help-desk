@@ -88,23 +88,23 @@ public sealed class EmailOptionsValidatorTests
 
     private static EmailOptions ValidImapOptions(
         MailTransportSecurityMode smtpSecurity = MailTransportSecurityMode.StartTls) => new()
-    {
-        ReceiverMode = "Imap",
-        SmtpHost = "smtp.example.test",
-        SmtpPort = 587,
-        SmtpSecurityMode = smtpSecurity,
-        SmtpUsername = "smtp-user",
-        SmtpPassword = "smtp-pass",
-        ImapHost = "imap.example.test",
-        ImapPort = 993,
-        ImapSecurityMode = MailTransportSecurityMode.SslOnConnect,
-        ImapUsername = "imap-user",
-        ImapPassword = "imap-pass",
-        ImapAccountId = "account-1",
-        ImapFolder = "INBOX",
-        SupportMailboxAddress = "support@vshelpdesk.local",
-        SupportMailboxDisplayName = "VS Help Desk"
-    };
+        {
+            ReceiverMode = "Imap",
+            SmtpHost = "smtp.example.test",
+            SmtpPort = 587,
+            SmtpSecurityMode = smtpSecurity,
+            SmtpUsername = "smtp-user",
+            SmtpPassword = "smtp-pass",
+            ImapHost = "imap.example.test",
+            ImapPort = 993,
+            ImapSecurityMode = MailTransportSecurityMode.SslOnConnect,
+            ImapUsername = "imap-user",
+            ImapPassword = "imap-pass",
+            ImapAccountId = "account-1",
+            ImapFolder = "INBOX",
+            SupportMailboxAddress = "support@vshelpdesk.local",
+            SupportMailboxDisplayName = "VS Help Desk"
+        };
 
     private sealed class FixedHostEnvironment : IHostEnvironment
     {

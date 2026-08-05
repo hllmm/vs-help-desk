@@ -23,6 +23,7 @@ internal static class EnglishMessages
             [MessageKeys.Tickets.TicketNumberRequired] = "Ticket number is required.",
             [MessageKeys.Tickets.ContentRequired] = "Content is required.",
             [MessageKeys.Tickets.ConcurrentUpdate] = "The ticket could not be updated because of a concurrent change.",
+            [MessageKeys.Attachments.FileRequired] = "A file is required.",
             [MessageKeys.Attachments.FileNameRequired] = "File name is required.",
             [MessageKeys.Attachments.FileContentRequired] = "File content is required.",
             [MessageKeys.Attachments.MaxSizeBytesExceeded] = "The file exceeds the maximum allowed size of {0} bytes.",

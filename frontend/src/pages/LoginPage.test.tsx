@@ -54,7 +54,18 @@ describe('LoginPage', () => {
         })
       }
       if (url.includes('/api/tickets')) {
-        return jsonResponse([])
+        return jsonResponse({
+          items: [],
+          nextCursor: null,
+          hasMore: false,
+          counts: {
+            all: 0,
+            new: 0,
+            waitingCustomerReply: 0,
+            customerReplied: 0,
+            resolved: 0,
+          },
+        })
       }
       return jsonResponse({ message: 'not found' }, 404)
     })

@@ -26,7 +26,6 @@ public sealed class AcknowledgementDispatcher(
     IEmailSender sender,
     TimeProvider timeProvider,
     ILogger<AcknowledgementDispatcher> logger,
-    IEmailTemplateService? templateService = null,
     IMessageProvider? messages = null)
 {
     private const string SafeSmtpFailureMessage = "SMTP acknowledgement failed.";
@@ -131,19 +130,14 @@ public sealed class AcknowledgementDispatcher(
                $"Yanıt verirken lütfen konu satırında {ticket.TicketNumber} numarasını koruyun.{Environment.NewLine}{Environment.NewLine}" +
                "VS Help Desk";
 
-        var body = templateService != null
-            ? templateService.WrapInCorporateTemplate(subject, rawBody)
-            : rawBody;
-        var isHtml = templateService != null;
-
         return new EmailMessage(
             ToAddress: ticket.CustomerEmail,
             ToDisplayName: string.IsNullOrWhiteSpace(ticket.CustomerName)
                 ? ticket.CustomerEmail
                 : ticket.CustomerName,
             Subject: subject,
-            Body: body,
-            IsHtml: isHtml,
+            Body: rawBody,
+            IsHtml: false,
             TextBody: rawBody);
     }
 }
