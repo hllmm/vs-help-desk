@@ -175,6 +175,7 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(FileStorageOptions.SectionName))
             .ValidateOnStart();
         services.AddSingleton<IAttachmentUploadPolicy, ConfiguredAttachmentUploadPolicy>();
+        services.AddSingleton<VSHelpDesk.Application.Common.IO.ITemporaryFileFactory, TemporaryFileFactory>();
         services.AddSingleton<LocalFileStorage>();
         services.AddSingleton<IFileStorage>(serviceProvider =>
             serviceProvider.GetRequiredService<LocalFileStorage>());

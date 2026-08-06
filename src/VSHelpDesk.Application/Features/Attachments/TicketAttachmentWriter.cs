@@ -20,9 +20,11 @@ public sealed class TicketAttachmentWriter(
     IAttachmentUploadPolicy uploadPolicy,
     TimeProvider timeProvider,
     ILogger<TicketAttachmentWriter> logger,
-    IMessageProvider? messages = null) : ITicketAttachmentWriter
+    IMessageProvider? messages = null,
+    ITemporaryFileFactory? temporaryFileFactory = null) : ITicketAttachmentWriter
 {
     private readonly IMessageProvider _messages = messages ?? FallbackMessageProvider.Instance;
+    private readonly ITemporaryFileFactory _temporaryFileFactory = temporaryFileFactory ?? new DefaultTemporaryFileFactory();
 
     public async Task<TicketAttachmentWriteResult> TryWriteAsync(
         Guid ticketMessageId,
@@ -80,92 +82,236 @@ public sealed class TicketAttachmentWriter(
                 _messages.Get(MessageKeys.Attachments.ContentTypeMismatch));
         }
 
-        // Sniff leading bytes before persisting (do not trust declared Content-Type alone).
-        Stream contentToSave = content;
-        PrefixStream? prefixStream = null;
-        var header = new byte[4096];
-        int read;
+        FileStream? ownedTemp = null;
+        string? tmpPath = null;
         try
         {
-            if (content.CanSeek)
+            var header = new byte[4096];
+            int headerRead;
+            try
             {
-                content.Position = 0;
+                if (content.CanSeek)
+                {
+                    content.Position = 0;
+                }
+
+                headerRead = await content.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Failed to read attachment header for messageId={MessageId}",
+                    ticketMessageId);
+                return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
             }
 
-            read = await content.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);
-            if (content.CanSeek)
-            {
-                content.Position = 0;
-            }
-            else if (read > 0)
-            {
-                prefixStream = new PrefixStream(header.AsMemory(0, read), content);
-                contentToSave = prefixStream;
-            }
-        }
-        catch (Exception ex)
-        {
-            if (prefixStream is not null)
-            {
-                await prefixStream.DisposeAsync();
-            }
+            long max = uploadPolicy.MaxFileSizeBytes;
+            Stream scanStream;
+            Stream contentToSave;
 
-            logger.LogError(
-                ex,
-                "Failed to read attachment header for messageId={MessageId}",
-                ticketMessageId);
-            return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
-        }
-
-        // Ensure we have a seekable stream for full ZIP macro scan (I1).
-        // Non-seekable PrefixStream must be buffered so ZipArchive can read central directory at EOF.
-        Stream scanStream = contentToSave;
-        MemoryStream? bufferedForScan = null;
-        if (!contentToSave.CanSeek)
-        {
-            bufferedForScan = new MemoryStream();
-            await contentToSave.CopyToAsync(bufferedForScan, cancellationToken);
-            bufferedForScan.Position = 0;
-            scanStream = bufferedForScan;
-            contentToSave = scanStream;
-        }
-        else
-        {
-            contentToSave.Position = 0;
-            scanStream.Position = 0;
-        }
-
-        bool consistent;
-        try
-        {
-            var headerSpan = header.AsSpan(0, Math.Max(read, 0));
-            if (uploadPolicy is IAttachmentUploadPolicy policyWithStream)
+            if (!content.CanSeek)
             {
-                // Prefer stream-aware overload when available (full ZIP scan)
-                consistent = policyWithStream.IsDeclaredTypeConsistentWithContent(safeFileName, contentType, scanStream, headerSpan);
+                FileStream tmp;
+                string path;
+                try
+                {
+                    var created = _temporaryFileFactory.CreateTempFile();
+                    tmp = created.Stream;
+                    path = created.Path;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Failed to create temp file for messageId={MessageId}",
+                        ticketMessageId);
+                    return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
+                }
+
+                ownedTemp = tmp;
+                tmpPath = path;
+
+                try
+                {
+                    if (headerRead > 0)
+                    {
+                        await ownedTemp.WriteAsync(header.AsMemory(0, headerRead), cancellationToken);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Failed to spool header to temp file for messageId={MessageId}",
+                        ticketMessageId);
+                    return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
+                }
+
+                long total = headerRead;
+                if (total > max)
+                {
+                    return TicketAttachmentWriteResult.Skipped(
+                        _messages.Get(MessageKeys.Attachments.MaxSizeBytesExceeded, uploadPolicy.MaxFileSizeBytes));
+                }
+
+                var buf = new byte[8192];
+                try
+                {
+                    while (total <= max)
+                    {
+                        long remaining = (max + 1) - total;
+                        if (remaining <= 0) break;
+                        int toRead = (int)Math.Min(buf.Length, remaining);
+                        int read = await content.ReadAsync(buf.AsMemory(0, toRead), cancellationToken);
+                        if (read == 0) break;
+                        total += read;
+                        await ownedTemp.WriteAsync(buf.AsMemory(0, read), cancellationToken);
+                        if (total > max) break;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Failed to spool attachment to temp file for messageId={MessageId}",
+                        ticketMessageId);
+                    return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
+                }
+
+                if (total > max)
+                {
+                    return TicketAttachmentWriteResult.Skipped(
+                        _messages.Get(MessageKeys.Attachments.MaxSizeBytesExceeded, uploadPolicy.MaxFileSizeBytes));
+                }
+
+                try
+                {
+                    await ownedTemp.FlushAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Failed to flush temp file for messageId={MessageId}",
+                        ticketMessageId);
+                    return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
+                }
+
+                ownedTemp.Position = 0;
+                scanStream = ownedTemp;
+                contentToSave = ownedTemp;
             }
             else
             {
-                consistent = uploadPolicy.IsDeclaredTypeConsistentWithContent(safeFileName, contentType, headerSpan);
-            }
-        }
-        finally
-        {
-            if (scanStream.CanSeek)
-            {
-                scanStream.Position = 0;
+                long length = -1;
+                try
+                {
+                    length = content.Length;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Length not supported, treat as unknown and continue without length check
+                }
+
+                if (length >= 0 && length > max)
+                {
+                    return TicketAttachmentWriteResult.Skipped(
+                        _messages.Get(MessageKeys.Attachments.MaxSizeBytesExceeded, uploadPolicy.MaxFileSizeBytes));
+                }
+
+                try
+                {
+                    content.Position = 0;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                }
+
+                scanStream = content;
+                contentToSave = content;
             }
 
-            if (contentToSave.CanSeek)
+            bool consistent;
+            try
             {
-                contentToSave.Position = 0;
-            }
-        }
+                var headerSpan = header.AsSpan(0, Math.Max(headerRead, 0));
+                if (scanStream.CanSeek)
+                {
+                    scanStream.Position = 0;
+                }
 
-        // Dispose buffered copy if we created one for scanning but will use it for SaveAsync; keep it alive until Save completes.
-        // bufferedForScan is now contentToSave, so don't dispose yet — dispose in final finally.
-        try
-        {
+                consistent = uploadPolicy.IsDeclaredTypeConsistentWithContent(safeFileName, contentType, scanStream, headerSpan, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Declared type consistency check failed for messageId={MessageId}",
+                    ticketMessageId);
+                return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.ContentTypeMismatch));
+            }
+            finally
+            {
+                try
+                {
+                    if (scanStream.CanSeek)
+                    {
+                        scanStream.Position = 0;
+                    }
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    if (!ReferenceEquals(scanStream, contentToSave) && contentToSave.CanSeek)
+                    {
+                        contentToSave.Position = 0;
+                    }
+                    else if (ReferenceEquals(scanStream, contentToSave) && contentToSave.CanSeek)
+                    {
+                        // already reset via scanStream, ensure still 0
+                    }
+                }
+                catch
+                {
+                }
+            }
+
             if (!consistent)
             {
                 return TicketAttachmentWriteResult.Skipped(
@@ -175,11 +321,20 @@ public sealed class TicketAttachmentWriter(
             StoredFile stored;
             try
             {
+                if (contentToSave.CanSeek)
+                {
+                    contentToSave.Position = 0;
+                }
+
                 stored = await fileStorage.SaveAsync(
                     contentToSave,
                     safeFileName,
                     contentType.Trim(),
                     cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -218,6 +373,10 @@ public sealed class TicketAttachmentWriter(
                 await attachmentRepository.AddAsync(attachment, cancellationToken);
                 await unitOfWork.SaveChangesAsync(cancellationToken);
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 logger.LogError(
@@ -237,16 +396,32 @@ public sealed class TicketAttachmentWriter(
 
             return TicketAttachmentWriteResult.Stored(attachment.Id);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         finally
         {
-            if (prefixStream is not null)
+            if (ownedTemp is not null)
             {
-                await prefixStream.DisposeAsync();
+                try
+                {
+                    await ownedTemp.DisposeAsync();
+                }
+                catch
+                {
+                }
             }
 
-            if (bufferedForScan is not null)
+            if (tmpPath is not null && File.Exists(tmpPath))
             {
-                await bufferedForScan.DisposeAsync();
+                try
+                {
+                    File.Delete(tmpPath);
+                }
+                catch
+                {
+                }
             }
         }
     }
