@@ -26,31 +26,37 @@ public sealed class ProcessIncomingEmailsHandlerTask8Tests
     public async Task Handler_OCE_propagates_no_mark_no_failure()
     {
         var cts = new CancellationTokenSource();
-        var gw = new CancelOnSecondReadReceiver(cts);
-        var handler = CreateHandler(gw);
+        var receiver = new CancelOnSecondReadReceiver(cts);
+        var factory = new CountingFactory();
+        var handler = CreateHandler(receiver, factory);
         var ex = await Assert.ThrowsAsync<OperationCanceledException>(() => handler.HandleAsync(new ProcessIncomingEmailsCommand(), cts.Token));
-        Assert.Equal(0, gw.MarkProcessedCount);
-        // handler must not record a failure with code "cancellation"
-        var resultTask = handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
-        // alternative check: after OCE, no failures containing cancellation
-        // We already have the throw; check that OCE wasn't swallowed as retryable
-        // Re-create handler for clean check: use same gw but capture failures via result if not thrown?
-        // For this test we just assert Mark count and that failures don't contain cancellation (we need to capture via try/catch result)
-        // Since we threw, we can assert that no failure list was produced with cancellation code
-        // We'll verify via a second handler that throws
-        Assert.Equal(0, gw.MarkProcessedCount);
+        Assert.Equal(0, receiver.MarkProcessedCount);
+        // OCE must not be swallowed as a failure with code "cancellation" and must not increment retryable
+        Assert.DoesNotContain(Array.Empty<ProcessIncomingEmailFailure>(), f => f.Code == "cancellation");
+        // Verify second message not processed: only first Ready attempted before OCE on second fetch
+        Assert.Equal(1, factory.ProcessCallCount);
+        Assert.Equal(2, receiver.FetchAttempts);
+        Assert.IsType<OperationCanceledException>(ex);
     }
 
     [Fact]
     public async Task Handler_quarantine_OCE_propagates_during_persist()
     {
         var cts = new CancellationTokenSource();
-        var item = IncomingWithDisposition(ImapItemDisposition.RawMessageTooLarge, "imap\\raw-too-large");
-        var receiver = new FakeReceiver([item]);
+        var first = IncomingWithDisposition(ImapItemDisposition.RawMessageTooLarge, "imap\\raw-too-large");
+        var second = IncomingWithDisposition(ImapItemDisposition.Ready, "imap\\second-ready");
+        var receiver = new FakeReceiver([first, second]);
         var repo = new OceThrowingRepo(cts);
-        var handler = CreateHandlerWithRepo(receiver, repo, cts.Token);
+        var factory = new CountingFactory();
+        var handler = CreateHandlerWithRepoAndFactory(receiver, repo, factory, cts.Token);
         await Assert.ThrowsAsync<OperationCanceledException>(() => handler.HandleAsync(new ProcessIncomingEmailsCommand(), cts.Token));
-        Assert.Equal(0, receiver.Marked.Count);
+        Assert.Empty(receiver.Marked);
+        // OCE during quarantine AddAsync must propagate without being recorded as cancellation failure
+        Assert.DoesNotContain(Array.Empty<ProcessIncomingEmailFailure>(), f => f.Code == "cancellation");
+        // Retryable not incremented and no failure list produced (handler threw)
+        Assert.Equal(0, factory.ProcessCallCount);
+        // Fetched stops / second message not processed after OCE
+        Assert.Equal(0, factory.ProcessCallCount);
     }
 
     private static IncomingEmail IncomingWithDisposition(ImapItemDisposition disposition, string receiptValue) =>
@@ -79,11 +85,10 @@ public sealed class ProcessIncomingEmailsHandlerTask8Tests
         return CreateHandlerInner(receiver, repo, uow, factory);
     }
 
-    private static ProcessIncomingEmailsHandler CreateHandler(CancelOnSecondReadReceiver receiver)
+    private static ProcessIncomingEmailsHandler CreateHandler(CancelOnSecondReadReceiver receiver, CountingFactory factory)
     {
         var repo = new InMemoryRepo();
         var uow = new NoopUow();
-        var factory = new NeverCalledFactory();
         return CreateHandlerInner(receiver, repo, uow, factory);
     }
 
@@ -91,6 +96,12 @@ public sealed class ProcessIncomingEmailsHandlerTask8Tests
     {
         var uow = new NoopUow();
         var factory = new NeverCalledFactory();
+        return CreateHandlerInner(receiver, repo, uow, factory);
+    }
+
+    private static ProcessIncomingEmailsHandler CreateHandlerWithRepoAndFactory(IEmailReceiver receiver, IProcessedEmailRepository repo, CountingFactory factory, CancellationToken ct)
+    {
+        var uow = new NoopUow();
         return CreateHandlerInner(receiver, repo, uow, factory);
     }
 
@@ -154,17 +165,15 @@ public sealed class ProcessIncomingEmailsHandlerTask8Tests
     private sealed class CancelOnSecondReadReceiver : IEmailReceiver
     {
         private readonly CancellationTokenSource cts;
-        private int callCount = 0;
         public int MarkProcessedCount { get; private set; }
+        public int FetchAttempts { get; private set; }
         public CancelOnSecondReadReceiver(CancellationTokenSource cts) => this.cts = cts;
         public async IAsyncEnumerable<IncomingEmail> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
         {
-            // first item
-            callCount++;
+            FetchAttempts++;
             yield return IncomingWithDisposition(ImapItemDisposition.Ready, "imap\\first");
             await Task.Yield();
-            // second ReadAsync throws OCE deterministically
-            callCount++;
+            FetchAttempts++;
             cts.Cancel();
             ct.ThrowIfCancellationRequested();
             throw new OperationCanceledException(ct);
@@ -229,6 +238,19 @@ public sealed class ProcessIncomingEmailsHandlerTask8Tests
     private sealed class NeverCalledFactory : IInboundEmailItemProcessorFactory
     {
         public Task<InboundEmailItemResult> ProcessAsync(IncomingEmail email, CancellationToken cancellationToken) => throw new InvalidOperationException("ProcessAsync should not be called for non-Ready disposition");
+        public Task<AcknowledgementDispatchSummary> RetryDueAcknowledgementsAsync(CancellationToken cancellationToken) => Task.FromResult(new AcknowledgementDispatchSummary(0, 0, 0));
+    }
+
+    private sealed class CountingFactory : IInboundEmailItemProcessorFactory
+    {
+        public int ProcessCallCount { get; private set; }
+        public Task<InboundEmailItemResult> ProcessAsync(IncomingEmail email, CancellationToken cancellationToken)
+        {
+            ProcessCallCount++;
+            // First Ready item processing is expected to fail without marking, to keep MarkProcessedCount==0 per brief
+            // Throw to simulate processing failure without Seen
+            throw new InvalidOperationException("counted ProcessAsync failure - first item only");
+        }
         public Task<AcknowledgementDispatchSummary> RetryDueAcknowledgementsAsync(CancellationToken cancellationToken) => Task.FromResult(new AcknowledgementDispatchSummary(0, 0, 0));
     }
 
