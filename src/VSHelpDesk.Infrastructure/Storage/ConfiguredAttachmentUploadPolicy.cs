@@ -271,23 +271,12 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
     }
 
     /// <summary>
-    /// ZIP central-directory-aware check for <c>vbaProject.bin</c>.
-    /// Validates PK header then scans entire buffer for the macro payload name (case-insensitive).
-    /// A production scanner would parse the ZIP central directory; this suffocates macro OOXML.
+    /// Scans the available header slice for <c>vbaProject.bin</c> (case-insensitive).
+    /// True ZIP central-directory parsing would require the full file; the header slice (4 KiB)
+    /// suffices to catch typical macro OOXML where the central directory entry appears early.
     /// </summary>
-    private static bool ContainsVbaProjectBin(ReadOnlySpan<byte> header)
-    {
-        // Must start with PK\x03\x04 to be considered a ZIP/OOXML; otherwise not a macro zip
-        if (header.Length < 4 || header[0] != 0x50 || header[1] != 0x4B || header[2] != 0x03 || header[3] != 0x04)
-        {
-            // Still check raw bytes for vbaProject.bin even without PK prefix (covers small header slice)
-            return ContainsBytesIgnoreCase(header, "vbaProject.bin"u8);
-        }
-
-        // Scan for vbaProject.bin anywhere in the buffer (covers central dir entries loaded in header slice)
-        // For larger files the header slice may be truncated; TicketAttachmentWriter now reads up to 4KiB.
-        return ContainsBytesIgnoreCase(header, "vbaProject.bin"u8);
-    }
+    private static bool ContainsVbaProjectBin(ReadOnlySpan<byte> header) =>
+        ContainsBytesIgnoreCase(header, "vbaProject.bin"u8);
 
     private static bool ContainsBytesIgnoreCase(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
     {

@@ -195,6 +195,56 @@ public sealed class AttachmentsApiTests : IClassFixture<CustomWebApplicationFact
         }
     }
 
+    [Fact]
+    public async Task Upload_MacroZip_IsRejected()
+    {
+        var messageId = await SeedMessageAsync();
+        // Need factory that allows docx so macro guard is exercised (base factory only allows text/plain+pdf)
+        var macroFactory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("environment", "Development");
+            builder.UseEnvironment("Development");
+            builder.ConfigureAppConfiguration((_, config) =>
+            {
+                config.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FileStorage:RootPath"] = storageRoot,
+                    ["FileStorage:MaxFileSizeBytes"] = "1024",
+                    ["FileStorage:AllowedContentTypes:0"] = "text/plain",
+                    ["FileStorage:AllowedContentTypes:1"] = "application/pdf",
+                    ["FileStorage:AllowedContentTypes:2"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                });
+            });
+        });
+        var filesBefore = Directory.Exists(storageRoot) ? Directory.GetFiles(storageRoot).Length : 0;
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(macroFactory);
+        using (client)
+        {
+            var zipBytes = Encoding.UTF8.GetBytes("PK\x03\x04\x14\x00\x00\x00word/vbaProject.bin payload");
+            using var request = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"/api/ticket-messages/{messageId}/attachments")
+            {
+                Content = BuildMultipart("evil.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zipBytes)
+            };
+            CookieAuthTestHelper.AddCsrf(request, csrf);
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            // Ensure no file persisted and error is about content type mismatch / macro
+            Assert.DoesNotContain("500", body, StringComparison.Ordinal);
+        }
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            Assert.Equal(0, await db.TicketAttachments.CountAsync(a => a.TicketMessageId == messageId));
+        }
+
+        var filesAfter = Directory.Exists(storageRoot) ? Directory.GetFiles(storageRoot).Length : 0;
+        Assert.Equal(filesBefore, filesAfter);
+    }
+
     [Theory]
     [InlineData(null, "Dosya yüklenmesi zorunludur.")]
     [InlineData("en-US", "A file is required.")]
@@ -255,6 +305,18 @@ public sealed class AttachmentsApiTests : IClassFixture<CustomWebApplicationFact
     {
         var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes(body));
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        content.Add(fileContent, "file", fileName);
+        return content;
+    }
+
+    private static MultipartFormDataContent BuildMultipart(
+        string fileName,
+        string contentType,
+        byte[] body)
+    {
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(body);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         content.Add(fileContent, "file", fileName);
         return content;

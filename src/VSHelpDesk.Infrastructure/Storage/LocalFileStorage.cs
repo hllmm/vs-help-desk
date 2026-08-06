@@ -103,7 +103,15 @@ public sealed class LocalFileStorage : IFileStorage, IFileStorageInspector
     public Task DeleteAsync(string storedFileName, CancellationToken cancellationToken = default)
     {
         _ = cancellationToken;
-        var absolutePath = Path.Combine(absoluteRoot, Path.GetFileName(storedFileName));
+        ValidateStoredFileName(storedFileName);
+        var safeName = Path.GetFileName(storedFileName);
+        if (string.IsNullOrWhiteSpace(safeName) ||
+            !string.Equals(safeName, storedFileName, StringComparison.Ordinal))
+        {
+            throw new FileNotFoundException("Stored file name is invalid.", storedFileName);
+        }
+
+        var absolutePath = Path.Combine(absoluteRoot, safeName);
         if (File.Exists(absolutePath))
         {
             File.Delete(absolutePath);
