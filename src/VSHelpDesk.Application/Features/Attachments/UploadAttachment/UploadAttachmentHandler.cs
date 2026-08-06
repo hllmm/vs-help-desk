@@ -52,6 +52,8 @@ public sealed class UploadAttachmentHandler(
             attachment.FileName,
             attachment.ContentType,
             attachment.FileSize,
-            attachment.CreatedAt));
+            attachment.CreatedAt,
+            attachment.ScanVerdict.ToString(),
+            attachment.ScanVerdict == Domain.Enums.ScanVerdict.Unscanned ? "Attachment has not been virus-scanned." : null));
     }
 }

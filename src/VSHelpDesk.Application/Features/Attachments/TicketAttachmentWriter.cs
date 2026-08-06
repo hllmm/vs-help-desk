@@ -69,10 +69,21 @@ public sealed class TicketAttachmentWriter(
             return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FileNameRequired));
         }
 
+        if (!uploadPolicy.IsFileNameValid(safeFileName))
+        {
+            return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FileNameRequired));
+        }
+
+        if (!uploadPolicy.IsExtensionConsistentWithContentType(safeFileName, contentType))
+        {
+            return TicketAttachmentWriteResult.Skipped(
+                _messages.Get(MessageKeys.Attachments.ContentTypeMismatch));
+        }
+
         // Sniff leading bytes before persisting (do not trust declared Content-Type alone).
         Stream contentToSave = content;
         PrefixStream? prefixStream = null;
-        var header = new byte[16];
+        var header = new byte[4096];
         int read;
         try
         {
@@ -109,6 +120,7 @@ public sealed class TicketAttachmentWriter(
         try
         {
             if (!uploadPolicy.IsDeclaredTypeConsistentWithContent(
+                    safeFileName,
                     contentType,
                     header.AsSpan(0, Math.Max(read, 0))))
             {

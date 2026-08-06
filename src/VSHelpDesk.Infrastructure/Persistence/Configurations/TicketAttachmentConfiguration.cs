@@ -18,6 +18,7 @@ public sealed class TicketAttachmentConfiguration : IEntityTypeConfiguration<Tic
         builder.Property(attachment => attachment.FilePath).IsRequired().HasMaxLength(1024);
         builder.Property(attachment => attachment.ContentType).IsRequired().HasMaxLength(200);
         builder.Property(attachment => attachment.FileSize).IsRequired();
+        builder.Property(attachment => attachment.ScanVerdict).IsRequired().HasConversion<int>();
         builder.Property(attachment => attachment.CreatedAt)
             .IsRequired()
             .HasColumnType("timestamp with time zone");

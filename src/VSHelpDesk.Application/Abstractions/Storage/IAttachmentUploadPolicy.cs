@@ -7,6 +7,10 @@ public interface IAttachmentUploadPolicy
 
     bool IsContentTypeAllowed(string? contentType);
 
+    bool IsFileNameValid(string? fileName) => !string.IsNullOrWhiteSpace(fileName);
+
+    bool IsExtensionConsistentWithContentType(string? fileName, string? declaredContentType) => true;
+
     /// <summary>
     /// Sniff leading file bytes and return a canonical MIME when recognized;
     /// returns null when the signature is unknown (caller may fall back to declared type only if allowed).
@@ -18,4 +22,7 @@ public interface IAttachmentUploadPolicy
     /// for types that cannot be reliably detected (e.g. plain text).
     /// </summary>
     bool IsDeclaredTypeConsistentWithContent(string? declaredContentType, ReadOnlySpan<byte> header);
+
+    bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, ReadOnlySpan<byte> header) =>
+        IsDeclaredTypeConsistentWithContent(declaredContentType, header);
 }

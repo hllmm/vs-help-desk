@@ -1,3 +1,5 @@
+using VSHelpDesk.Domain.Enums;
+
 namespace VSHelpDesk.Domain.Entities;
 
 /// <summary>File metadata for a ticket message (BR-012). Bytes live outside the DB (BR-017).</summary>
@@ -17,6 +19,8 @@ public sealed class TicketAttachment
 
     public long FileSize { get; private set; }
 
+    public ScanVerdict ScanVerdict { get; private set; } = ScanVerdict.Unscanned;
+
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
 
     /// <summary>EF Core materialization.</summary>
@@ -31,7 +35,8 @@ public sealed class TicketAttachment
         string filePath,
         string contentType,
         long fileSize,
-        DateTime? createdAtUtc = null)
+        DateTime? createdAtUtc = null,
+        ScanVerdict scanVerdict = ScanVerdict.Unscanned)
     {
         TicketMessageId = ticketMessageId;
         FileName = fileName;
@@ -40,5 +45,6 @@ public sealed class TicketAttachment
         ContentType = contentType;
         FileSize = fileSize;
         CreatedAt = createdAtUtc ?? DateTime.UtcNow;
+        ScanVerdict = scanVerdict;
     }
 }

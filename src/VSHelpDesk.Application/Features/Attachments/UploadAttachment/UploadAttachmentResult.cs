@@ -6,4 +6,6 @@ public sealed record UploadAttachmentResult(
     string FileName,
     string ContentType,
     long FileSize,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string ScanVerdict = "Unscanned",
+    string? ScanWarning = null);

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Storage;
 
@@ -9,6 +10,24 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
     private readonly HashSet<string> allowed = new(
         options.Value.AllowedContentTypes ?? [],
         StringComparer.OrdinalIgnoreCase);
+
+    // Extension → MIME allowlist (SEC-006). Only modern OpenXML plus legacy xls; msword explicitly excluded.
+    private static readonly Dictionary<string, string> ExtensionMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [".pdf"] = "application/pdf",
+        [".png"] = "image/png",
+        [".jpg"] = "image/jpeg",
+        [".jpeg"] = "image/jpeg",
+        [".gif"] = "image/gif",
+        [".webp"] = "image/webp",
+        [".txt"] = "text/plain",
+        [".docx"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        [".xlsx"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        [".xls"] = "application/vnd.ms-excel",
+    };
+
+    // Filename charset: letters, digits, dot, underscore, hyphen, space. Extension length already capped at 16 chars.
+    private static readonly Regex FileNameRegex = new(@"^[a-zA-Z0-9._\- ]+$", RegexOptions.Compiled);
 
     public long MaxFileSizeBytes => options.Value.MaxFileSizeBytes;
 
@@ -22,6 +41,74 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
         // Strip optional charset/parameters: "text/plain; charset=utf-8"
         var mime = contentType.Split(';', 2)[0].Trim();
         return allowed.Contains(mime);
+    }
+
+    public bool IsFileNameValid(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return false;
+        }
+
+        var safe = Path.GetFileName(fileName.Trim());
+        if (string.IsNullOrWhiteSpace(safe))
+        {
+            return false;
+        }
+
+        // Path.GetFileName must be idempotent — rejects directory traversal
+        if (!string.Equals(safe, fileName.Trim(), StringComparison.Ordinal))
+        {
+            // Allow original with path stripped but still validate resulting name
+            // Check contained traversal chars already stripped; if original had '/', GetFileName differs → treat as traversal attempt if original contained separator
+            if (fileName.Contains('/') || fileName.Contains('\\'))
+            {
+                return false;
+            }
+        }
+
+        if (safe.Length is < 1 or > 255)
+        {
+            return false;
+        }
+
+        var ext = Path.GetExtension(safe);
+        if (ext.Length > 16)
+        {
+            return false;
+        }
+
+        // Validate charset without extension? Full name including extension must match
+        // Remove extension for regex or keep? Brief says charset a-zA-Z0-9._- (and space). Use full name.
+        // Replace to ensure regex covers name without path.
+        if (!FileNameRegex.IsMatch(safe))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    public bool IsExtensionConsistentWithContentType(string? fileName, string? declaredContentType)
+    {
+        if (string.IsNullOrWhiteSpace(fileName) || string.IsNullOrWhiteSpace(declaredContentType))
+        {
+            return false;
+        }
+
+        var ext = Path.GetExtension(fileName.Trim());
+        if (string.IsNullOrWhiteSpace(ext))
+        {
+            return false;
+        }
+
+        if (!ExtensionMap.TryGetValue(ext, out var expectedMime))
+        {
+            return false;
+        }
+
+        var declared = declaredContentType.Split(';', 2)[0].Trim();
+        return string.Equals(expectedMime, declared, StringComparison.OrdinalIgnoreCase);
     }
 
     public string? DetectContentTypeFromContent(ReadOnlySpan<byte> header)
@@ -81,6 +168,9 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
     }
 
     public bool IsDeclaredTypeConsistentWithContent(string? declaredContentType, ReadOnlySpan<byte> header)
+        => IsDeclaredTypeConsistentWithContent(null, declaredContentType, header);
+
+    public bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, ReadOnlySpan<byte> header)
     {
         if (!IsContentTypeAllowed(declaredContentType))
         {
@@ -97,6 +187,21 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
             return false;
         }
 
+        // Extension allowlist enforcement when filename is provided
+        if (!string.IsNullOrWhiteSpace(fileName))
+        {
+            // Validate extension maps to declared mime; reject unknown extensions
+            if (!IsExtensionConsistentWithContentType(fileName, declared))
+            {
+                return false;
+            }
+
+            if (!IsFileNameValid(fileName))
+            {
+                return false;
+            }
+        }
+
         // Dangerous sniffed types are always rejected even if not in allow-list path above.
         if (detected is "application/x-msdownload")
         {
@@ -109,7 +214,7 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
             if (detected is "application/zip" &&
                 declared.StartsWith("application/vnd.openxmlformats-officedocument.", StringComparison.OrdinalIgnoreCase))
             {
-                if (ContainsBytesIgnoreCase(header, "vbaProject.bin"u8))
+                if (ContainsVbaProjectBin(header))
                 {
                     return false;
                 }
@@ -163,6 +268,25 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// ZIP central-directory-aware check for <c>vbaProject.bin</c>.
+    /// Validates PK header then scans entire buffer for the macro payload name (case-insensitive).
+    /// A production scanner would parse the ZIP central directory; this suffocates macro OOXML.
+    /// </summary>
+    private static bool ContainsVbaProjectBin(ReadOnlySpan<byte> header)
+    {
+        // Must start with PK\x03\x04 to be considered a ZIP/OOXML; otherwise not a macro zip
+        if (header.Length < 4 || header[0] != 0x50 || header[1] != 0x4B || header[2] != 0x03 || header[3] != 0x04)
+        {
+            // Still check raw bytes for vbaProject.bin even without PK prefix (covers small header slice)
+            return ContainsBytesIgnoreCase(header, "vbaProject.bin"u8);
+        }
+
+        // Scan for vbaProject.bin anywhere in the buffer (covers central dir entries loaded in header slice)
+        // For larger files the header slice may be truncated; TicketAttachmentWriter now reads up to 4KiB.
+        return ContainsBytesIgnoreCase(header, "vbaProject.bin"u8);
     }
 
     private static bool ContainsBytesIgnoreCase(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)

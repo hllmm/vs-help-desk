@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,6 +9,8 @@ namespace VSHelpDesk.Infrastructure.Storage;
 /// <summary>Disk storage under a configurable root outside wwwroot (BR-012, BR-017).</summary>
 public sealed class LocalFileStorage : IFileStorage, IFileStorageInspector
 {
+    private static readonly Regex StoredNameRegex = new(@"^[a-zA-Z0-9._\-]+$", RegexOptions.Compiled);
+
     private readonly string absoluteRoot;
     private readonly ILogger<LocalFileStorage> logger;
 
@@ -39,13 +42,23 @@ public sealed class LocalFileStorage : IFileStorage, IFileStorageInspector
     {
         ArgumentNullException.ThrowIfNull(content);
 
-        var extension = Path.GetExtension(originalFileName);
+        // Sanitize original file name: must be 1-255, no traversal
+        var sanitizedOriginal = Path.GetFileName(originalFileName.Trim());
+        if (string.IsNullOrWhiteSpace(sanitizedOriginal) || sanitizedOriginal.Length is < 1 or > 255)
+        {
+            throw new ArgumentException("File name must be 1-255 characters.", nameof(originalFileName));
+        }
+
+        var extension = Path.GetExtension(sanitizedOriginal);
         if (extension.Length > 16)
         {
             extension = string.Empty;
         }
 
+        // Stored name charset a-zA-Z0-9._- (plus guid)
+        extension = SanitizeExtension(extension);
         var storedFileName = $"{Guid.NewGuid():N}{extension}";
+        ValidateStoredFileName(storedFileName);
         var absolutePath = Path.Combine(absoluteRoot, storedFileName);
 
         await using (var fileStream = new FileStream(
@@ -140,6 +153,7 @@ public sealed class LocalFileStorage : IFileStorage, IFileStorageInspector
 
     private string ResolveExistingPath(string storedFileName)
     {
+        ValidateStoredFileName(storedFileName);
         var safeName = Path.GetFileName(storedFileName);
         if (string.IsNullOrWhiteSpace(safeName) ||
             !string.Equals(safeName, storedFileName, StringComparison.Ordinal))
@@ -154,5 +168,45 @@ public sealed class LocalFileStorage : IFileStorage, IFileStorageInspector
         }
 
         return absolutePath;
+    }
+
+    private static void ValidateStoredFileName(string storedFileName)
+    {
+        if (string.IsNullOrWhiteSpace(storedFileName) || storedFileName.Length is < 1 or > 255)
+        {
+            throw new FileNotFoundException("Stored file name is invalid.", storedFileName);
+        }
+
+        if (!StoredNameRegex.IsMatch(storedFileName))
+        {
+            throw new FileNotFoundException("Stored file name contains invalid characters.", storedFileName);
+        }
+
+        var nameWithoutExt = storedFileName;
+        // Guid (32 hex) + optional extension; extension already validated charset
+        // Ensure extension part also respects length
+        var ext = Path.GetExtension(storedFileName);
+        if (ext.Length > 16)
+        {
+            throw new FileNotFoundException("Stored file extension is too long.", storedFileName);
+        }
+    }
+
+    private static string SanitizeExtension(string extension)
+    {
+        if (string.IsNullOrEmpty(extension))
+        {
+            return string.Empty;
+        }
+
+        // Keep only allowed charset for extension part
+        var extName = extension.TrimStart('.');
+        var sanitized = new string(extName.Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-').ToArray());
+        if (sanitized.Length == 0 || sanitized.Length != extName.Length)
+        {
+            return string.Empty;
+        }
+
+        return "." + sanitized;
     }
 }
