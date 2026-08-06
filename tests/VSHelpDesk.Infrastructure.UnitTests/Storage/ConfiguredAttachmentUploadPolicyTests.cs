@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Infrastructure.Storage;
@@ -54,6 +55,62 @@ public sealed class ConfiguredAttachmentUploadPolicyTests
         Buffer.BlockCopy(header, 0, combined, 0, header.Length);
         Buffer.BlockCopy(name, 0, combined, header.Length, name.Length);
         return combined;
+    }
+
+    private static MemoryStream CreateValidDocx()
+    {
+        var ms = new MemoryStream();
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("word/document.xml");
+            using (var es = entry.Open())
+            {
+                es.Write(Encoding.UTF8.GetBytes("<w:document>hello</w:document>"));
+            }
+            var ct = archive.CreateEntry("[Content_Types].xml");
+            using (var cs = ct.Open())
+            {
+                cs.Write(Encoding.UTF8.GetBytes("<Types></Types>"));
+            }
+        }
+        ms.Position = 0;
+        return ms;
+    }
+
+    private static MemoryStream CreateDocxWithEntry(string innerPath, string content)
+    {
+        var ms = new MemoryStream();
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var e = archive.CreateEntry(innerPath);
+            using (var s = e.Open())
+            {
+                s.Write(Encoding.UTF8.GetBytes(content));
+            }
+            var doc = archive.CreateEntry("word/document.xml");
+            using (var ds = doc.Open())
+            {
+                ds.Write(Encoding.UTF8.GetBytes("doc"));
+            }
+        }
+        ms.Position = 0;
+        return ms;
+    }
+
+    private static MemoryStream CreateZipWithEntries(int count)
+    {
+        var ms = new MemoryStream();
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            for (var i = 0; i < count; i++)
+            {
+                var e = archive.CreateEntry($"file{i}.txt");
+                using var s = e.Open();
+                s.Write(Encoding.UTF8.GetBytes("x"));
+            }
+        }
+        ms.Position = 0;
+        return ms;
     }
 
     [Theory]
@@ -184,5 +241,49 @@ public sealed class ConfiguredAttachmentUploadPolicyTests
         Assert.False(policy.IsDeclaredTypeConsistentWithContent(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             zipWithMacro));
+    }
+
+    [Fact]
+    public void Malformed_zip_is_rejected_fail_closed()
+    {
+        var policy = CreatePolicy(); // allowed: docx
+        var header = new byte[]{0x50,0x4B,0x03,0x04, 0x00};
+        using var malformed = new MemoryStream(new byte[]{0x50,0x4B,0x03,0x04, 0xFF,0xFF});
+        var ok = policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", malformed, header.AsSpan(), CancellationToken.None);
+        Assert.False(ok);
+        Assert.Equal(0, malformed.Position); // Position==0 in finally
+    }
+    [Fact]
+    public void Ooxml_with_vbaProject_rejected()
+    {
+        var policy = CreatePolicy();
+        using var zip = CreateDocxWithEntry("word/vbaProject.bin","evil");
+        var header = new byte[]{0x50,0x4B,0x03,0x04};
+        Assert.False(policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, header.AsSpan(), CancellationToken.None));
+    }
+    [Fact]
+    public void Over_4096_entries_rejected()
+    {
+        var policy = CreatePolicy();
+        using var zip = CreateZipWithEntries(4097);
+        var header = new byte[]{0x50,0x4B,0x03,0x04};
+        Assert.False(policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, header.AsSpan(), CancellationToken.None));
+    }
+    [Fact]
+    public void Valid_ooxml_without_macro_accepted_and_position_reset()
+    {
+        var policy = CreatePolicy();
+        using var zip = CreateValidDocx();
+        var header = new byte[]{0x50,0x4B,0x03,0x04};
+        Assert.True(policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, header.AsSpan(), CancellationToken.None));
+        Assert.Equal(0, zip.Position);
+    }
+    [Fact]
+    public void Cancellation_propagates()
+    {
+        var policy = CreatePolicy();
+        using var zip = CreateValidDocx();
+        var cts = new CancellationTokenSource(); cts.Cancel();
+        Assert.Throws<OperationCanceledException>(()=> policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, new byte[]{0x50,0x4B,0x03,0x04}.AsSpan(), cts.Token));
     }
 }
