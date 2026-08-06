@@ -40,7 +40,8 @@ public sealed class ProcessedEmailMessageConfiguration : IEntityTypeConfiguratio
             {
                 message.AcknowledgementStatus,
                 message.AcknowledgementNextAttemptAt
-            });
+            })
+            .HasDatabaseName("IX_ProcessedEmailMessages_AcknowledgementStatus_Acknowledgemen~");
 
         builder.HasOne<Ticket>()
             .WithMany()

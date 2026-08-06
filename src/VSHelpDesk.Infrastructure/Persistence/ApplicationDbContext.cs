@@ -95,35 +95,69 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        var isPostgres = Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
-        if (isPostgres)
-        {
-            modelBuilder.HasPostgresExtension("pg_trgm");
-        }
+        modelBuilder.HasPostgresExtension("pg_trgm");
 
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(ApplicationDbContext).Assembly,
             configurationType => configurationType != typeof(TicketConfiguration));
-        modelBuilder.ApplyConfiguration(new TicketConfiguration(isPostgres));
+        modelBuilder.ApplyConfiguration(new TicketConfiguration(true));
 
-        if (!isPostgres)
+        // Ensure column types match the single migration snapshot for all providers
+        // (Postgres, Sqlite, InMemory) so that PendingModelChangesWarning does not trigger.
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
-            // "timestamp with time zone" is PostgreSQL-specific. SQL Server and
-            // SQLite fall back to provider-native temporal column types so the
-            // schema can be created (and the contract suite can run) on all
-            // supported providers.
-            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            foreach (var property in entityType.GetProperties())
             {
-                foreach (var property in entityType.GetProperties())
+                var clrType = property.ClrType;
+                var maxLength = property.GetMaxLength();
+
+                if (clrType == typeof(Guid))
                 {
-                    if (string.Equals(
-                            property.GetColumnType(),
-                            "timestamp with time zone",
-                            StringComparison.OrdinalIgnoreCase))
+                    property.SetColumnType("uuid");
+                }
+                else if (clrType == typeof(string))
+                {
+                    if (maxLength.HasValue)
                     {
-                        property.SetColumnType(null);
+                        property.SetColumnType($"character varying({maxLength.Value})");
+                    }
+                    else
+                    {
+                        property.SetColumnType("text");
                     }
                 }
+                else if (clrType == typeof(DateTime) || clrType == typeof(DateTime?))
+                {
+                    property.SetColumnType("timestamp with time zone");
+                }
+                else if (clrType == typeof(bool) || clrType == typeof(bool?))
+                {
+                    property.SetColumnType("boolean");
+                }
+                else if (clrType == typeof(int) || clrType == typeof(int?) || clrType.IsEnum || (Nullable.GetUnderlyingType(clrType)?.IsEnum == true))
+                {
+                    property.SetColumnType("integer");
+                }
+                else if (clrType == typeof(long) || clrType == typeof(long?))
+                {
+                    property.SetColumnType("bigint");
+                }
+                else if (clrType == typeof(uint) || clrType == typeof(uint?))
+                {
+                    property.SetColumnType("xid");
+                    property.SetColumnName("xmin");
+                    property.IsConcurrencyToken = true;
+                    property.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate;
+                }
+            }
+
+            var versionProperty = entityType.FindProperty("Version");
+            if (versionProperty != null && versionProperty.ClrType == typeof(uint))
+            {
+                versionProperty.SetColumnType("xid");
+                versionProperty.SetColumnName("xmin");
+                versionProperty.IsConcurrencyToken = true;
+                versionProperty.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate;
             }
         }
 

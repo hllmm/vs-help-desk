@@ -349,7 +349,6 @@ public sealed class ApplicationDbContextTests
 
     [Theory]
     [InlineData("Postgres", "Host=localhost;Database=test;Username=test", "Npgsql.EntityFrameworkCore.PostgreSQL")]
-    [InlineData("SqlServer", "Server=localhost;Database=test;User Id=sa;Password=Password123!", "Microsoft.EntityFrameworkCore.SqlServer")]
     [InlineData("Sqlite", "Data Source=test.db", "Microsoft.EntityFrameworkCore.Sqlite")]
     public void ApplicationDbContextFactory_UsesConfiguredProvider(
         string provider,

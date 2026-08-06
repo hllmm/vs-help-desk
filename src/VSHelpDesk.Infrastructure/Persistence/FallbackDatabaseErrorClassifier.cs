@@ -5,7 +5,7 @@ using VSHelpDesk.Application.Common.Exceptions;
 namespace VSHelpDesk.Infrastructure.Persistence;
 
 /// <summary>
-/// Provider-agnostic database error classifier for non-PostgreSQL database providers (InMemory, Sqlite, SqlServer).
+/// Provider-agnostic database error classifier for non-PostgreSQL database providers (InMemory, Sqlite).
 /// </summary>
 public sealed class FallbackDatabaseErrorClassifier : IDatabaseErrorClassifier
 {
