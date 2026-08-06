@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace VSHelpDesk.Infrastructure.Persistence;
 
@@ -98,14 +99,20 @@ internal static class DatabaseProviderConfiguration
             case DatabaseProviderKind.SqlServer:
                 if (string.IsNullOrWhiteSpace(migrationsAssembly))
                 {
-                    options.UseSqlServer(connectionString);
+                    options.UseSqlServer(connectionString, o => o.EnableRetryOnFailure());
                 }
                 else
                 {
                     options.UseSqlServer(
                         connectionString,
-                        builder => builder.MigrationsAssembly(migrationsAssembly));
+                        builder =>
+                        {
+                            builder.MigrationsAssembly(migrationsAssembly);
+                            builder.EnableRetryOnFailure();
+                        });
                 }
+
+                options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
                 break;
 
             case DatabaseProviderKind.Sqlite:
@@ -119,10 +126,13 @@ internal static class DatabaseProviderConfiguration
                         connectionString,
                         builder => builder.MigrationsAssembly(migrationsAssembly));
                 }
+
+                options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
                 break;
 
             case DatabaseProviderKind.InMemory:
                 options.UseInMemoryDatabase(connectionString);
+                options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
                 break;
 
             default:

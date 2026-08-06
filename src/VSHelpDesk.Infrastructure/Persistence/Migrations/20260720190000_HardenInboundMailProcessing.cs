@@ -81,25 +81,31 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                 maxLength: 500,
                 nullable: true);
 
-            migrationBuilder.Sql(
-                """
-                UPDATE "ProcessedEmailMessages"
-                SET "SourceMessageId" = "IdempotencyKey",
-                    "Disposition" = 1,
-                    "AcknowledgementStatus" = 1,
-                    "AcknowledgementAttempts" = 0,
-                    "AcknowledgementLastAttemptAt" = NULL,
-                    "AcknowledgementNextAttemptAt" = NULL,
-                    "AcknowledgementSentAt" = NULL,
-                    "AcknowledgementLastError" = NULL;
-                """);
+            if (migrationBuilder.ActiveProvider?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                migrationBuilder.Sql(
+                    """
+                    UPDATE "ProcessedEmailMessages"
+                    SET "SourceMessageId" = "IdempotencyKey",
+                        "Disposition" = 1,
+                        "AcknowledgementStatus" = 1,
+                        "AcknowledgementAttempts" = 0,
+                        "AcknowledgementLastAttemptAt" = NULL,
+                        "AcknowledgementNextAttemptAt" = NULL,
+                        "AcknowledgementSentAt" = NULL,
+                        "AcknowledgementLastError" = NULL;
+                    """);
+            }
 
-            migrationBuilder.Sql(
-                """
-                ALTER SEQUENCE ticket_number_seq
-                MAXVALUE 999999
-                NO CYCLE;
-                """);
+            if (migrationBuilder.ActiveProvider?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                migrationBuilder.Sql(
+                    """
+                    ALTER SEQUENCE ticket_number_seq
+                    MAXVALUE 999999
+                    NO CYCLE;
+                    """);
+            }
 
             migrationBuilder.CreateIndex(
                 name: "IX_ProcessedEmailMessages_AcknowledgementStatus_Acknowledgemen~",
@@ -160,10 +166,13 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                 table: "ProcessedEmailMessages",
                 newName: "IX_ProcessedEmailMessages_MessageId");
 
-            migrationBuilder.Sql(
-                """
-                ALTER SEQUENCE ticket_number_seq NO MAXVALUE NO CYCLE;
-                """);
+            if (migrationBuilder.ActiveProvider?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                migrationBuilder.Sql(
+                    """
+                    ALTER SEQUENCE ticket_number_seq NO MAXVALUE NO CYCLE;
+                    """);
+            }
         }
     }
 }

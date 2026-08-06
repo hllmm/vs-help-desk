@@ -112,16 +112,7 @@ public sealed class ProcessIncomingEmailsHandlerTask8Tests
             repo,
             uow,
             TimeProvider.System,
-            new NoopClassifier(),
-            new TestQuota());
-
-    private sealed class TestQuota : IMailboxQuotaSettings
-    {
-        public int MaxMessagesPerRun => 100;
-        public int MaxAttachmentsPerMessage => 10;
-        public long MaxAggregateBytesPerRun => 50L * 1024 * 1024;
-        public long MaxRawMessageBytes => 10L * 1024 * 1024;
-    }
+            new NoopClassifier());
 
     private sealed class OrderedRepo : IProcessedEmailRepository
     {

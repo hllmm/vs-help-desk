@@ -56,6 +56,11 @@ public sealed class MailKitImapFolderGateway : IImapFolderGateway
         return folder.GetMessageAsync(new UniqueId(uid), ct);
     }
 
+    public Task MarkSeenAsync(uint uid, CancellationToken ct)
+    {
+        return folder.AddFlagsAsync(new UniqueId(uid), MessageFlags.Seen, silent: true, ct);
+    }
+
     public async Task<(byte[] Bytes, long BytesRead)> FetchRawBoundedAsync(uint uid, long limit, CancellationToken ct)
     {
         if (limit <= 0)

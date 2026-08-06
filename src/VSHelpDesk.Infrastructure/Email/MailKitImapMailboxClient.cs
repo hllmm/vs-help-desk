@@ -48,30 +48,7 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
         injectedGateway = gateway ?? throw new ArgumentNullException(nameof(gateway));
     }
 
-    public MailKitImapMailboxClient(
-        IImapFolderGateway gateway,
-        IMailboxQuotaSettings quotaSettings)
-        : this(Options.Create(new EmailOptions
-        {
-            ImapHost = "localhost",
-            ImapPort = 993,
-            ImapSecurityMode = MailTransportSecurityMode.None,
-            ImapUsername = "test",
-            ImapPassword = "test",
-            ImapAccountId = "test-account",
-            ImapFolder = "INBOX",
-            SmtpHost = "localhost",
-            SmtpPort = 25
-        }), NullLogger<MailKitImapMailboxClient>.Instance, gateway, null, quotaSettings)
-    {
-    }
 
-    public MailKitImapMailboxClient(
-        IImapFolderGateway gateway,
-        MailboxQuotaOptions quotaOptions)
-        : this(gateway, (IMailboxQuotaSettings)quotaOptions)
-    {
-    }
 
     public async IAsyncEnumerable<ImapMailboxItem> FetchUnreadAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -141,6 +118,12 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
             {
                 // SIZE null branch — bounded raw fetch
                 long remaining = quota.MaxAggregateBytesPerRun - aggregate;
+                if (remaining <= 0)
+                {
+                    yield return new ImapMailboxItem(uidValidity, uid, null, null, ImapItemDisposition.AggregateBudgetExceeded);
+                    continue;
+                }
+
                 long limit = Math.Min(quota.MaxRawMessageBytes, remaining) + 1;
                 if (limit <= 0)
                 {
@@ -211,6 +194,23 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
+
+        if (injectedGateway is not null)
+        {
+            if (injectedGateway.UidValidity != expectedUidValidity)
+            {
+                throw new InvalidOperationException(
+                    "IMAP UIDVALIDITY changed since the receipt was issued; refusing to mark Seen.");
+            }
+
+            await injectedGateway.MarkSeenAsync(uid, cancellationToken).ConfigureAwait(false);
+
+            logger.LogInformation(
+                "IMAP mark seen via gateway host={ImapHost} port={ImapPort}",
+                options.ImapHost,
+                options.ImapPort);
+            return;
+        }
 
         await EnsureOpenAsync(cancellationToken).ConfigureAwait(false);
 

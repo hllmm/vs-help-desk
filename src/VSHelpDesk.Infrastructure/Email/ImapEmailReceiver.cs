@@ -61,6 +61,8 @@ public sealed class ImapEmailReceiver(
         string accountId,
         string folder)
     {
+        item.Validate();
+
         var receiptValue = ImapReceiptHandleCodec.Encode(
             new ImapReceiptCoordinates(
                 accountId,

@@ -86,7 +86,9 @@ public sealed class TicketAttachmentWriter(
         string? tmpPath = null;
         try
         {
-            var header = new byte[4096];
+            long max = uploadPolicy.MaxFileSizeBytes;
+            int initialReadLimit = (int)Math.Min(4096, max + 1);
+            var header = new byte[initialReadLimit];
             int headerRead;
             try
             {
@@ -110,7 +112,7 @@ public sealed class TicketAttachmentWriter(
                 return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
             }
 
-            long max = uploadPolicy.MaxFileSizeBytes;
+
             Stream scanStream;
             Stream contentToSave;
 

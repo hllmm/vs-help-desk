@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -9,7 +8,6 @@ using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
-using VSHelpDesk.Domain.Mail;
 
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
@@ -27,8 +25,7 @@ public sealed class ProcessIncomingEmailsHandler(
     IProcessedEmailRepository processedEmailRepository,
     IUnitOfWork unitOfWork,
     TimeProvider timeProvider,
-    IDatabaseErrorClassifier databaseErrorClassifier,
-    IMailboxQuotaSettings mailboxQuota)
+    IDatabaseErrorClassifier databaseErrorClassifier)
 {
     public async Task<Result<ProcessIncomingEmailsResult>> HandleAsync(
         ProcessIncomingEmailsCommand command,
@@ -80,7 +77,6 @@ public sealed class ProcessIncomingEmailsHandler(
         var alreadyProcessed = 0;
         var quarantined = 0;
         var retryableFailures = 0;
-        _ = mailboxQuota;
         var fetched = 0;
 
         try
@@ -151,7 +147,7 @@ public sealed class ProcessIncomingEmailsHandler(
                     }
 
                     quarantined++;
-                    failures.Add(new ProcessIncomingEmailFailure(mail.Disposition.ToString(), itemReference));
+                    failures.Add(new ProcessIncomingEmailFailure(ToDispositionFailureCode(mail.Disposition), itemReference));
                     continue;
                 }
 
@@ -256,6 +252,14 @@ public sealed class ProcessIncomingEmailsHandler(
         {
             throw;
         }
+        catch (ArgumentException)
+        {
+            throw;
+        }
+        catch (NullReferenceException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             logger.LogError(
@@ -294,6 +298,16 @@ public sealed class ProcessIncomingEmailsHandler(
             createdTicketNumbers,
             failures));
     }
+
+    private static string ToDispositionFailureCode(ImapItemDisposition disposition) =>
+        disposition switch
+        {
+            ImapItemDisposition.RawMessageTooLarge => "raw-message-too-large",
+            ImapItemDisposition.AggregateBudgetExceeded => "aggregate-budget-exceeded",
+            ImapItemDisposition.SizeUnavailable => "size-unavailable",
+            ImapItemDisposition.Ready => "ready",
+            _ => disposition.ToString().ToLowerInvariant()
+        };
 
     /// <summary>
     /// Correlatable receipt fingerprint for public job results — never the raw handle.

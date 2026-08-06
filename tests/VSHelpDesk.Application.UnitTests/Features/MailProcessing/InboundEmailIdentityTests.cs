@@ -84,6 +84,50 @@ public sealed class InboundEmailIdentityTests
         Assert.Equal(expected, identity.IdempotencyKey);
     }
 
+    [Fact]
+    public void SameAccountFolderUid_DifferentUidValidity_WithNullMessageId_YieldsDifferentKeysAndNullSource()
+    {
+        var accountId = "test-account";
+        var folder = "INBOX";
+        var uid = 42u;
+        var uidValidity1 = 100u;
+        var uidValidity2 = 200u;
+
+        var receipt1 = string.Join('\0', "imap", accountId, folder, uidValidity1.ToString(), uid.ToString());
+        var receipt2 = string.Join('\0', "imap", accountId, folder, uidValidity2.ToString(), uid.ToString());
+
+        var email1 = new IncomingEmail(
+            MessageId: null,
+            ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Imap, receipt1),
+            FromAddress: "a@b.test",
+            FromDisplayName: null,
+            Subject: "s",
+            Body: "b",
+            IsHtml: false,
+            ReceivedAt: DateTime.UtcNow,
+            Attachments: Array.Empty<IncomingEmailAttachment>());
+
+        var email2 = new IncomingEmail(
+            MessageId: null,
+            ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Imap, receipt2),
+            FromAddress: "a@b.test",
+            FromDisplayName: null,
+            Subject: "s",
+            Body: "b",
+            IsHtml: false,
+            ReceivedAt: DateTime.UtcNow,
+            Attachments: Array.Empty<IncomingEmailAttachment>());
+
+        var identity1 = InboundEmailIdentityFactory.Create(email1);
+        var identity2 = InboundEmailIdentityFactory.Create(email2);
+
+        Assert.NotEqual(identity1.IdempotencyKey, identity2.IdempotencyKey);
+        Assert.Null(identity1.SourceMessageId);
+        Assert.Null(identity2.SourceMessageId);
+        Assert.StartsWith("receipt:imap:", identity1.IdempotencyKey, StringComparison.Ordinal);
+        Assert.StartsWith("receipt:imap:", identity2.IdempotencyKey, StringComparison.Ordinal);
+    }
+
     private static IncomingEmail Mail(string? messageId, string receiptValue) =>
         new(
             MessageId: messageId,
