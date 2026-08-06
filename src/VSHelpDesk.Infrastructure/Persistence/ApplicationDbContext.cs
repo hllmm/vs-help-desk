@@ -102,10 +102,15 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             modelBuilder.HasPostgresExtension("pg_trgm");
         }
 
-        modelBuilder.ApplyConfigurationsFromAssembly(
-            typeof(ApplicationDbContext).Assembly,
-            configurationType => configurationType != typeof(TicketConfiguration));
+        modelBuilder.ApplyConfiguration(new UserConfiguration());
         modelBuilder.ApplyConfiguration(new TicketConfiguration(isPostgres));
+        modelBuilder.ApplyConfiguration(new TicketMessageConfiguration());
+        modelBuilder.ApplyConfiguration(new TicketAttachmentConfiguration());
+        modelBuilder.ApplyConfiguration(new ProcessedEmailMessageConfiguration());
+        modelBuilder.ApplyConfiguration(new ApplicationParameterConfiguration());
+        modelBuilder.ApplyConfiguration(new ParameterChangeLogConfiguration());
+        modelBuilder.ApplyConfiguration(new SystemLogConfiguration());
+        modelBuilder.ApplyConfiguration(new UserAuditEventConfiguration());
 
         // Column type mapping is now provider-aware: Postgres uses pg types + xmin,
         // SQLite/InMemory use plain integer for uint Version to avoid NOT NULL xmin failures.
