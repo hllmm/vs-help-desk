@@ -294,9 +294,9 @@ jobs:
           --startup-project src/VSHelpDesk.WebAPI
           --configuration Release
           --no-build
-      - name: Generate idempotent migration script (SQLite)
+      - name: Generate migration script (SQLite)
         run: >-
-          dotnet ef migrations script --idempotent
+          dotnet ef migrations script
           --project src/VSHelpDesk.Infrastructure
           --startup-project src/VSHelpDesk.WebAPI
           --configuration Release
