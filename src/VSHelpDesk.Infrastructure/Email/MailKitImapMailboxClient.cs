@@ -74,7 +74,7 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
     }
 
     public async IAsyncEnumerable<ImapMailboxItem> FetchUnreadAsync(
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
@@ -203,17 +203,6 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
             options.ImapHost,
             options.ImapPort,
             take);
-    }
-
-    async Task<IReadOnlyList<ImapMailboxItem>> IImapMailboxClient.FetchUnreadAsync(CancellationToken cancellationToken)
-    {
-        var items = new List<ImapMailboxItem>();
-        await foreach (var item in FetchUnreadAsync(cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
-        {
-            items.Add(item);
-        }
-
-        return items;
     }
 
     public async Task MarkSeenAsync(

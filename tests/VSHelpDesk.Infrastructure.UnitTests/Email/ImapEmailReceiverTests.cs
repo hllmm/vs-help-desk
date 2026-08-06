@@ -35,7 +35,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
 
         var item = Assert.Single(unread);
         Assert.Null(item.MessageId);
@@ -73,7 +73,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
 
         var item = Assert.Single(unread);
         // Boundary canonicalizes bare MimeKit id into <left@right> for identity.
@@ -104,7 +104,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var item = Assert.Single(await receiver.FetchUnreadAsync().ToListAsync());
 
         Assert.Equal("<html-only@example.test>", item.MessageId);
 
@@ -150,7 +150,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
         var item = Assert.Single(unread);
 
         await receiver.MarkAsProcessedAsync(item.ReceiptHandle);
@@ -177,7 +177,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client, maxFileSizeBytes: 1024);
-        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var item = Assert.Single(await receiver.FetchUnreadAsync().ToListAsync());
         var attachment = Assert.Single(item.Attachments);
 
         Assert.Equal("note.txt", attachment.FileName);
@@ -201,7 +201,7 @@ public sealed class ImapEmailReceiverTests
         };
 
         var receiver = CreateReceiver(client, maxFileSizeBytes: 4);
-        var item = Assert.Single(await receiver.FetchUnreadAsync());
+        var item = Assert.Single(await receiver.FetchUnreadAsync().ToListAsync());
 
         Assert.Empty(item.Attachments);
     }
@@ -268,9 +268,7 @@ public sealed class ImapEmailReceiverTests
 
         public List<(uint ExpectedUidValidity, uint Uid)> Marked { get; } = [];
 
-        public Task<IReadOnlyList<ImapMailboxItem>> FetchUnreadAsync(
-            CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<ImapMailboxItem>>(Items);
+        public async IAsyncEnumerable<ImapMailboxItem> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken) { foreach(var i in Items){ yield return i; await Task.Yield(); } }
 
         public Task MarkSeenAsync(
             uint expectedUidValidity,

@@ -15,7 +15,7 @@ public sealed record EmailReceiptHandle(
 
 public interface IEmailReceiver
 {
-    Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
+    IAsyncEnumerable<IncomingEmail> FetchUnreadAsync(
         CancellationToken cancellationToken = default);
 
     Task MarkAsProcessedAsync(
@@ -36,7 +36,8 @@ public sealed record IncomingEmail(
     EmailAuthenticationVerdict? AuthenticationVerdict = null,
     long? RawSize = null,
     int TotalAttachmentCount = 0,
-    bool IsOversized = false);
+    bool IsOversized = false,
+    ImapItemDisposition Disposition = ImapItemDisposition.Ready);
 
 public sealed record IncomingEmailAttachment(
     string FileName,

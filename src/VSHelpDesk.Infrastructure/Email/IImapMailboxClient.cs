@@ -1,3 +1,6 @@
+using System.Runtime.CompilerServices;
+using VSHelpDesk.Application.Abstractions.Email;
+
 namespace VSHelpDesk.Infrastructure.Email;
 
 /// <summary>
@@ -5,8 +8,8 @@ namespace VSHelpDesk.Infrastructure.Email;
 /// </summary>
 public interface IImapMailboxClient : IAsyncDisposable
 {
-    Task<IReadOnlyList<ImapMailboxItem>> FetchUnreadAsync(
-        CancellationToken cancellationToken);
+    IAsyncEnumerable<ImapMailboxItem> FetchUnreadAsync(
+        CancellationToken cancellationToken = default);
 
     Task MarkSeenAsync(
         uint expectedUidValidity,

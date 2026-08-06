@@ -68,10 +68,17 @@ public sealed class ProcessIncomingEmailsHandler(
             // Continue to fetch/process receipts; durable pending rows remain for a later run.
         }
 
-        IReadOnlyList<IncomingEmail> unread;
+        List<IncomingEmail> unread = new();
         try
         {
-            unread = await emailReceiver.FetchUnreadAsync(cancellationToken);
+            await foreach (var m in emailReceiver.FetchUnreadAsync(cancellationToken).WithCancellation(cancellationToken))
+            {
+                unread.Add(m);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

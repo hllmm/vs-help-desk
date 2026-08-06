@@ -1,4 +1,5 @@
 using MimeKit;
+using VSHelpDesk.Application.Abstractions.Email;
 
 namespace VSHelpDesk.Infrastructure.Email;
 

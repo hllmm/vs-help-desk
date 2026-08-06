@@ -25,7 +25,7 @@ public sealed class ImapEmailReceiverAuthenticationTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
         var item = Assert.Single(unread);
         Assert.NotNull(item.AuthenticationVerdict);
         Assert.True(item.AuthenticationVerdict!.IsTrusted);
@@ -52,7 +52,7 @@ public sealed class ImapEmailReceiverAuthenticationTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
         var item = Assert.Single(unread);
         Assert.NotNull(item.AuthenticationVerdict);
         Assert.False(item.AuthenticationVerdict!.IsTrusted);
@@ -77,7 +77,7 @@ public sealed class ImapEmailReceiverAuthenticationTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
         var item = Assert.Single(unread);
         Assert.NotNull(item.AuthenticationVerdict);
         Assert.False(item.AuthenticationVerdict!.IsTrusted);
@@ -145,8 +145,7 @@ public sealed class ImapEmailReceiverAuthenticationTests
         public List<ImapMailboxItem> Items { get; init; } = [];
         public List<(uint ExpectedUidValidity, uint Uid)> Marked { get; } = [];
 
-        public Task<IReadOnlyList<ImapMailboxItem>> FetchUnreadAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<ImapMailboxItem>>(Items);
+        public async IAsyncEnumerable<ImapMailboxItem> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken) { foreach(var i in Items){ yield return i; await Task.Yield(); } }
 
         public Task MarkSeenAsync(uint expectedUidValidity, uint uid, CancellationToken cancellationToken)
         {

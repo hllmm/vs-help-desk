@@ -474,15 +474,19 @@ public sealed class ProcessIncomingEmailsHandlerTests
         public HashSet<string> ThrowOnMarkValues { get; init; } = new(StringComparer.Ordinal);
         public bool ThrowOnFetch { get; init; }
 
-        public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
-            CancellationToken cancellationToken)
+        public async IAsyncEnumerable<IncomingEmail> FetchUnreadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
             if (ThrowOnFetch)
             {
                 throw new InvalidOperationException("Receiver unavailable");
             }
 
-            return Task.FromResult(messages);
+            foreach (var m in messages)
+            {
+                yield return m;
+                await Task.Yield();
+            }
         }
 
         public Task MarkAsProcessedAsync(

@@ -1,4 +1,4 @@
-namespace VSHelpDesk.Infrastructure.Email;
+namespace VSHelpDesk.Application.Abstractions.Email;
 
 public enum ImapItemDisposition
 {

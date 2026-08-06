@@ -15,7 +15,7 @@ public sealed class FakeEmailReceiverTests
             Options.Create(new EmailOptions { ReceiverMode = "Fake" }),
             NullLogger<FakeEmailReceiver>.Instance);
 
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
 
         Assert.Empty(unread);
     }
@@ -25,7 +25,7 @@ public sealed class FakeEmailReceiverTests
     {
         var receiver = CreateReceiverWithFixtures();
 
-        var first = await receiver.FetchUnreadAsync();
+        var first = await receiver.FetchUnreadAsync().ToListAsync();
         Assert.Equal(2, first.Count);
         Assert.All(first, message => Assert.NotNull(message.ReceiptHandle));
         Assert.All(first, message => Assert.Equal(EmailReceiptKind.Fake, message.ReceiptHandle.Kind));
@@ -33,7 +33,7 @@ public sealed class FakeEmailReceiverTests
         Assert.All(first, message => Assert.False(string.IsNullOrWhiteSpace(message.Subject)));
 
         await receiver.MarkAsProcessedAsync(first[0].ReceiptHandle);
-        var second = await receiver.FetchUnreadAsync();
+        var second = await receiver.FetchUnreadAsync().ToListAsync();
         Assert.Single(second);
         Assert.DoesNotContain(
             second,
@@ -45,7 +45,7 @@ public sealed class FakeEmailReceiverTests
     {
         var receiver = CreateReceiverWithFixtures();
 
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
         var first = Assert.Single(unread, m => m.MessageId == "<fixture-001@example.test>");
         var attachment = Assert.Single(first.Attachments);
 
@@ -63,13 +63,13 @@ public sealed class FakeEmailReceiverTests
     {
         var receiver = CreateReceiverWithFixtures();
 
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
         var first = unread[0];
         var nullMessageIdReceipt = first.ReceiptHandle;
 
         await receiver.MarkAsProcessedAsync(nullMessageIdReceipt);
 
-        var remaining = await receiver.FetchUnreadAsync();
+        var remaining = await receiver.FetchUnreadAsync().ToListAsync();
         Assert.DoesNotContain(
             remaining,
             message => message.ReceiptHandle.Value == nullMessageIdReceipt.Value);

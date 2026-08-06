@@ -59,7 +59,7 @@ public sealed class ImapEmailReceiverIntegrationTests
 
         await receiver.MarkAsProcessedAsync(match.ReceiptHandle);
 
-        var afterMark = await receiver.FetchUnreadAsync();
+        var afterMark = await receiver.FetchUnreadAsync().ToListAsync();
         Assert.DoesNotContain(
             afterMark,
             m => m.ReceiptHandle.Value == match.ReceiptHandle.Value);
@@ -86,7 +86,7 @@ public sealed class ImapEmailReceiverIntegrationTests
         const int maxAttempts = 20;
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            var unread = await receiver.FetchUnreadAsync();
+            var unread = await receiver.FetchUnreadAsync().ToListAsync();
             if (unread.Any(m => m.Subject == subject))
             {
                 return unread;

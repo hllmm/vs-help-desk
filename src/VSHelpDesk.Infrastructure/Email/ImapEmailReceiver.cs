@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
@@ -22,28 +23,16 @@ public sealed class ImapEmailReceiver(
     private const int CopyBufferSize = 8192;
     private readonly IMailboxQuotaSettings quota = quotaSettings ?? quotaOptions?.Value ?? new MailboxQuotaOptions();
 
-    public async Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
-        CancellationToken cancellationToken = default)
+    public async IAsyncEnumerable<IncomingEmail> FetchUnreadAsync(
+        [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var options = emailOptions.Value;
-        var accountId = options.ImapAccountId.Trim();
-        var folder = options.ImapFolder.Trim();
-
-        var items = await mailboxClient
-            .FetchUnreadAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var mapped = new List<IncomingEmail>(items.Count);
-        foreach (var item in items)
+        var opts = emailOptions.Value;
+        var acct = opts.ImapAccountId.Trim();
+        var folder = opts.ImapFolder.Trim();
+        await foreach (var item in mailboxClient.FetchUnreadAsync().WithCancellation(ct))
         {
-            mapped.Add(MapMessage(item, accountId, folder));
+            yield return MapMessage(item, acct, folder);
         }
-
-        logger.LogInformation(
-            "IMAP receiver fetched unread count={Count} mode=Imap",
-            mapped.Count);
-
-        return mapped;
     }
 
     public async Task MarkAsProcessedAsync(
@@ -101,7 +90,8 @@ public sealed class ImapEmailReceiver(
                 AuthenticationVerdict: null,
                 RawSize: metaRawSize,
                 TotalAttachmentCount: 0,
-                IsOversized: metaIsOversized);
+                IsOversized: metaIsOversized,
+                Disposition: item.Disposition);
         }
 
         var message = item.Message!;
@@ -146,7 +136,7 @@ public sealed class ImapEmailReceiver(
             AuthServId: string.IsNullOrWhiteSpace(trustedId) ? null : trustedId,
             RawHeader: rawAuthHeader);
 
-        // Task 4: for Ready use RawSize from FETCH, do not re-serialize via MemoryStream; no fake MimeMessage.
+        // Task 4/7: for Ready use RawSize from FETCH, do not re-serialize via MemoryStream; no fake MimeMessage.
         long? rawSize = item.RawSize;
         bool isOversized = false;
 
@@ -154,16 +144,6 @@ public sealed class ImapEmailReceiver(
         // Identity requires <left@right>; canonicalize at this boundary only.
         // For metadata-only oversized items, MessageId must be null so InboundEmailIdentityFactory falls back to receipt handle (mailbox/account/UIDVALIDITY/UID).
         var messageId = isOversized ? null : CanonicalizeMimeKitMessageId(message.MessageId);
-        if (!isOversized && rawSize == null)
-        {
-            try
-            {
-                using var ms = new System.IO.MemoryStream();
-                message.WriteTo(ms);
-                rawSize = ms.Length;
-            }
-            catch { rawSize = null; }
-        }
         // Blocker 4: bounded attachment count up to max+1, no List(totalCount) allocation
         int totalAttachmentCount = 0;
         bool countExceeded = false;
@@ -214,7 +194,8 @@ public sealed class ImapEmailReceiver(
             AuthenticationVerdict: verdict,
             RawSize: rawSize,
             TotalAttachmentCount: totalAttachmentCount,
-            IsOversized: isOversized);
+            IsOversized: isOversized,
+            Disposition: ImapItemDisposition.Ready);
     }
 
     /// <summary>

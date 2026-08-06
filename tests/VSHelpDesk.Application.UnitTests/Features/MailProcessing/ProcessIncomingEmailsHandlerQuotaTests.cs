@@ -111,17 +111,21 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
         var mail2 = MailWithAttachments("fake\\m2", twentyMb);
         var mail3 = MailWithAttachments("fake\\m3", twentyMb);
 
-        var receiver = new FakeReceiver([mail1, mail2, mail3]);
+        var events = new List<string>();
+        var receiver = new OrderedFakeReceiver([mail1, mail2, mail3], events);
         var factory = new ScriptedFactory([
             new InboundEmailItemResult(InboundEmailItemOutcome.CreatedTicket, "<id1>", "VS-000001", false, false, false, null),
             new InboundEmailItemResult(InboundEmailItemOutcome.CreatedTicket, "<id2>", "VS-000002", false, false, false, null)
         ]);
 
-        var orderedRepo = new OrderedRepo();
-        var handler = CreateHandler(receiver, factory, orderedRepo, new NoopUnitOfWork(), new NoopClassifier());
+        var repo = new OrderedRepo(events);
+        var uow = new OrderedUow(events);
+        var handler = CreateHandler(receiver, factory, repo, uow, new NoopClassifier());
         await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
 
-        Assert.True(orderedRepo.AddCalledBeforeMark);
+        // One shared recorder — exact order: AddQuarantine -> SaveChanges -> MarkProcessed (quarantine tail, after prior successful marks)
+        Assert.Equal(new[] { "AddQuarantine", "SaveChanges", "MarkProcessed" }, events.TakeLast(3).ToArray());
+        Assert.Equal(5, events.Count); // 2 prior MarkProcessed + quarantine triad
     }
 
     private sealed class FailingRepo : IProcessedEmailRepository
@@ -135,16 +139,38 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
 
     private sealed class OrderedRepo : IProcessedEmailRepository
     {
-        public bool AddCalled { get; private set; }
-        public bool MarkCalledBeforeAdd { get; private set; }
-        public bool AddCalledBeforeMark => AddCalled && !MarkCalledBeforeAdd;
-        private readonly List<string> order = new();
+        private readonly List<string> events;
+        public OrderedRepo(List<string> events) => this.events = events;
         public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string key, CancellationToken ct) => Task.FromResult<ProcessedEmailMessage?>(null);
-        public Task AddAsync(ProcessedEmailMessage msg, CancellationToken ct) { AddCalled = true; order.Add("Add"); return Task.CompletedTask; }
+        public Task AddAsync(ProcessedEmailMessage msg, CancellationToken ct) { events.Add("AddQuarantine"); return Task.CompletedTask; }
         public Task<ProcessedEmailMessage?> GetByIdAsync(Guid id, CancellationToken ct) => Task.FromResult<ProcessedEmailMessage?>(null);
         public Task<IReadOnlyList<ProcessedEmailMessage>> GetDueAcknowledgementsAsync(int take, DateTime now, CancellationToken ct) => Task.FromResult<IReadOnlyList<ProcessedEmailMessage>>(Array.Empty<ProcessedEmailMessage>());
         public IQueryable<ProcessedEmailMessage> GetListQueryable() => Enumerable.Empty<ProcessedEmailMessage>().AsQueryable();
-        public void RecordMark() { if (!AddCalled) MarkCalledBeforeAdd = true; order.Add("Mark"); }
+    }
+
+    private sealed class OrderedUow : IUnitOfWork
+    {
+        private readonly List<string> events;
+        public OrderedUow(List<string> events) => this.events = events;
+        public Task<int> SaveChangesAsync(CancellationToken ct) { events.Add("SaveChanges"); return Task.FromResult(1); }
+        public void ClearTrackedChanges() { }
+    }
+
+    private sealed class OrderedFakeReceiver : IEmailReceiver
+    {
+        private readonly IReadOnlyList<IncomingEmail> messages;
+        private readonly List<string> events;
+        public List<EmailReceiptHandle> Marked { get; } = [];
+        public OrderedFakeReceiver(IReadOnlyList<IncomingEmail> messages, List<string> events)
+        {
+            this.messages = messages;
+            this.events = events;
+        }
+        public async IAsyncEnumerable<IncomingEmail> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            foreach(var m in messages){ yield return m; await Task.Yield(); }
+        }
+        public Task MarkAsProcessedAsync(EmailReceiptHandle h, CancellationToken ct) { events.Add("MarkProcessed"); Marked.Add(h); return Task.CompletedTask; }
     }
 
     private static IncomingEmail MailWithAttachments(string receiptValue, long fileSize)
@@ -238,8 +264,10 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
     private sealed class FakeReceiver(IReadOnlyList<IncomingEmail> messages) : IEmailReceiver
     {
         public List<EmailReceiptHandle> Marked { get; } = [];
-        public Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(messages);
+        public async IAsyncEnumerable<IncomingEmail> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            foreach(var m in messages){ yield return m; await Task.Yield(); }
+        }
         public Task MarkAsProcessedAsync(EmailReceiptHandle receiptHandle, CancellationToken cancellationToken)
         {
             Marked.Add(receiptHandle);

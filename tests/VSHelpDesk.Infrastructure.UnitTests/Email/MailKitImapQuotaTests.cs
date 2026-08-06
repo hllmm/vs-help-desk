@@ -35,9 +35,8 @@ public sealed class MailKitImapQuotaTests
     }
 
     [Fact]
-    public async Task ImapEmailReceiver_truncates_attachments_to_MaxAttachmentsPerMessage()
+    public async Task ImapEmailReceiver_over_limit_messages_must_have_empty_Attachments()
     {
-        // I2 fix: receiver no longer truncates; it returns full count so Normalizer can quarantine >10.
         var mime = BuildMessageWithManyAttachments(15);
         var client = new FakeImapMailboxClient
         {
@@ -45,22 +44,13 @@ public sealed class MailKitImapQuotaTests
         };
 
         var receiver = CreateReceiver(client, maxFileSizeBytes: 10 * 1024 * 1024, maxAttachmentsPerMessage: 10);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
         var item = Assert.Single(unread);
 
-        Assert.Equal(15, item.Attachments.Count);
-        // Normalizer must quarantine when >10
-        var incoming = new IncomingEmail(
-            MessageId: item.MessageId,
-            ReceiptHandle: item.ReceiptHandle,
-            FromAddress: item.FromAddress!,
-            FromDisplayName: item.FromDisplayName,
-            Subject: item.Subject!,
-            Body: item.Body!,
-            IsHtml: false,
-            ReceivedAt: item.ReceivedAt,
-            Attachments: item.Attachments);
-        var result = InboundEmailNormalizer.Normalize(incoming);
+        Assert.Empty(item.Attachments);
+        Assert.True(item.TotalAttachmentCount > 10, $"TotalAttachmentCount={item.TotalAttachmentCount} should be >10");
+        // Normalize the actual returned IncomingEmail (with TotalAttachmentCount) — do not reconstruct
+        var result = InboundEmailNormalizer.Normalize(item);
         Assert.Equal(InboundEmailPolicyOutcome.Quarantine, result.Outcome);
     }
 
@@ -79,7 +69,7 @@ public sealed class MailKitImapQuotaTests
         };
 
         var receiver = CreateReceiver(client);
-        var unread = await receiver.FetchUnreadAsync();
+        var unread = await receiver.FetchUnreadAsync().ToListAsync();
         var item = Assert.Single(unread);
 
         // Body should be bounded by InboundMailLimits.MaxBodyLength after conversion + normalization
@@ -205,8 +195,7 @@ public sealed class MailKitImapQuotaTests
         public List<ImapMailboxItem> Items { get; init; } = [];
         public List<(uint ExpectedUidValidity, uint Uid)> Marked { get; } = [];
 
-        public Task<IReadOnlyList<ImapMailboxItem>> FetchUnreadAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<ImapMailboxItem>>(Items);
+        public async IAsyncEnumerable<ImapMailboxItem> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken) { foreach(var i in Items){ yield return i; await Task.Yield(); } }
 
         public Task MarkSeenAsync(uint expectedUidValidity, uint uid, CancellationToken cancellationToken)
         {
