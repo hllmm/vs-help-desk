@@ -99,6 +99,32 @@ jobs:
           kubectl kustomize deploy/k8s/base >/dev/null
           kubectl kustomize deploy/k8s/overlays/prod >/dev/null
 
+  image-scan:
+    name: Image scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build API image
+        run: docker build -t vshelpdesk:api -f Dockerfile .
+      - name: Build frontend image
+        run: docker build -t vshelpdesk:frontend -f frontend/Dockerfile ./frontend
+      - name: Run Trivy vulnerability scanner (API)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: vshelpdesk:api
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          format: table
+      - name: Run Trivy vulnerability scanner (Frontend)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: vshelpdesk:frontend
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+          format: table
+
   query-contract:
     name: Backend query contract (PostgreSQL 16)
     runs-on: ubuntu-latest
