@@ -25,6 +25,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<SystemLog> SystemLogs => Set<SystemLog>();
 
+    public DbSet<UserAuditEvent> UserAuditEvents => Set<UserAuditEvent>();
+
     IQueryable<User> IApplicationDbContext.Users => Users;
 
     IQueryable<Ticket> IApplicationDbContext.Tickets => Tickets;
@@ -44,6 +46,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     IQueryable<SystemLog> IApplicationDbContext.SystemLogs =>
         SystemLogs;
+
+    IQueryable<UserAuditEvent> IApplicationDbContext.UserAuditEvents => UserAuditEvents;
 
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Add(entity);
 

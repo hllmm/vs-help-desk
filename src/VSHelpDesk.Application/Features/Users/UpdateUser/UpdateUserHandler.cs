@@ -1,4 +1,5 @@
 using System.Transactions;
+using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
@@ -11,7 +12,9 @@ namespace VSHelpDesk.Application.Features.Users.UpdateUser;
 public sealed class UpdateUserHandler(
     IUserRepository userRepository,
     IUnitOfWork unitOfWork,
-    IApplicationDbContext? dbContext = null)
+    IApplicationDbContext? dbContext = null,
+    ICurrentUserService? currentUserService = null,
+    TimeProvider? timeProvider = null)
 {
     private static readonly SemaphoreSlim AdminUpdateLock = new(1, 1);
     public async Task<UserListItemDto> HandleAsync(
@@ -48,6 +51,9 @@ public sealed class UpdateUserHandler(
                 role,
                 command.IsActive);
 
+            var beforeRole = user.Role.ToString();
+            var beforeIsActive = user.IsActive;
+
             user.UpdateProfile(fullName, email);
             user.AssignRole(role);
             if (command.IsActive)
@@ -59,7 +65,45 @@ public sealed class UpdateUserHandler(
                 user.Deactivate();
             }
 
+            var afterRole = user.Role.ToString();
+            var afterIsActive = user.IsActive;
+
             userRepository.Update(user);
+
+            if (dbContext is not null
+                && currentUserService?.UserId is Guid actorId2
+                && actorId2 != Guid.Empty)
+            {
+                var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+                if (!string.Equals(beforeRole, afterRole, StringComparison.Ordinal))
+                {
+                    dbContext.Add(new UserAuditEvent(
+                        actorId2,
+                        user.Id,
+                        "RoleChanged",
+                        beforeRole,
+                        afterRole,
+                        null,
+                        null,
+                        now,
+                        null));
+                }
+
+                if (beforeIsActive != afterIsActive)
+                {
+                    dbContext.Add(new UserAuditEvent(
+                        actorId2,
+                        user.Id,
+                        "ActiveChanged",
+                        null,
+                        null,
+                        beforeIsActive,
+                        afterIsActive,
+                        now,
+                        null));
+                }
+            }
+
             await unitOfWork.SaveChangesAsync(cancellationToken);
             scope.Complete();
 

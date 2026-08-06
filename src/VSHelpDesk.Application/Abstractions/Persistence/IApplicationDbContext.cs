@@ -20,6 +20,8 @@ public interface IApplicationDbContext
 
     IQueryable<SystemLog> SystemLogs { get; }
 
+    IQueryable<UserAuditEvent> UserAuditEvents => Enumerable.Empty<UserAuditEvent>().AsQueryable();
+
     void Add<TEntity>(TEntity entity) where TEntity : class;
 
     void Remove<TEntity>(TEntity entity) where TEntity : class { }

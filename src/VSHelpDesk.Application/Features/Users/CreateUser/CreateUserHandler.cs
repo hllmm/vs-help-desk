@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using VSHelpDesk.Application.Abstractions.Authentication;
+using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Features.Users.GetUsers;
 using VSHelpDesk.Domain.Entities;
@@ -11,7 +12,10 @@ namespace VSHelpDesk.Application.Features.Users.CreateUser;
 public sealed class CreateUserHandler(
     IUserRepository userRepository,
     IUnitOfWork unitOfWork,
-    IPasswordHasher passwordHasher)
+    IPasswordHasher passwordHasher,
+    ICurrentUserService? currentUserService = null,
+    TimeProvider? timeProvider = null,
+    IApplicationDbContext? dbContext = null)
 {
     public const int MinPasswordLength = 12;
     public const int MaxPasswordLength = 128;
@@ -45,6 +49,26 @@ public sealed class CreateUserHandler(
             role);
 
         await userRepository.AddAsync(user, cancellationToken);
+
+        // Durable audit — append-only, never stores password/hash.
+        if (dbContext is not null
+            && currentUserService?.UserId is Guid actorId
+            && actorId != Guid.Empty)
+        {
+            var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+            var audit = new UserAuditEvent(
+                actorId,
+                user.Id,
+                "Created",
+                null,
+                user.Role.ToString(),
+                null,
+                null,
+                now,
+                null);
+            dbContext.Add(audit);
+        }
+
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return ToDto(user);
