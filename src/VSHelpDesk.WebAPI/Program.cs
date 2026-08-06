@@ -171,6 +171,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 var app = builder.Build();
 
 app.UseForwardedHeaders();
+app.UseMiddleware<SecurityHeadersMiddleware>();
 
 var supportedCultures = new[] { new CultureInfo("tr-TR"), new CultureInfo("en-US") };
 app.UseRequestLocalization(new RequestLocalizationOptions
