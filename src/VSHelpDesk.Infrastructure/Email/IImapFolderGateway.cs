@@ -12,5 +12,7 @@ public interface IImapFolderGateway
 
     Task<(byte[] Bytes, long BytesRead)> FetchRawBoundedAsync(uint uid, long limit, CancellationToken ct);
 
+    Task MarkSeenAsync(uint uid, CancellationToken ct);
+
     uint UidValidity { get; }
 }

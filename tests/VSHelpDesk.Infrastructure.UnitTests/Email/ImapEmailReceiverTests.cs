@@ -262,6 +262,19 @@ public sealed class ImapEmailReceiverTests
             NullLogger<ImapEmailReceiver>.Instance);
     }
 
+    [Fact]
+    public async Task Receiver_ReadyWithNullMessage_ThrowsArgumentException()
+    {
+        var client = new FakeImapMailboxClient
+        {
+            Items = [new ImapMailboxItem(UidValidity: 1u, Uid: 1u, Message: null, RawSize: null, Disposition: ImapItemDisposition.Ready)]
+        };
+
+        var receiver = CreateReceiver(client);
+
+        await Assert.ThrowsAsync<ArgumentException>(async () => await receiver.FetchUnreadAsync().ToListAsync());
+    }
+
     private sealed class FakeImapMailboxClient : IImapMailboxClient
     {
         public List<ImapMailboxItem> Items { get; init; } = [];

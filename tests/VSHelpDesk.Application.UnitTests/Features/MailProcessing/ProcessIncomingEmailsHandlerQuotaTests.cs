@@ -33,7 +33,7 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
         // Only first 2 should be processed, third quarantined by disposition
         Assert.Equal(2, factory.ProcessCallCount);
         Assert.Equal(1, result.Value!.Quarantined);
-        Assert.Contains(result.Value.Failures, f => f.Code == "AggregateBudgetExceeded");
+        Assert.Contains(result.Value.Failures, f => f.Code == "aggregate-budget-exceeded");
         // Third mail still marked as processed (quota-quarantined)
         Assert.Contains(receiver.Marked, h => h.Value == "fake\\m3");
     }
@@ -74,7 +74,7 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
         Assert.True(result.IsSuccess);
         Assert.Equal(0, factory.ProcessCallCount);
         Assert.Equal(1, result.Value!.Quarantined);
-        Assert.Contains(result.Value.Failures, f => f.Code == "RawMessageTooLarge");
+        Assert.Contains(result.Value.Failures, f => f.Code == "raw-message-too-large");
     }
 
     [Fact]
@@ -216,16 +216,7 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
             repo,
             uow,
             TimeProvider.System,
-            classifier,
-            new TestQuota());
-    }
-
-    private sealed class TestQuota : IMailboxQuotaSettings
-    {
-        public int MaxMessagesPerRun => 100;
-        public int MaxAttachmentsPerMessage => 10;
-        public long MaxAggregateBytesPerRun => 50L * 1024 * 1024;
-        public long MaxRawMessageBytes => 5L * 1024 * 1024;
+            classifier);
     }
 
     private sealed class InMemoryProcessedEmailRepo : IProcessedEmailRepository

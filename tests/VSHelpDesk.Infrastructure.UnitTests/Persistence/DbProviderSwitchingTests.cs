@@ -17,7 +17,6 @@ public sealed class DbProviderSwitchingTests
     [Theory]
     [InlineData("InMemory", typeof(FallbackDatabaseErrorClassifier), typeof(InProcessProcessIncomingEmailsGate))]
     [InlineData("Sqlite", typeof(FallbackDatabaseErrorClassifier), typeof(InProcessProcessIncomingEmailsGate))]
-    [InlineData("SqlServer", typeof(SqlServerDatabaseErrorClassifier), typeof(SqlServerProcessIncomingEmailsGate))]
     [InlineData("Postgres", typeof(PostgresDatabaseErrorClassifier), typeof(PostgresProcessIncomingEmailsGate))]
     public void AddInfrastructure_RegistersCorrectProviderComponents(
         string providerName,
@@ -28,9 +27,7 @@ public sealed class DbProviderSwitchingTests
             ? "Data Source=test.db"
             : providerName == "Postgres"
                 ? "Host=localhost;Database=test;Username=postgres;Password=postgres"
-                : providerName == "SqlServer"
-                    ? "Server=localhost;Database=test;User Id=sa;Password=YourPassword123!;"
-                    : "InMemoryDb";
+                : "InMemoryDb";
 
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -66,8 +63,6 @@ public sealed class DbProviderSwitchingTests
 
     [Theory]
     [InlineData("Host=localhost;Database=test;Username=postgres", "Npgsql.EntityFrameworkCore.PostgreSQL")]
-    [InlineData("Server=localhost;Database=test;User Id=sa;Password=Password123!", "Microsoft.EntityFrameworkCore.SqlServer")]
-    [InlineData("Data Source=localhost;Initial Catalog=test;Integrated Security=true;TrustServerCertificate=true", "Microsoft.EntityFrameworkCore.SqlServer")]
     [InlineData("Data Source=test.db", "Microsoft.EntityFrameworkCore.Sqlite")]
     public void AddInfrastructure_InfersProviderFromConnectionString(
         string connectionString,

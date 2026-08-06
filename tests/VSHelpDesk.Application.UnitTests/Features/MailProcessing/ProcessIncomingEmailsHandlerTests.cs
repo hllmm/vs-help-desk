@@ -331,8 +331,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
             new InMemoryRepo(),
             new NoopUow(),
             TimeProvider.System,
-            new NoopClassifier(),
-            new TestQuota());
+            new NoopClassifier());
 
         var exception = await Assert.ThrowsAsync<JobAlreadyRunningException>(() =>
             handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None));
@@ -378,16 +377,7 @@ public sealed class ProcessIncomingEmailsHandlerTests
             repo ?? new InMemoryRepo(),
             uow ?? new NoopUow(),
             TimeProvider.System,
-            classifier ?? new NoopClassifier(),
-            new TestQuota());
-
-    private sealed class TestQuota : IMailboxQuotaSettings
-    {
-        public int MaxMessagesPerRun => 100;
-        public int MaxAttachmentsPerMessage => 10;
-        public long MaxAggregateBytesPerRun => 50L * 1024 * 1024;
-        public long MaxRawMessageBytes => 5L * 1024 * 1024;
-    }
+            classifier ?? new NoopClassifier());
 
     private sealed class InMemoryRepo : IProcessedEmailRepository
     {

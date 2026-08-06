@@ -70,7 +70,6 @@ public static class DependencyInjection
                 migrationsAssembly));
 
         var isPostgres = provider == DatabaseProviderKind.Postgres;
-        var isSqlServer = provider == DatabaseProviderKind.SqlServer;
         services.AddScoped<IApplicationDbContext>(
             serviceProvider => serviceProvider.GetRequiredService<ApplicationDbContext>());
         services.AddScoped<ITicketRepository, EfTicketRepository>();
@@ -110,21 +109,6 @@ public static class DependencyInjection
                     connectionString,
                     serviceProvider.GetRequiredService<
                         ILogger<PostgresResolveInactiveTicketsGate>>()));
-        }
-        else if (isSqlServer)
-        {
-            services.AddScoped<ISequenceValueAllocator, SqlServerSequenceAllocator>();
-            services.AddSingleton<IDatabaseErrorClassifier, SqlServerDatabaseErrorClassifier>();
-            services.AddSingleton<IProcessIncomingEmailsGate>(serviceProvider =>
-                new SqlServerProcessIncomingEmailsGate(
-                    connectionString,
-                    serviceProvider.GetRequiredService<
-                        ILogger<SqlServerProcessIncomingEmailsGate>>()));
-            services.AddSingleton<IResolveInactiveTicketsGate>(serviceProvider =>
-                new SqlServerResolveInactiveTicketsGate(
-                    connectionString,
-                    serviceProvider.GetRequiredService<
-                        ILogger<SqlServerResolveInactiveTicketsGate>>()));
         }
         else
         {
