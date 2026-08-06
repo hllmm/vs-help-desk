@@ -1,4 +1,6 @@
 using System.Transactions;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
@@ -12,9 +14,11 @@ namespace VSHelpDesk.Application.Features.Users.UpdateUser;
 public sealed class UpdateUserHandler(
     IUserRepository userRepository,
     IUnitOfWork unitOfWork,
-    IApplicationDbContext? dbContext = null,
-    ICurrentUserService? currentUserService = null,
-    TimeProvider? timeProvider = null)
+    IApplicationDbContext dbContext,
+    ICurrentUserService currentUserService,
+    TimeProvider? timeProvider = null,
+    ILogger<UpdateUserHandler>? logger = null,
+    IHttpContextAccessor? httpContextAccessor = null)
 {
     private static readonly SemaphoreSlim AdminUpdateLock = new(1, 1);
     public async Task<UserListItemDto> HandleAsync(
@@ -35,12 +39,9 @@ public sealed class UpdateUserHandler(
                 new TransactionOptions { IsolationLevel = IsolationLevel.Serializable },
                 TransactionScopeAsyncFlowOption.Enabled);
 
-            if (dbContext is not null)
-            {
-                await dbContext.ExecuteSqlRawAsync(
-                    "SELECT pg_advisory_xact_lock(6220394968519887181);",
-                    cancellationToken);
-            }
+            await dbContext.ExecuteSqlRawAsync(
+                "SELECT pg_advisory_xact_lock(6220394968519887181);",
+                cancellationToken);
 
             var user = await userRepository.GetByIdAsync(command.Id, cancellationToken)
                 ?? throw new NotFoundException(nameof(User), command.Id);
@@ -70,11 +71,10 @@ public sealed class UpdateUserHandler(
 
             userRepository.Update(user);
 
-            if (dbContext is not null
-                && currentUserService?.UserId is Guid actorId2
-                && actorId2 != Guid.Empty)
+            if (currentUserService.UserId is Guid actorId2 && actorId2 != Guid.Empty)
             {
                 var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+                var correlationId = httpContextAccessor?.HttpContext?.TraceIdentifier;
                 if (!string.Equals(beforeRole, afterRole, StringComparison.Ordinal))
                 {
                     dbContext.Add(new UserAuditEvent(
@@ -86,7 +86,7 @@ public sealed class UpdateUserHandler(
                         null,
                         null,
                         now,
-                        null));
+                        correlationId));
                 }
 
                 if (beforeIsActive != afterIsActive)
@@ -100,7 +100,23 @@ public sealed class UpdateUserHandler(
                         beforeIsActive,
                         afterIsActive,
                         now,
-                        null));
+                        correlationId));
+                }
+
+                if (string.Equals(beforeRole, afterRole, StringComparison.Ordinal) && beforeIsActive == afterIsActive)
+                {
+                    // No auditable change but actor context was present — no warning.
+                }
+            }
+            else
+            {
+                // Only warn if there was an actual change that would have been audited.
+                if (!string.Equals(beforeRole, afterRole, StringComparison.Ordinal) || beforeIsActive != afterIsActive)
+                {
+                    logger?.LogWarning(
+                        "User audit skipped: missing actor context for {EventType} target {TargetId}",
+                        "UpdateUser",
+                        user.Id);
                 }
             }
 

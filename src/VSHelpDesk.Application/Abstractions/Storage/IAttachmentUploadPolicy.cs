@@ -25,4 +25,11 @@ public interface IAttachmentUploadPolicy
 
     bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, ReadOnlySpan<byte> header) =>
         IsDeclaredTypeConsistentWithContent(declaredContentType, header);
+
+    /// <summary>
+    /// Stream-aware overload that allows full ZIP central-directory scan for macro detection.
+    /// Default falls back to header-only check for backward compatibility.
+    /// </summary>
+    bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, Stream content, ReadOnlySpan<byte> header) =>
+        IsDeclaredTypeConsistentWithContent(fileName, declaredContentType, header);
 }

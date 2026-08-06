@@ -56,7 +56,9 @@ public sealed class UsersAuditTests : IClassFixture<CustomWebApplicationFactory>
                 Assert.Null(created.BeforeIsActive);
                 Assert.Null(created.AfterIsActive);
                 Assert.True((DateTime.UtcNow - created.CreatedAt).TotalMinutes < 5);
-                Assert.Null(created.CorrelationId);
+                // I5 fix: CorrelationId is now wired via IHttpContextAccessor.TraceIdentifier — must be populated.
+                Assert.NotNull(created.CorrelationId);
+                Assert.False(string.IsNullOrWhiteSpace(created.CorrelationId));
                 // never stores password or hash
                 Assert.DoesNotContain("CreatePassword12!", created.ToString() ?? string.Empty);
             }

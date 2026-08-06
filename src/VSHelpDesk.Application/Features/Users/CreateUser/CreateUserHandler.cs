@@ -1,4 +1,6 @@
 using System.Net.Mail;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
@@ -13,9 +15,11 @@ public sealed class CreateUserHandler(
     IUserRepository userRepository,
     IUnitOfWork unitOfWork,
     IPasswordHasher passwordHasher,
-    ICurrentUserService? currentUserService = null,
+    IApplicationDbContext dbContext,
+    ICurrentUserService currentUserService,
     TimeProvider? timeProvider = null,
-    IApplicationDbContext? dbContext = null)
+    ILogger<CreateUserHandler>? logger = null,
+    IHttpContextAccessor? httpContextAccessor = null)
 {
     public const int MinPasswordLength = 12;
     public const int MaxPasswordLength = 128;
@@ -51,11 +55,10 @@ public sealed class CreateUserHandler(
         await userRepository.AddAsync(user, cancellationToken);
 
         // Durable audit — append-only, never stores password/hash.
-        if (dbContext is not null
-            && currentUserService?.UserId is Guid actorId
-            && actorId != Guid.Empty)
+        if (currentUserService.UserId is Guid actorId && actorId != Guid.Empty)
         {
             var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+            var correlationId = httpContextAccessor?.HttpContext?.TraceIdentifier;
             var audit = new UserAuditEvent(
                 actorId,
                 user.Id,
@@ -65,8 +68,15 @@ public sealed class CreateUserHandler(
                 null,
                 null,
                 now,
-                null);
+                correlationId);
             dbContext.Add(audit);
+        }
+        else
+        {
+            logger?.LogWarning(
+                "User audit skipped: missing actor context for {EventType} target {TargetId}",
+                "Created",
+                user.Id);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

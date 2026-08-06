@@ -57,7 +57,7 @@ jobs:
       - name: Build
         run: dotnet build VSHelpDesk.slnx --no-restore -c Release
       - name: Check vulnerable packages
-        run: dotnet list VSHelpDesk.slnx package --vulnerable --include-transitive
+        run: dotnet list VSHelpDesk.slnx package --vulnerable --include-transitive | tee /tmp/vuln.txt && ! grep -qi "has the following vulnerable" /tmp/vuln.txt
       - name: Apply database migrations
         run: >-
           dotnet ef database update

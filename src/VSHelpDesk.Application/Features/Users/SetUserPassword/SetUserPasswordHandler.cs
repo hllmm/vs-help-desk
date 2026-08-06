@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
@@ -11,9 +13,11 @@ public sealed class SetUserPasswordHandler(
     IUserRepository userRepository,
     IUnitOfWork unitOfWork,
     IPasswordHasher passwordHasher,
-    ICurrentUserService? currentUserService = null,
+    IApplicationDbContext dbContext,
+    ICurrentUserService currentUserService,
     TimeProvider? timeProvider = null,
-    IApplicationDbContext? dbContext = null)
+    ILogger<SetUserPasswordHandler>? logger = null,
+    IHttpContextAccessor? httpContextAccessor = null)
 {
     public async Task HandleAsync(
         SetUserPasswordCommand command,
@@ -29,11 +33,10 @@ public sealed class SetUserPasswordHandler(
         user.ReplacePasswordHash(passwordHasher.Hash(password));
         userRepository.Update(user);
 
-        if (dbContext is not null
-            && currentUserService?.UserId is Guid actorId
-            && actorId != Guid.Empty)
+        if (currentUserService.UserId is Guid actorId && actorId != Guid.Empty)
         {
             var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
+            var correlationId = httpContextAccessor?.HttpContext?.TraceIdentifier;
             dbContext.Add(new UserAuditEvent(
                 actorId,
                 user.Id,
@@ -43,7 +46,14 @@ public sealed class SetUserPasswordHandler(
                 null,
                 null,
                 now,
-                null));
+                correlationId));
+        }
+        else
+        {
+            logger?.LogWarning(
+                "User audit skipped: missing actor context for {EventType} target {TargetId}",
+                "PasswordReset",
+                user.Id);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

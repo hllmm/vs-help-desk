@@ -80,6 +80,18 @@ public sealed class MailKitImapMailboxClient(
                     uid.Id,
                     size.Value,
                     quota.MaxRawMessageBytes);
+                try
+                {
+                    await openFolder.AddFlagsAsync(uid, MessageFlags.Seen, true, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "IMAP failed to mark oversized message seen uid={Uid}",
+                        uid.Id);
+                }
+
                 continue;
             }
 
@@ -96,6 +108,18 @@ public sealed class MailKitImapMailboxClient(
                     uid.Id,
                     rawSize,
                     quota.MaxRawMessageBytes);
+                try
+                {
+                    await openFolder.AddFlagsAsync(uid, MessageFlags.Seen, true, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "IMAP failed to mark oversized-after-fetch message seen uid={Uid}",
+                        uid.Id);
+                }
+
                 continue;
             }
 

@@ -37,6 +37,7 @@ public sealed class MailKitImapQuotaTests
     [Fact]
     public async Task ImapEmailReceiver_truncates_attachments_to_MaxAttachmentsPerMessage()
     {
+        // I2 fix: receiver no longer truncates; it returns full count so Normalizer can quarantine >10.
         var mime = BuildMessageWithManyAttachments(15);
         var client = new FakeImapMailboxClient
         {
@@ -47,7 +48,20 @@ public sealed class MailKitImapQuotaTests
         var unread = await receiver.FetchUnreadAsync();
         var item = Assert.Single(unread);
 
-        Assert.Equal(10, item.Attachments.Count);
+        Assert.Equal(15, item.Attachments.Count);
+        // Normalizer must quarantine when >10
+        var incoming = new IncomingEmail(
+            MessageId: item.MessageId,
+            ReceiptHandle: item.ReceiptHandle,
+            FromAddress: item.FromAddress!,
+            FromDisplayName: item.FromDisplayName,
+            Subject: item.Subject!,
+            Body: item.Body!,
+            IsHtml: false,
+            ReceivedAt: item.ReceivedAt,
+            Attachments: item.Attachments);
+        var result = InboundEmailNormalizer.Normalize(incoming);
+        Assert.Equal(InboundEmailPolicyOutcome.Quarantine, result.Outcome);
     }
 
     [Fact]

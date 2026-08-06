@@ -139,8 +139,10 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(EmailOptions.SectionName))
             .ValidateOnStart();
 
+        services.AddSingleton<IValidateOptions<MailboxQuotaOptions>, MailboxQuotaOptionsValidator>();
         services.AddOptions<MailboxQuotaOptions>()
-            .Bind(configuration.GetSection(MailboxQuotaOptions.SectionName));
+            .Bind(configuration.GetSection(MailboxQuotaOptions.SectionName))
+            .ValidateOnStart();
 
         services.AddSingleton<IValidateOptions<EmailBrandingOptions>, EmailBrandingOptionsValidator>();
         services.AddOptions<EmailBrandingOptions>()

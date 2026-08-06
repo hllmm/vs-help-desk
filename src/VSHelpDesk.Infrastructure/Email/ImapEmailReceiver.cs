@@ -206,25 +206,11 @@ public sealed class ImapEmailReceiver(
         var maxAttachmentsPerMessage = quota.MaxAttachmentsPerMessage > 0
             ? quota.MaxAttachmentsPerMessage
             : InboundMailLimits.MaxAttachmentsPerMessage;
-        var attachments = new List<IncomingEmailAttachment>(Math.Min(8, maxAttachmentsPerMessage));
-
-        var truncatedAttachments = false;
+        // Do not truncate: collect all attachments so InboundEmailNormalizer can quarantine >MaxAttachmentsPerMessage (I2).
+        // Capacity grows as needed; excessive counts are bounded downstream by normalizer assurance.
+        var attachments = new List<IncomingEmailAttachment>();
         foreach (var attachment in message.Attachments)
         {
-            if (attachments.Count >= maxAttachmentsPerMessage)
-            {
-                if (!truncatedAttachments)
-                {
-                    truncatedAttachments = true;
-                    logger.LogWarning(
-                        "IMAP attachments truncated per-message count={Count} maxAttachmentsPerMessage={Max} quarantined=quota-exceeded",
-                        attachments.Count,
-                        maxAttachmentsPerMessage);
-                }
-
-                continue;
-            }
-
             if (attachment is not MimePart part)
             {
                 continue;
@@ -323,6 +309,14 @@ public sealed class ImapEmailReceiver(
                     "IMAP attachment content load failed; omitting fileName={FileName}",
                     fileName);
             }
+        }
+
+        if (attachments.Count > maxAttachmentsPerMessage)
+        {
+            logger.LogWarning(
+                "IMAP attachments exceed per-message limit count={Count} maxAttachmentsPerMessage={Max} quarantined=quota-exceeded",
+                attachments.Count,
+                maxAttachmentsPerMessage);
         }
 
         return attachments;

@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 using VSHelpDesk.Application.Abstractions.Storage;
@@ -170,6 +171,71 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
     public bool IsDeclaredTypeConsistentWithContent(string? declaredContentType, ReadOnlySpan<byte> header)
         => IsDeclaredTypeConsistentWithContent(null, declaredContentType, header);
 
+    public bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, Stream content, ReadOnlySpan<byte> header)
+    {
+        if (!IsContentTypeAllowed(declaredContentType))
+        {
+            return false;
+        }
+
+        var declared = declaredContentType!.Split(';', 2)[0].Trim();
+        var detected = DetectContentTypeFromContent(header);
+
+        if (declared.Contains("macroEnabled", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(declared, "application/msword", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(fileName))
+        {
+            if (!IsExtensionConsistentWithContentType(fileName, declared))
+            {
+                return false;
+            }
+
+            if (!IsFileNameValid(fileName))
+            {
+                return false;
+            }
+        }
+
+        if (detected is "application/x-msdownload")
+        {
+            return false;
+        }
+
+        if (detected is not null)
+        {
+            if (detected is "application/zip" &&
+                declared.StartsWith("application/vnd.openxmlformats-officedocument.", StringComparison.OrdinalIgnoreCase))
+            {
+                if (ContainsVbaProject(content, header))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            return string.Equals(detected, declared, StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (declared.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(declared, "application/pdf", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(declared, "application/vnd.ms-excel", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.Equals(declared, "text/plain", StringComparison.OrdinalIgnoreCase))
+        {
+            return IsValidTextContent(header);
+        }
+
+        return true;
+    }
+
     public bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, ReadOnlySpan<byte> header)
     {
         if (!IsContentTypeAllowed(declaredContentType))
@@ -277,6 +343,98 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
     /// </summary>
     private static bool ContainsVbaProjectBin(ReadOnlySpan<byte> header) =>
         ContainsBytesIgnoreCase(header, "vbaProject.bin"u8);
+
+    private static bool ContainsVbaProject(Stream? content, ReadOnlySpan<byte> header)
+    {
+        if (ContainsBytesIgnoreCase(header, "vbaProject.bin"u8))
+        {
+            return true;
+        }
+
+        if (content is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            Stream scanStream = content;
+            MemoryStream? buffered = null;
+            var needDispose = false;
+
+            if (!content.CanSeek)
+            {
+                buffered = new MemoryStream();
+                content.CopyTo(buffered);
+                buffered.Position = 0;
+                scanStream = buffered;
+                needDispose = true;
+            }
+            else
+            {
+                content.Position = 0;
+            }
+
+            try
+            {
+                using var archive = new ZipArchive(scanStream, ZipArchiveMode.Read, leaveOpen: true);
+                foreach (var entry in archive.Entries)
+                {
+                    if (entry.FullName.Contains("vbaProject.bin", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            catch (InvalidDataException)
+            {
+                // Not a valid ZIP or truncated — fallback to full-content byte search when buffered.
+                if (scanStream is MemoryStream ms)
+                {
+                    var bytes = ms.ToArray();
+                    if (ContainsBytesIgnoreCase(bytes, "vbaProject.bin"u8))
+                    {
+                        return true;
+                    }
+                }
+                else if (scanStream.CanSeek)
+                {
+                    scanStream.Position = 0;
+                    using var full = new MemoryStream();
+                    scanStream.CopyTo(full);
+                    if (ContainsBytesIgnoreCase(full.ToArray(), "vbaProject.bin"u8))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+            finally
+            {
+                if (content.CanSeek)
+                {
+                    content.Position = 0;
+                }
+
+                if (scanStream.CanSeek)
+                {
+                    scanStream.Position = 0;
+                }
+
+                if (needDispose)
+                {
+                    buffered?.Dispose();
+                }
+            }
+        }
+        catch
+        {
+            return ContainsBytesIgnoreCase(header, "vbaProject.bin"u8);
+        }
+    }
 
     private static bool ContainsBytesIgnoreCase(ReadOnlySpan<byte> haystack, ReadOnlySpan<byte> needle)
     {

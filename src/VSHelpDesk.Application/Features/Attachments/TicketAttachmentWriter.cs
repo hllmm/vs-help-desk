@@ -117,12 +117,56 @@ public sealed class TicketAttachmentWriter(
             return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
         }
 
+        // Ensure we have a seekable stream for full ZIP macro scan (I1).
+        // Non-seekable PrefixStream must be buffered so ZipArchive can read central directory at EOF.
+        Stream scanStream = contentToSave;
+        MemoryStream? bufferedForScan = null;
+        if (!contentToSave.CanSeek)
+        {
+            bufferedForScan = new MemoryStream();
+            await contentToSave.CopyToAsync(bufferedForScan, cancellationToken);
+            bufferedForScan.Position = 0;
+            scanStream = bufferedForScan;
+            contentToSave = scanStream;
+        }
+        else
+        {
+            contentToSave.Position = 0;
+            scanStream.Position = 0;
+        }
+
+        bool consistent;
         try
         {
-            if (!uploadPolicy.IsDeclaredTypeConsistentWithContent(
-                    safeFileName,
-                    contentType,
-                    header.AsSpan(0, Math.Max(read, 0))))
+            var headerSpan = header.AsSpan(0, Math.Max(read, 0));
+            if (uploadPolicy is IAttachmentUploadPolicy policyWithStream)
+            {
+                // Prefer stream-aware overload when available (full ZIP scan)
+                consistent = policyWithStream.IsDeclaredTypeConsistentWithContent(safeFileName, contentType, scanStream, headerSpan);
+            }
+            else
+            {
+                consistent = uploadPolicy.IsDeclaredTypeConsistentWithContent(safeFileName, contentType, headerSpan);
+            }
+        }
+        finally
+        {
+            if (scanStream.CanSeek)
+            {
+                scanStream.Position = 0;
+            }
+
+            if (contentToSave.CanSeek)
+            {
+                contentToSave.Position = 0;
+            }
+        }
+
+        // Dispose buffered copy if we created one for scanning but will use it for SaveAsync; keep it alive until Save completes.
+        // bufferedForScan is now contentToSave, so don't dispose yet — dispose in final finally.
+        try
+        {
+            if (!consistent)
             {
                 return TicketAttachmentWriteResult.Skipped(
                     _messages.Get(MessageKeys.Attachments.ContentTypeMismatch));
@@ -198,6 +242,11 @@ public sealed class TicketAttachmentWriter(
             if (prefixStream is not null)
             {
                 await prefixStream.DisposeAsync();
+            }
+
+            if (bufferedForScan is not null)
+            {
+                await bufferedForScan.DisposeAsync();
             }
         }
     }
