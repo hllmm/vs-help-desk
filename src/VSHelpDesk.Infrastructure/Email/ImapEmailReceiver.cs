@@ -72,13 +72,39 @@ public sealed class ImapEmailReceiver(
         string accountId,
         string folder)
     {
-        var message = item.Message;
         var receiptValue = ImapReceiptHandleCodec.Encode(
             new ImapReceiptCoordinates(
                 accountId,
                 folder,
                 item.UidValidity,
                 item.Uid));
+
+        // Task 4: nullable Message, disposition-based metadata-only path, no fake MimeMessage.
+        // Control order Raw -> Aggregate -> Ready (aggregate handled in Task 6).
+        if (item.Disposition != ImapItemDisposition.Ready || item.Message is null)
+        {
+            // Validate invariant: Ready requires Message, already enforced by ImapMailboxItem.Validate().
+            // For non-Ready, return metadata-only IncomingEmail without touching MimeMessage.
+            long? metaRawSize = item.RawSize;
+            bool metaIsOversized = item.Disposition != ImapItemDisposition.Ready;
+            // No auth header for metadata-only; keep verdict null or fallback.
+            return new IncomingEmail(
+                MessageId: null,
+                ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Imap, receiptValue),
+                FromAddress: null,
+                FromDisplayName: null,
+                Subject: null,
+                Body: string.Empty,
+                IsHtml: false,
+                ReceivedAt: DateTime.UtcNow,
+                Attachments: Array.Empty<IncomingEmailAttachment>(),
+                AuthenticationVerdict: null,
+                RawSize: metaRawSize,
+                TotalAttachmentCount: 0,
+                IsOversized: metaIsOversized);
+        }
+
+        var message = item.Message!;
 
         var hasTextBody = !string.IsNullOrWhiteSpace(message.TextBody);
         string body;
@@ -104,9 +130,6 @@ public sealed class ImapEmailReceiver(
         }
 
         var mailbox = message.From.Mailboxes.FirstOrDefault();
-        // MimeKit's MessageId property returns the token without angle brackets.
-        // Identity requires <left@right>; canonicalize at this boundary only.
-        var messageId = CanonicalizeMimeKitMessageId(message.MessageId);
 
         var receivedAt = message.Date == default
             ? DateTime.UtcNow
@@ -123,9 +146,14 @@ public sealed class ImapEmailReceiver(
             AuthServId: string.IsNullOrWhiteSpace(trustedId) ? null : trustedId,
             RawHeader: rawAuthHeader);
 
-        // Blocker 3: for IsOversized use Size from FETCH, do not serialize via MemoryStream
-        long? rawSize = item.Size;
-        bool isOversized = item.IsOversized;
+        // Task 4: for Ready use RawSize from FETCH, do not re-serialize via MemoryStream; no fake MimeMessage.
+        long? rawSize = item.RawSize;
+        bool isOversized = false;
+
+        // MimeKit's MessageId property returns the token without angle brackets.
+        // Identity requires <left@right>; canonicalize at this boundary only.
+        // For metadata-only oversized items, MessageId must be null so InboundEmailIdentityFactory falls back to receipt handle (mailbox/account/UIDVALIDITY/UID).
+        var messageId = isOversized ? null : CanonicalizeMimeKitMessageId(message.MessageId);
         if (!isOversized && rawSize == null)
         {
             try

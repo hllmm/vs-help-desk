@@ -76,7 +76,7 @@ public sealed class MailKitImapMailboxClient(
             cancellationToken.ThrowIfCancellationRequested();
 
             // Blocker 3: for SIZE above limit, do not call GetMessageAsync and do not serialize into MemoryStream.
-            // Return metadata-only oversized item (IsOversized) for durable quarantine in Application layer.
+            // Return metadata-only oversized item (RawMessageTooLarge) for durable quarantine in Application layer. No fake MimeMessage.
             if (sizeByUid.TryGetValue(uid.Id, out var size) && size.HasValue && size.Value > quota.MaxRawMessageBytes)
             {
                 logger.LogWarning(
@@ -84,14 +84,7 @@ public sealed class MailKitImapMailboxClient(
                     uid.Id,
                     size.Value,
                     quota.MaxRawMessageBytes);
-                var placeholder = new MimeMessage();
-                placeholder.MessageId = $"<oversized-{uid.Id}@placeholder>";
-                placeholder.Subject = "[Oversized message]";
-                placeholder.From.Add(new MailboxAddress("unknown", "unknown@example.invalid"));
-                placeholder.Body = new TextPart("plain") { Text = "[Oversized message content not downloaded]" };
-                // Use Date.Now for received
-                placeholder.Date = DateTimeOffset.UtcNow;
-                items.Add(new ImapMailboxItem(uidValidity, uid.Id, placeholder, size.Value, IsOversized: true));
+                items.Add(new ImapMailboxItem(uidValidity, uid.Id, null, size.Value, ImapItemDisposition.RawMessageTooLarge));
                 continue;
             }
 
@@ -101,6 +94,7 @@ public sealed class MailKitImapMailboxClient(
 
             // Fallback raw size check after download only for servers without SIZE; do not use MemoryStream for oversized already handled.
             // For normal messages, Estimate via WriteTo is acceptable but we already have Size for most; only do if Size missing.
+            // Control order Raw -> Aggregate -> Ready (Task 6 will add aggregate/SizeUnavailable; here we keep Raw check before Ready).
             long? rawSize = null;
             if (!sizeByUid.ContainsKey(uid.Id))
             {
@@ -112,12 +106,13 @@ public sealed class MailKitImapMailboxClient(
                         uid.Id,
                         rawSize,
                         quota.MaxRawMessageBytes);
-                    items.Add(new ImapMailboxItem(uidValidity, uid.Id, message, rawSize, IsOversized: true));
+                    items.Add(new ImapMailboxItem(uidValidity, uid.Id, null, rawSize, ImapItemDisposition.RawMessageTooLarge));
                     continue;
                 }
             }
 
-            items.Add(new ImapMailboxItem(uidValidity, uid.Id, message, sizeByUid.GetValueOrDefault(uid.Id), IsOversized: false));
+            long? effectiveRawSize = rawSize ?? (sizeByUid.TryGetValue(uid.Id, out var foundSize) && foundSize.HasValue ? (long?)foundSize.Value : null);
+            items.Add(new ImapMailboxItem(uidValidity, uid.Id, message, effectiveRawSize, ImapItemDisposition.Ready));
         }
 
         if (uids.Count > take)
