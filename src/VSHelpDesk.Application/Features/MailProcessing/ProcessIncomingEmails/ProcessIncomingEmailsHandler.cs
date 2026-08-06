@@ -116,11 +116,11 @@ public sealed class ProcessIncomingEmailsHandler(
                     if (existing == null)
                     {
                         var now = timeProvider.GetUtcNow().UtcDateTime;
-                            await processedEmailRepository.AddAsync(VSHelpDesk.Domain.Entities.ProcessedEmailMessage.ForQuarantine(
-                                identity.IdempotencyKey,
-                                sourceMessageId: identity.SourceMessageId,
-                                processedAtUtc: now,
-                                processingNote: InboundMailLimits.BoundProcessingNote($"Aggregate quota exceeded: {aggregateDecodedBytes + mailAttachmentBytes} > {mailboxQuota.MaxAggregateBytesPerRun}")), cancellationToken);
+                        await processedEmailRepository.AddAsync(VSHelpDesk.Domain.Entities.ProcessedEmailMessage.ForQuarantine(
+                            identity.IdempotencyKey,
+                            sourceMessageId: identity.SourceMessageId,
+                            processedAtUtc: now,
+                            processingNote: InboundMailLimits.BoundProcessingNote($"Aggregate quota exceeded: {aggregateDecodedBytes + mailAttachmentBytes} > {mailboxQuota.MaxAggregateBytesPerRun}")), cancellationToken);
                         await unitOfWork.SaveChangesAsync(cancellationToken);
                     }
                     quarantineCommitted = true;
