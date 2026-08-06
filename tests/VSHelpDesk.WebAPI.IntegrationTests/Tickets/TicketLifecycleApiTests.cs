@@ -153,7 +153,8 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 Body: reopenBody,
                 IsHtml: false,
                 ReceivedAt: DateTime.UtcNow.AddMinutes(-1),
-                Attachments: Array.Empty<IncomingEmailAttachment>());
+                Attachments: Array.Empty<IncomingEmailAttachment>(),
+                AuthenticationResults: "dmarc=pass");
             receiver.Expose(incoming);
 
             using (var jobRequest = new HttpRequestMessage(
@@ -354,7 +355,8 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 Body: reopenBody,
                 IsHtml: false,
                 ReceivedAt: DateTime.UtcNow.AddMinutes(-1),
-                Attachments: Array.Empty<IncomingEmailAttachment>());
+                Attachments: Array.Empty<IncomingEmailAttachment>(),
+                AuthenticationResults: "dmarc=pass");
             receiver.Expose(incoming);
 
             using (var mailJobRequest = new HttpRequestMessage(
@@ -450,7 +452,8 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 Body: "Inject attempt body",
                 IsHtml: false,
                 ReceivedAt: DateTime.UtcNow.AddMinutes(-1),
-                Attachments: Array.Empty<IncomingEmailAttachment>());
+                Attachments: Array.Empty<IncomingEmailAttachment>(),
+                AuthenticationResults: "dmarc=pass");
             receiver.Expose(incoming);
 
             using (var jobRequest = new HttpRequestMessage(
@@ -573,7 +576,8 @@ public sealed class TicketLifecycleApiTests : IClassFixture<CustomWebApplication
                 Body: reopenBody,
                 IsHtml: false,
                 ReceivedAt: DateTime.UtcNow.AddMinutes(-1),
-                Attachments: Array.Empty<IncomingEmailAttachment>());
+                Attachments: Array.Empty<IncomingEmailAttachment>(),
+                AuthenticationResults: "dmarc=pass");
             receiver.Expose(incoming);
 
             using (var jobRequest = new HttpRequestMessage(
