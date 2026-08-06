@@ -95,15 +95,20 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.HasPostgresExtension("pg_trgm");
+        var isPostgres = Database.IsNpgsql();
+
+        if (isPostgres)
+        {
+            modelBuilder.HasPostgresExtension("pg_trgm");
+        }
 
         modelBuilder.ApplyConfigurationsFromAssembly(
             typeof(ApplicationDbContext).Assembly,
             configurationType => configurationType != typeof(TicketConfiguration));
-        modelBuilder.ApplyConfiguration(new TicketConfiguration(true));
+        modelBuilder.ApplyConfiguration(new TicketConfiguration(isPostgres));
 
-        // Ensure column types match the single migration snapshot for all providers
-        // (Postgres, Sqlite, InMemory) so that PendingModelChangesWarning does not trigger.
+        // Column type mapping is now provider-aware: Postgres uses pg types + xmin,
+        // SQLite/InMemory use plain integer for uint Version to avoid NOT NULL xmin failures.
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             foreach (var property in entityType.GetProperties())
@@ -144,20 +149,38 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 }
                 else if (clrType == typeof(uint) || clrType == typeof(uint?))
                 {
-                    property.SetColumnType("xid");
-                    property.SetColumnName("xmin");
-                    property.IsConcurrencyToken = true;
-                    property.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate;
+                    if (isPostgres)
+                    {
+                        property.SetColumnType("xid");
+                        property.SetColumnName("xmin");
+                        property.IsConcurrencyToken = true;
+                        property.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate;
+                    }
+                    else
+                    {
+                        property.SetColumnType("integer");
+                        property.IsConcurrencyToken = false;
+                        property.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.Never;
+                    }
                 }
             }
 
             var versionProperty = entityType.FindProperty("Version");
             if (versionProperty != null && versionProperty.ClrType == typeof(uint))
             {
-                versionProperty.SetColumnType("xid");
-                versionProperty.SetColumnName("xmin");
-                versionProperty.IsConcurrencyToken = true;
-                versionProperty.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate;
+                if (isPostgres)
+                {
+                    versionProperty.SetColumnType("xid");
+                    versionProperty.SetColumnName("xmin");
+                    versionProperty.IsConcurrencyToken = true;
+                    versionProperty.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate;
+                }
+                else
+                {
+                    versionProperty.SetColumnType("integer");
+                    versionProperty.IsConcurrencyToken = false;
+                    versionProperty.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.Never;
+                }
             }
         }
 
