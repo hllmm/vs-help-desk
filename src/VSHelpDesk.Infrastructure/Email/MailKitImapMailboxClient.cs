@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using MailKit;
 using MailKit.Net.Imap;
 using Microsoft.Extensions.Logging;
@@ -72,8 +73,8 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
     {
     }
 
-    public async Task<IReadOnlyList<ImapMailboxItem>> FetchUnreadAsync(
-        CancellationToken cancellationToken)
+    public async IAsyncEnumerable<ImapMailboxItem> FetchUnreadAsync(
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
 
@@ -83,15 +84,14 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
 
         var uidValidity = gateway.UidValidity;
         var take = Math.Min(uids.Count, quota.MaxMessagesPerRun);
-        var limitedUids = take == uids.Count ? uids : uids.Take(take).ToList();
+        var limited = take == uids.Count ? uids : uids.Take(take).ToList();
 
-        // Pre-fetch sizes to skip oversized raw messages without downloading bodies.
-        Dictionary<uint, uint?> sizeByUid = new();
-        if (limitedUids.Count > 0)
+        Dictionary<uint, uint?> sizes = new();
+        if (limited.Count > 0)
         {
             try
             {
-                sizeByUid = await gateway.FetchSizesAsync(limitedUids, cancellationToken).ConfigureAwait(false);
+                sizes = await gateway.FetchSizesAsync(limited, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -101,55 +101,90 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
             {
                 logger.LogWarning(
                     ex,
-                    "IMAP fetch sizes failed host={ImapHost} port={ImapPort} — falling back to per-message check",
+                    "SIZE fetch failed host={ImapHost} port={ImapPort} — falling back to per-message bounded check",
                     options.ImapHost,
                     options.ImapPort);
-                sizeByUid = new Dictionary<uint, uint?>();
+                sizes = new Dictionary<uint, uint?>();
             }
         }
 
-        var items = new List<ImapMailboxItem>(take);
+        long aggregate = 0;
 
-        foreach (var uid in limitedUids)
+        foreach (var uid in limited)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Blocker 3: for SIZE above limit, do not call GetMessageAsync and do not serialize into MemoryStream.
-            // Return metadata-only oversized item (RawMessageTooLarge) for durable quarantine in Application layer. No fake MimeMessage.
-            if (sizeByUid.TryGetValue(uid, out var size) && size.HasValue && size.Value > quota.MaxRawMessageBytes)
+            if (sizes.TryGetValue(uid, out var s) && s.HasValue)
             {
-                logger.LogWarning(
-                    "IMAP message oversized uid={Uid} size={Size} maxRawMessageBytes={MaxRawMessageBytes} metadata-only, will be durably quarantined",
-                    uid,
-                    size.Value,
-                    quota.MaxRawMessageBytes);
-                items.Add(new ImapMailboxItem(uidValidity, uid, null, size.Value, ImapItemDisposition.RawMessageTooLarge));
-                continue;
-            }
-
-            var message = await gateway.FetchMessageAsync(uid, cancellationToken).ConfigureAwait(false);
-
-            // Fallback raw size check after download only for servers without SIZE; do not use MemoryStream for oversized already handled.
-            // For normal messages, Estimate via WriteTo is acceptable but we already have Size for most; only do if Size missing.
-            // Control order Raw -> Aggregate -> Ready (Task 6 will add aggregate/SizeUnavailable; here we keep Raw check before Ready).
-            long? rawSize = null;
-            if (!sizeByUid.ContainsKey(uid))
-            {
-                rawSize = EstimateRawSize(message);
-                if (rawSize > quota.MaxRawMessageBytes)
+                if (s.Value > quota.MaxRawMessageBytes)
                 {
                     logger.LogWarning(
-                        "IMAP message oversized after fetch uid={Uid} rawSize={RawSize} maxRawMessageBytes={MaxRawMessageBytes} will be quarantined after durable record",
+                        "IMAP message oversized uid={Uid} size={Size} maxRawMessageBytes={MaxRawMessageBytes} metadata-only, will be durably quarantined",
                         uid,
-                        rawSize,
+                        s.Value,
                         quota.MaxRawMessageBytes);
-                    items.Add(new ImapMailboxItem(uidValidity, uid, null, rawSize, ImapItemDisposition.RawMessageTooLarge));
+                    yield return new ImapMailboxItem(uidValidity, uid, null, s.Value, ImapItemDisposition.RawMessageTooLarge);
                     continue;
                 }
-            }
 
-            long? effectiveRawSize = rawSize ?? (sizeByUid.TryGetValue(uid, out var foundSize) && foundSize.HasValue ? (long?)foundSize.Value : null);
-            items.Add(new ImapMailboxItem(uidValidity, uid, message, effectiveRawSize, ImapItemDisposition.Ready));
+                if (aggregate + s.Value > quota.MaxAggregateBytesPerRun)
+                {
+                    yield return new ImapMailboxItem(uidValidity, uid, null, s.Value, ImapItemDisposition.AggregateBudgetExceeded);
+                    continue;
+                }
+
+                var msg = await gateway.FetchMessageAsync(uid, cancellationToken).ConfigureAwait(false);
+                aggregate += s.Value;
+                yield return new ImapMailboxItem(uidValidity, uid, msg, s.Value, ImapItemDisposition.Ready);
+            }
+            else
+            {
+                // SIZE null branch — bounded raw fetch
+                long remaining = quota.MaxAggregateBytesPerRun - aggregate;
+                long limit = Math.Min(quota.MaxRawMessageBytes, remaining) + 1;
+                if (limit <= 0)
+                {
+                    yield return new ImapMailboxItem(uidValidity, uid, null, null, ImapItemDisposition.AggregateBudgetExceeded);
+                    continue;
+                }
+
+                ImapMailboxItem? pending = null;
+                try
+                {
+                    var (bytes, read) = await gateway.FetchRawBoundedAsync(uid, limit, cancellationToken).ConfigureAwait(false);
+                    if (read > quota.MaxRawMessageBytes)
+                    {
+                        pending = new ImapMailboxItem(uidValidity, uid, null, read, ImapItemDisposition.RawMessageTooLarge);
+                    }
+                    else if (read > remaining)
+                    {
+                        pending = new ImapMailboxItem(uidValidity, uid, null, read, ImapItemDisposition.AggregateBudgetExceeded);
+                    }
+                    else
+                    {
+                        var msg = MimeMessage.Load(new MemoryStream(bytes));
+                        aggregate += read;
+                        pending = new ImapMailboxItem(uidValidity, uid, msg, read, ImapItemDisposition.Ready);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (NotSupportedException)
+                {
+                    pending = new ImapMailboxItem(uidValidity, uid, null, null, ImapItemDisposition.SizeUnavailable);
+                }
+                catch
+                {
+                    pending = new ImapMailboxItem(uidValidity, uid, null, null, ImapItemDisposition.SizeUnavailable);
+                }
+
+                if (pending is not null)
+                {
+                    yield return pending;
+                }
+            }
         }
 
         if (uids.Count > take)
@@ -159,7 +194,7 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
                 options.ImapHost,
                 options.ImapPort,
                 uids.Count,
-                items.Count,
+                take,
                 quota.MaxMessagesPerRun);
         }
 
@@ -167,27 +202,18 @@ public sealed class MailKitImapMailboxClient : IImapMailboxClient
             "IMAP fetch unread completed host={ImapHost} port={ImapPort} count={Count}",
             options.ImapHost,
             options.ImapPort,
-            items.Count);
-
-        return items;
+            take);
     }
 
-    private static long EstimateRawSize(MimeMessage message)
+    async Task<IReadOnlyList<ImapMailboxItem>> IImapMailboxClient.FetchUnreadAsync(CancellationToken cancellationToken)
     {
-        try
+        var items = new List<ImapMailboxItem>();
+        await foreach (var item in FetchUnreadAsync(cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false))
         {
-            using var ms = new MemoryStream();
-            message.WriteTo(ms);
-            return ms.Length;
+            items.Add(item);
         }
-        catch
-        {
-            // Fallback approximation.
-            var approx = (message.Headers.ToString()?.Length ?? 0)
-                + (message.TextBody?.Length ?? 0)
-                + (message.HtmlBody?.Length ?? 0);
-            return approx;
-        }
+
+        return items;
     }
 
     public async Task MarkSeenAsync(
