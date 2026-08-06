@@ -32,4 +32,10 @@ public interface IAttachmentUploadPolicy
     /// </summary>
     bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, Stream content, ReadOnlySpan<byte> header) =>
         IsDeclaredTypeConsistentWithContent(fileName, declaredContentType, header);
+
+    /// <summary>
+    /// Cancellation-aware stream overload for bounded ingestion. Defaults to the non-cancellable stream overload.
+    /// </summary>
+    bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, Stream content, ReadOnlySpan<byte> header, CancellationToken cancellationToken = default) =>
+        IsDeclaredTypeConsistentWithContent(fileName, declaredContentType, content, header);
 }

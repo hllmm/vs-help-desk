@@ -236,6 +236,9 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
         return true;
     }
 
+    public bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, Stream content, ReadOnlySpan<byte> header, CancellationToken cancellationToken = default)
+        => IsDeclaredTypeConsistentWithContent(fileName, declaredContentType, content, header);
+
     public bool IsDeclaredTypeConsistentWithContent(string? fileName, string? declaredContentType, ReadOnlySpan<byte> header)
     {
         if (!IsContentTypeAllowed(declaredContentType))
