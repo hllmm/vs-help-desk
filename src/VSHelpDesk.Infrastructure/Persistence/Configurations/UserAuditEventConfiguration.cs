@@ -18,7 +18,7 @@ public sealed class UserAuditEventConfiguration : IEntityTypeConfiguration<UserA
         builder.Property(e => e.AfterRole).HasMaxLength(32);
         builder.Property(e => e.BeforeIsActive);
         builder.Property(e => e.AfterIsActive);
-        builder.Property(e => e.CreatedAt).IsRequired().HasColumnType("timestamp with time zone");
+        builder.Property(e => e.CreatedAt).IsRequired();
         builder.Property(e => e.CorrelationId).HasMaxLength(64);
         builder.HasIndex(e => new { e.TargetUserId, e.CreatedAt });
         builder.HasIndex(e => e.ActorUserId);

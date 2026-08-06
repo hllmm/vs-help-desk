@@ -247,9 +247,9 @@ public sealed class ConfiguredAttachmentUploadPolicyTests
     public void Malformed_zip_is_rejected_fail_closed()
     {
         var policy = CreatePolicy(); // allowed: docx
-        var header = new byte[]{0x50,0x4B,0x03,0x04, 0x00};
-        using var malformed = new MemoryStream(new byte[]{0x50,0x4B,0x03,0x04, 0xFF,0xFF});
-        var ok = policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", malformed, header.AsSpan(), CancellationToken.None);
+        var header = new byte[] { 0x50, 0x4B, 0x03, 0x04, 0x00 };
+        using var malformed = new MemoryStream(new byte[] { 0x50, 0x4B, 0x03, 0x04, 0xFF, 0xFF });
+        var ok = policy.IsDeclaredTypeConsistentWithContent("a.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", malformed, header.AsSpan(), CancellationToken.None);
         Assert.False(ok);
         Assert.Equal(0, malformed.Position); // Position==0 in finally
     }
@@ -257,25 +257,25 @@ public sealed class ConfiguredAttachmentUploadPolicyTests
     public void Ooxml_with_vbaProject_rejected()
     {
         var policy = CreatePolicy();
-        using var zip = CreateDocxWithEntry("word/vbaProject.bin","evil");
-        var header = new byte[]{0x50,0x4B,0x03,0x04};
-        Assert.False(policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, header.AsSpan(), CancellationToken.None));
+        using var zip = CreateDocxWithEntry("word/vbaProject.bin", "evil");
+        var header = new byte[] { 0x50, 0x4B, 0x03, 0x04 };
+        Assert.False(policy.IsDeclaredTypeConsistentWithContent("a.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, header.AsSpan(), CancellationToken.None));
     }
     [Fact]
     public void Over_4096_entries_rejected()
     {
         var policy = CreatePolicy();
         using var zip = CreateZipWithEntries(4097);
-        var header = new byte[]{0x50,0x4B,0x03,0x04};
-        Assert.False(policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, header.AsSpan(), CancellationToken.None));
+        var header = new byte[] { 0x50, 0x4B, 0x03, 0x04 };
+        Assert.False(policy.IsDeclaredTypeConsistentWithContent("a.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, header.AsSpan(), CancellationToken.None));
     }
     [Fact]
     public void Valid_ooxml_without_macro_accepted_and_position_reset()
     {
         var policy = CreatePolicy();
         using var zip = CreateValidDocx();
-        var header = new byte[]{0x50,0x4B,0x03,0x04};
-        Assert.True(policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, header.AsSpan(), CancellationToken.None));
+        var header = new byte[] { 0x50, 0x4B, 0x03, 0x04 };
+        Assert.True(policy.IsDeclaredTypeConsistentWithContent("a.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, header.AsSpan(), CancellationToken.None));
         Assert.Equal(0, zip.Position);
     }
     [Fact]
@@ -284,6 +284,6 @@ public sealed class ConfiguredAttachmentUploadPolicyTests
         var policy = CreatePolicy();
         using var zip = CreateValidDocx();
         var cts = new CancellationTokenSource(); cts.Cancel();
-        Assert.Throws<OperationCanceledException>(()=> policy.IsDeclaredTypeConsistentWithContent("a.docx","application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, new byte[]{0x50,0x4B,0x03,0x04}.AsSpan(), cts.Token));
+        Assert.Throws<OperationCanceledException>(() => policy.IsDeclaredTypeConsistentWithContent("a.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zip, new byte[] { 0x50, 0x4B, 0x03, 0x04 }.AsSpan(), cts.Token));
     }
 }

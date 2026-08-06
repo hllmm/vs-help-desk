@@ -25,6 +25,7 @@ data:
   Email__ImapPort: "993"
   Email__ImapSecurityMode: "SslOnConnect"
   Email__ImapFolder: "INBOX"
+  # REQUIRED: must be overridden per-environment (e.g. mx.company.example) — matches MTA that signs Authentication-Results; empty fails ValidateOnStart when ReceiverMode=Imap
   Email__TrustedAuthServId: "mx.example.local"
   Email__SupportMailboxAddress: "support@example.local"
   Email__SupportMailboxDisplayName: "VS Help Desk"

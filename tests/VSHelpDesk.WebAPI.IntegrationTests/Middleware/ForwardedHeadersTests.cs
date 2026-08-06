@@ -20,17 +20,17 @@ public sealed class ForwardedHeadersTests
     private static WebApplicationFactory<Program> CreateFactory(int forwardLimit = 2, string[]? trustedNetworks = null)
     {
         trustedNetworks ??= ["10.0.0.0/8", "127.0.0.1/32", "::1/128"];
-        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        var factory = new Support.CustomWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Development");
-            builder.UseSetting("Database:Provider", "InMemory");
             builder.UseSetting("ConnectionStrings:DefaultConnection", $"TestFwd-{Guid.NewGuid()}");
-            builder.UseSetting("Auth:SigningKey", Support.CustomWebApplicationFactory.TestSigningKey);
-            builder.UseSetting("Jobs:ApiKey", Support.CustomWebApplicationFactory.TestJobsApiKey);
-            builder.UseSetting("Email:SupportMailboxAddress", "support@example.test");
-            builder.UseSetting("SeedUser:Enabled", "false");
-            builder.UseSetting("SeedAdmin:Enabled", "false");
             builder.UseSetting("ForwardedHeaders:ForwardLimit", forwardLimit.ToString());
+            builder.UseSetting("Email:ReceiverMode", "Fake");
+            builder.UseSetting("Email:SmtpHost", "localhost");
+            builder.UseSetting("Email:SmtpPort", "1025");
+            builder.UseSetting("Email:SmtpSecurityMode", "None");
+            builder.UseSetting("Email:SupportMailboxAddress", "support@example.test");
+            builder.UseSetting("Email:TrustedAuthServId", "mx.test");
             // Clear defaults by setting indexed values; remove any prior expanded values via UseSetting not ideal,
             // but we explicitly set known entries.
             for (var i = 0; i < trustedNetworks.Length; i++)

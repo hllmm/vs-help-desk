@@ -340,18 +340,21 @@ public sealed class ConfiguredAttachmentUploadPolicy(IOptions<FileStorageOptions
     private bool IsSafeOoxmlArchive(Stream content, CancellationToken ct)
     {
         if (content is null) return false;
-        try{
-            using var archive = new ZipArchive(content, ZipArchiveMode.Read, leaveOpen:true);
-            int count=0;
-            foreach(var e in archive.Entries){
+        try
+        {
+            using var archive = new ZipArchive(content, ZipArchiveMode.Read, leaveOpen: true);
+            int count = 0;
+            foreach (var e in archive.Entries)
+            {
                 ct.ThrowIfCancellationRequested();
-                if(++count > 4096) return false;
-                if(e.FullName.Contains("vbaProject.bin", StringComparison.OrdinalIgnoreCase)) return false;
+                if (++count > 4096) return false;
+                if (e.FullName.Contains("vbaProject.bin", StringComparison.OrdinalIgnoreCase)) return false;
             }
             return true;
-        }catch(InvalidDataException){ return false; }
-        catch(OperationCanceledException){ throw; }
-        catch{ return false; }
-        finally{ if(content.CanSeek) content.Position=0; }
+        }
+        catch (InvalidDataException) { return false; }
+        catch (OperationCanceledException) { throw; }
+        catch { return false; }
+        finally { if (content.CanSeek) content.Position = 0; }
     }
 }

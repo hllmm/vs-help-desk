@@ -13,8 +13,8 @@ Kaynak: **VS Help Desk — SRD & Sistem Tasarımı** (`VSHD-SRD-001` v1.0).
 
 Local intern DX remains Compose. K8s packaging reuses the same api/web images.
 
-Sonraki faz (multi-tenant): design roadmap in  
-`docs/superpowers/specs/2026-07-20-production-hardening-design.md`.  
+Sonraki faz (multi-tenant): design roadmap in
+`docs/security-verification.md`.
 UC-010 parametre yönetimi (Faz 1): `GET/PUT /api/parameters` + portal **Parametreler** (Admin).  
 Cookie auth + CSRF (Faz 2): HttpOnly `vshd.auth` JWT cookie; login body has **no** `accessToken`.  
 Kubernetes packaging (Faz 3): Kustomize under `deploy/k8s/` — see deploy-kubernetes doc.  
@@ -153,7 +153,7 @@ Demo akışı ve bilinen kısıtlar: [docs/demo-runbook.md](docs/demo-runbook.md
 | **Audit** | `UserAuditEvents` (append-only): `ActorUserId/TargetUserId`, `EventType` (Created/RoleChanged/ActiveChanged/PasswordReset), `Before/After` rol & aktif, `CreatedAt`, `CorrelationId`; parola/hash asla yazılmaz. Index `(TargetUserId, CreatedAt)`. |
 | **Supply chain** | nginx **1.28-alpine** (digest pinli), curl **8.13.0** (CronJobs), CI: `npm audit --audit-level=moderate`, `Trivy` HIGH/CRITICAL, `gitleaks`, `dotnet list package --vulnerable`. |
 
-Detay: [docs/architecture.md](docs/architecture.md) § Mail trust boundary / Quota / Audit · [docs/deploy-production.md](docs/deploy-production.md) · [docs/deploy-kubernetes.md](docs/deploy-kubernetes.md) · [docs/superpowers/plans/2026-08-06-verification-checklist.md](docs/superpowers/plans/2026-08-06-verification-checklist.md).
+Detay: [docs/architecture.md](docs/architecture.md) § Mail trust boundary / Quota / Audit · [docs/deploy-production.md](docs/deploy-production.md) · [docs/deploy-kubernetes.md](docs/deploy-kubernetes.md) · [docs/security-verification.md](docs/security-verification.md).
 
 ## Mail / job yapılandırması (Hafta 2 hardening)
 

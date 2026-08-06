@@ -22,7 +22,12 @@ public sealed class CustomWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseSetting("ConnectionStrings:DefaultConnection", "TestInMemoryDb");
         builder.UseSetting("Auth:SigningKey", TestSigningKey);
         builder.UseSetting("Jobs:ApiKey", TestJobsApiKey);
+        builder.UseSetting("Email:ReceiverMode", "Fake");
+        builder.UseSetting("Email:SmtpHost", "localhost");
+        builder.UseSetting("Email:SmtpPort", "1025");
+        builder.UseSetting("Email:SmtpSecurityMode", "None");
         builder.UseSetting("Email:SupportMailboxAddress", "support@example.test");
+        builder.UseSetting("Email:TrustedAuthServId", "mx.test");
         builder.UseSetting("SeedUser:Enabled", "true");
         builder.UseSetting("SeedUser:Password", TestSeedPassword);
         builder.UseSetting("SeedUser:Username", TestSeedUsername);

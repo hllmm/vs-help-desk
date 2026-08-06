@@ -164,7 +164,7 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
         }
         public async IAsyncEnumerable<IncomingEmail> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
         {
-            foreach(var m in messages){ yield return m; await Task.Yield(); }
+            foreach (var m in messages) { yield return m; await Task.Yield(); }
         }
         public Task MarkAsProcessedAsync(EmailReceiptHandle h, CancellationToken ct) { events.Add("MarkProcessed"); Marked.Add(h); return Task.CompletedTask; }
     }
@@ -279,7 +279,7 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
         public List<EmailReceiptHandle> Marked { get; } = [];
         public async IAsyncEnumerable<IncomingEmail> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
-            foreach(var m in messages){ yield return m; await Task.Yield(); }
+            foreach (var m in messages) { yield return m; await Task.Yield(); }
         }
         public Task MarkAsProcessedAsync(EmailReceiptHandle receiptHandle, CancellationToken cancellationToken)
         {

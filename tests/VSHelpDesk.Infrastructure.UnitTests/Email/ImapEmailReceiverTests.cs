@@ -268,7 +268,7 @@ public sealed class ImapEmailReceiverTests
 
         public List<(uint ExpectedUidValidity, uint Uid)> Marked { get; } = [];
 
-        public async IAsyncEnumerable<ImapMailboxItem> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken) { foreach(var i in Items){ yield return i; await Task.Yield(); } }
+        public async IAsyncEnumerable<ImapMailboxItem> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken) { foreach (var i in Items) { yield return i; await Task.Yield(); } }
 
         public Task MarkSeenAsync(
             uint expectedUidValidity,

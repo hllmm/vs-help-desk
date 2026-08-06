@@ -1,6 +1,6 @@
-# 2026-08-06 Verification Checklist (Manual Runbook)
+# Security Verification Checklist (Manual Runbook)
 
-Hardening closure for `docs/superpowers/plans/2026-08-06-security-and-improvements.md` (SEC-001…SEC-009).
+Hardening closure for `docs/security-verification.md` (SEC-001…SEC-009) — replaces `docs/superpowers` agent artifacts.
 
 ## 1) Full Verification (automated gates)
 
