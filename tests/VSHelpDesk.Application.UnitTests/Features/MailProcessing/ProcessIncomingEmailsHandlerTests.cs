@@ -2,12 +2,15 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Application.Features.MailProcessing.Acknowledgements;
 using VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
+using VSHelpDesk.Domain.Entities;
 
 namespace VSHelpDesk.Application.UnitTests.Features.MailProcessing;
 
@@ -324,7 +327,12 @@ public sealed class ProcessIncomingEmailsHandlerTests
             new ScriptedFactory([]),
             new BusyGate(),
             new StubMessageProvider(),
-            NullLogger<ProcessIncomingEmailsHandler>.Instance);
+            NullLogger<ProcessIncomingEmailsHandler>.Instance,
+            new InMemoryRepo(),
+            new NoopUow(),
+            TimeProvider.System,
+            new NoopClassifier(),
+            new TestQuota());
 
         var exception = await Assert.ThrowsAsync<JobAlreadyRunningException>(() =>
             handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None));
@@ -356,14 +364,52 @@ public sealed class ProcessIncomingEmailsHandlerTests
 
     private static ProcessIncomingEmailsHandler CreateHandler(
         IEmailReceiver receiver,
-        IInboundEmailItemProcessorFactory factory) =>
+        IInboundEmailItemProcessorFactory factory,
+        IProcessedEmailRepository? repo = null,
+        IUnitOfWork? uow = null,
+        IDatabaseErrorClassifier? classifier = null) =>
         new(
             receiver,
             new FixedSettings(),
             factory,
             new AlwaysEnterGate(),
             new StubMessageProvider(),
-            NullLogger<ProcessIncomingEmailsHandler>.Instance);
+            NullLogger<ProcessIncomingEmailsHandler>.Instance,
+            repo ?? new InMemoryRepo(),
+            uow ?? new NoopUow(),
+            TimeProvider.System,
+            classifier ?? new NoopClassifier(),
+            new TestQuota());
+
+    private sealed class TestQuota : IMailboxQuotaSettings
+    {
+        public int MaxMessagesPerRun => 100;
+        public int MaxAttachmentsPerMessage => 10;
+        public long MaxAggregateBytesPerRun => 50L * 1024 * 1024;
+        public long MaxRawMessageBytes => 5L * 1024 * 1024;
+    }
+
+    private sealed class InMemoryRepo : IProcessedEmailRepository
+    {
+        private readonly Dictionary<string, ProcessedEmailMessage> store = new();
+        public Task<ProcessedEmailMessage?> GetByIdempotencyKeyAsync(string key, CancellationToken ct) => Task.FromResult(store.TryGetValue(key, out var v) ? v : null);
+        public Task AddAsync(ProcessedEmailMessage msg, CancellationToken ct) { store[msg.IdempotencyKey] = msg; return Task.CompletedTask; }
+        public Task<ProcessedEmailMessage?> GetByIdAsync(Guid id, CancellationToken ct) => Task.FromResult<ProcessedEmailMessage?>(null);
+        public Task<IReadOnlyList<ProcessedEmailMessage>> GetDueAcknowledgementsAsync(int take, DateTime now, CancellationToken ct) => Task.FromResult<IReadOnlyList<ProcessedEmailMessage>>(Array.Empty<ProcessedEmailMessage>());
+        public IQueryable<ProcessedEmailMessage> GetListQueryable() => store.Values.AsQueryable();
+    }
+
+    private sealed class NoopUow : IUnitOfWork
+    {
+        public Task<int> SaveChangesAsync(CancellationToken ct) => Task.FromResult(1);
+        public void ClearTrackedChanges() { }
+    }
+
+    private sealed class NoopClassifier : IDatabaseErrorClassifier
+    {
+        public bool IsProcessedEmailIdempotencyConflict(Exception ex) => false;
+        public bool IsOptimisticConcurrencyConflict(Exception ex) => false;
+    }
 
     private static IncomingEmail Mail(
         string? id,

@@ -5,7 +5,9 @@ namespace VSHelpDesk.Infrastructure.Email;
 public sealed record ImapMailboxItem(
     uint UidValidity,
     uint Uid,
-    MimeMessage Message);
+    MimeMessage Message,
+    long? Size = null,
+    bool IsOversized = false);
 
 /// <summary>
 /// Narrow IMAP session seam: fetch unread items and mark seen by UID + UIDVALIDITY.

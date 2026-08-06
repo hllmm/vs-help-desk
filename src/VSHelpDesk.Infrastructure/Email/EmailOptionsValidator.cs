@@ -128,6 +128,18 @@ public sealed class EmailOptionsValidator(IHostEnvironment environment)
                 return ValidateOptionsResult.Fail(
                     "The Email:ImapFolder configuration value must not contain control characters.");
             }
+
+            if (string.IsNullOrWhiteSpace(options.TrustedAuthServId))
+            {
+                return ValidateOptionsResult.Fail(
+                    "The Email:TrustedAuthServId configuration value is required when ReceiverMode is Imap (set the MTA authserv-id that signs Authentication-Results).");
+            }
+
+            if (ContainsControlCharacters(options.TrustedAuthServId))
+            {
+                return ValidateOptionsResult.Fail(
+                    "The Email:TrustedAuthServId configuration value must not contain control characters.");
+            }
         }
 
         return ValidateOptionsResult.Success;

@@ -29,6 +29,7 @@ public sealed class InboundEmailItemProcessor(
     TimeProvider timeProvider,
     IDatabaseErrorClassifier databaseErrorClassifier,
     ILogger<InboundEmailItemProcessor> logger,
+    IMailboxQuotaSettings? mailboxQuota = null,
     IHtmlSanitizerService? htmlSanitizerService = null) : IInboundEmailItemProcessor
 {
     public async Task<InboundEmailItemResult> ProcessAsync(
@@ -37,7 +38,7 @@ public sealed class InboundEmailItemProcessor(
     {
         ArgumentNullException.ThrowIfNull(email);
 
-        var normalization = InboundEmailNormalizer.Normalize(email);
+        var normalization = InboundEmailNormalizer.Normalize(email, mailboxQuota);
         var identity = normalization.Identity;
 
         if (normalization.Outcome == InboundEmailPolicyOutcome.Quarantine)

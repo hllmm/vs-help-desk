@@ -24,10 +24,11 @@ public sealed class ProcessIncomingEmailsHandler(
     IProcessIncomingEmailsGate processIncomingEmailsGate,
     IMessageProvider messageProvider,
     ILogger<ProcessIncomingEmailsHandler> logger,
-    IProcessedEmailRepository? processedEmailRepository = null,
-    IUnitOfWork? unitOfWork = null,
-    TimeProvider? timeProvider = null,
-    IDatabaseErrorClassifier? databaseErrorClassifier = null)
+    IProcessedEmailRepository processedEmailRepository,
+    IUnitOfWork unitOfWork,
+    TimeProvider timeProvider,
+    IDatabaseErrorClassifier databaseErrorClassifier,
+    IMailboxQuotaSettings mailboxQuota)
 {
     public async Task<Result<ProcessIncomingEmailsResult>> HandleAsync(
         ProcessIncomingEmailsCommand command,
@@ -97,44 +98,51 @@ public sealed class ProcessIncomingEmailsHandler(
             var itemReference = ToItemReference(mail.ReceiptHandle);
 
             var mailAttachmentBytes = mail.Attachments.Sum(a => a.FileSize);
-            if (aggregateDecodedBytes + mailAttachmentBytes > MailboxQuota.MaxAggregateBytesPerRun)
+            if (aggregateDecodedBytes + mailAttachmentBytes > mailboxQuota.MaxAggregateBytesPerRun)
             {
                 logger.LogWarning(
                     "ProcessIncomingEmails aggregate quota exceeded itemReference={ItemReference} aggregateDecodedBytes={Aggregate} mailBytes={MailBytes} maxAggregateBytesPerRun={Max} quarantined=quota-exceeded",
                     itemReference,
                     aggregateDecodedBytes,
                     mailAttachmentBytes,
-                    MailboxQuota.MaxAggregateBytesPerRun);
+                    mailboxQuota.MaxAggregateBytesPerRun);
 
-                // Durable quarantine before marking Seen (blocker 4)
-                if (processedEmailRepository != null && unitOfWork != null && timeProvider != null)
+                // Durable quarantine before marking Seen (blocker 4) — required, never mark unless committed
+                bool quarantineCommitted = false;
+                try
                 {
-                    try
+                    var identity = InboundEmailIdentityFactory.Create(mail);
+                    var existing = await processedEmailRepository.GetByIdempotencyKeyAsync(identity.IdempotencyKey, cancellationToken);
+                    if (existing == null)
                     {
-                        var identity = InboundEmailIdentityFactory.Create(mail);
-                        var existing = await processedEmailRepository.GetByIdempotencyKeyAsync(identity.IdempotencyKey, cancellationToken);
-                        if (existing == null)
-                        {
-                            var now = timeProvider.GetUtcNow().UtcDateTime;
+                        var now = timeProvider.GetUtcNow().UtcDateTime;
                             await processedEmailRepository.AddAsync(VSHelpDesk.Domain.Entities.ProcessedEmailMessage.ForQuarantine(
                                 identity.IdempotencyKey,
                                 sourceMessageId: identity.SourceMessageId,
                                 processedAtUtc: now,
-                                processingNote: InboundMailLimits.BoundProcessingNote($"Aggregate quota exceeded: {aggregateDecodedBytes + mailAttachmentBytes} > {MailboxQuota.MaxAggregateBytesPerRun}")), cancellationToken);
-                            await unitOfWork.SaveChangesAsync(cancellationToken);
-                        }
+                                processingNote: InboundMailLimits.BoundProcessingNote($"Aggregate quota exceeded: {aggregateDecodedBytes + mailAttachmentBytes} > {mailboxQuota.MaxAggregateBytesPerRun}")), cancellationToken);
+                        await unitOfWork.SaveChangesAsync(cancellationToken);
                     }
-                    catch (Exception ex) when (databaseErrorClassifier != null && databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
-                    {
-                        unitOfWork?.ClearTrackedChanges();
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogError(ex, "Failed to create durable quarantine for aggregate quota itemReference={ItemReference}", itemReference);
-                        retryableFailures++;
-                        failures.Add(new ProcessIncomingEmailFailure("quarantine-failed", itemReference));
-                        continue; // do not mark Seen
-                    }
+                    quarantineCommitted = true;
+                }
+                catch (Exception ex) when (databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
+                {
+                    unitOfWork.ClearTrackedChanges();
+                    quarantineCommitted = true; // idempotent conflict means already persisted
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to create durable quarantine for aggregate quota itemReference={ItemReference}", itemReference);
+                    retryableFailures++;
+                    failures.Add(new ProcessIncomingEmailFailure("quarantine-failed", itemReference));
+                    continue; // do not mark Seen
+                }
+
+                if (!quarantineCommitted)
+                {
+                    retryableFailures++;
+                    failures.Add(new ProcessIncomingEmailFailure("quarantine-failed", itemReference));
+                    continue;
                 }
 
                 quarantined++;

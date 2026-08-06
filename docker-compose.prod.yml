@@ -55,6 +55,7 @@ services:
       Email__ImapPassword: ${EMAIL_IMAP_PASSWORD:?Set EMAIL_IMAP_PASSWORD}
       Email__ImapAccountId: ${EMAIL_IMAP_ACCOUNT_ID:?Set EMAIL_IMAP_ACCOUNT_ID}
       Email__ImapFolder: ${EMAIL_IMAP_FOLDER:-INBOX}
+      Email__TrustedAuthServId: ${EMAIL_TRUSTED_AUTHSERV_ID:?Set EMAIL_TRUSTED_AUTHSERV_ID}
       EmailBranding__CompanyName: "${EMAIL_BRANDING_COMPANY_NAME:-VS Help Desk}"
       EmailBranding__SystemName: "${EMAIL_BRANDING_SYSTEM_NAME:-Corporate Customer Support System}"
       EmailBranding__LogoUrl: ${EMAIL_BRANDING_LOGO_URL:-}

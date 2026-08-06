@@ -36,7 +36,7 @@ public sealed record InboundEmailNormalizationResult(
 /// </summary>
 public static class InboundEmailNormalizer
 {
-    public static InboundEmailNormalizationResult Normalize(IncomingEmail email)
+    public static InboundEmailNormalizationResult Normalize(IncomingEmail email, IMailboxQuotaSettings? quota = null)
     {
         ArgumentNullException.ThrowIfNull(email);
 
@@ -51,14 +51,16 @@ public static class InboundEmailNormalizer
                 InboundMailLimits.BoundProcessingNote(quarantineNote));
         }
 
-        // Raw size durable quarantine (blocker 4): never mark Seen without DB record; quarantine here before any processing.
-        if (email.RawSize.HasValue && email.RawSize.Value > MailboxQuota.MaxRawMessageBytes)
+        var maxRaw = quota?.MaxRawMessageBytes ?? MailboxQuota.MaxRawMessageBytes;
+        var maxAtt = quota?.MaxAttachmentsPerMessage ?? MailboxQuota.MaxAttachmentsPerMessage;
+        // Raw size durable quarantine (blocker 4) and oversized flag
+        if (email.IsOversized || (email.RawSize.HasValue && email.RawSize.Value > maxRaw))
         {
             return new InboundEmailNormalizationResult(
                 InboundEmailPolicyOutcome.Quarantine,
                 Email: null,
                 identity,
-                InboundMailLimits.BoundProcessingNote($"Message raw size {email.RawSize.Value} exceeds limit {MailboxQuota.MaxRawMessageBytes}."));
+                InboundMailLimits.BoundProcessingNote($"Message raw size {email.RawSize?.ToString() ?? "unknown"} exceeds limit {maxRaw}."));
         }
 
         // Trust-boundary: unauthenticated From+ticket-number must not allow append.
@@ -74,14 +76,15 @@ public static class InboundEmailNormalizer
         }
 
         var attachments = email.Attachments ?? Array.Empty<IncomingEmailAttachment>();
-        if (attachments.Count > MailboxQuota.MaxAttachmentsPerMessage)
+        var effectiveCount = email.TotalAttachmentCount > 0 ? email.TotalAttachmentCount : attachments.Count;
+        if (effectiveCount > maxAtt)
         {
             return new InboundEmailNormalizationResult(
                 InboundEmailPolicyOutcome.Quarantine,
                 Email: null,
                 identity,
                 InboundMailLimits.BoundProcessingNote(
-                    $"Too many attachments: {attachments.Count} exceeds limit {MailboxQuota.MaxAttachmentsPerMessage}."));
+                    $"Too many attachments: {effectiveCount} exceeds limit {maxAtt}."));
         }
 
         var normalized = new NormalizedIncomingEmail(

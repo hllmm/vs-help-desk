@@ -499,11 +499,11 @@ performance/compose-stats*.ndjson
 performance/ticket-read-performance.json
 
 # AI agent directories
-docs/
+docs/*
 !docs/architecture.md
 !docs/deploy-production.md
 !docs/deploy-kubernetes.md
-!docs/superpowers/
+!docs/security-verification.md
 # Local dotnet CLI cache
 .dotnet/
 

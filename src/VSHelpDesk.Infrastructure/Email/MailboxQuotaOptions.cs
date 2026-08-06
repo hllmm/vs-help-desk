@@ -1,8 +1,9 @@
+using VSHelpDesk.Application.Abstractions.Email;
 using VSHelpDesk.Domain.Mail;
 
 namespace VSHelpDesk.Infrastructure.Email;
 
-public sealed class MailboxQuotaOptions
+public sealed class MailboxQuotaOptions : IMailboxQuotaSettings
 {
     public const string SectionName = "MailboxQuota";
 

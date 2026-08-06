@@ -37,7 +37,15 @@ if (ciRaw) {
   try {
     // Try to use js-yaml if available is overkill; just check required strings.
     check(ciRaw.includes('npm audit --audit-level=moderate'), 'frontend job has npm audit --audit-level=moderate');
-    check(ciRaw.includes('gitleaks/gitleaks-action@v2'), 'secrets-scan job uses gitleaks/gitleaks-action@v2');
+    // Blocker 6: validate 40-char SHA-pinned Actions, not floating tags
+    const shaPinned = /uses:\s*[^\n]*@[a-f0-9]{40}\b/g;
+    const shaMatches = ciRaw.match(shaPinned) || [];
+    check(shaMatches.length >= 8, `ci.yml has >=8 SHA-pinned actions (found ${shaMatches.length})`);
+    check(ciRaw.includes('gitleaks/gitleaks-action@dcedce43'), 'secrets-scan uses SHA-pinned gitleaks action');
+    check(!ciRaw.includes('gitleaks/gitleaks-action@v2'), 'ci.yml does not use floating gitleaks@v2');
+    check(ciRaw.includes('aquasecurity/trivy-action@6e7b7d1f'), 'Trivy uses SHA-pinned action');
+    check(!ciRaw.includes('aquasecurity/trivy-action@0.24.0'), 'Trivy not using floating 0.24.0 tag without SHA');
+    check(ciRaw.includes('actions/checkout@fbc6f399'), 'checkout uses SHA-pinned');
     check(ciRaw.includes('secrets-scan'), 'ci.yml contains secrets-scan job');
     check(ciRaw.includes('aquasecurity/trivy-action'), 'ci.yml contains Trivy scan (aquasecurity/trivy-action)');
     check(ciRaw.includes('image-scan'), 'ci.yml contains image-scan job');

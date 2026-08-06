@@ -34,7 +34,9 @@ public sealed record IncomingEmail(
     DateTime ReceivedAt,
     IReadOnlyList<IncomingEmailAttachment> Attachments,
     EmailAuthenticationVerdict? AuthenticationVerdict = null,
-    long? RawSize = null);
+    long? RawSize = null,
+    int TotalAttachmentCount = 0,
+    bool IsOversized = false);
 
 public sealed record IncomingEmailAttachment(
     string FileName,

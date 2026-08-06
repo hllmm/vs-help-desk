@@ -16,10 +16,11 @@ public sealed class ImapEmailReceiver(
     IImapMailboxClient mailboxClient,
     HtmlToPlainTextConverter htmlConverter,
     ILogger<ImapEmailReceiver> logger,
-    IOptions<MailboxQuotaOptions>? quotaOptions = null) : IEmailReceiver
+    IOptions<MailboxQuotaOptions>? quotaOptions = null,
+    IMailboxQuotaSettings? quotaSettings = null) : IEmailReceiver
 {
     private const int CopyBufferSize = 8192;
-    private readonly MailboxQuotaOptions quota = quotaOptions?.Value ?? new MailboxQuotaOptions();
+    private readonly IMailboxQuotaSettings quota = quotaSettings ?? quotaOptions?.Value ?? new MailboxQuotaOptions();
 
     public async Task<IReadOnlyList<IncomingEmail>> FetchUnreadAsync(
         CancellationToken cancellationToken = default)
@@ -122,15 +123,55 @@ public sealed class ImapEmailReceiver(
             AuthServId: string.IsNullOrWhiteSpace(trustedId) ? null : trustedId,
             RawHeader: rawAuthHeader);
 
-        // Raw size for durable quarantine (never mark Seen without DB record)
-        long? rawSize = null;
-        try
+        // Blocker 3: for IsOversized use Size from FETCH, do not serialize via MemoryStream
+        long? rawSize = item.Size;
+        bool isOversized = item.IsOversized;
+        if (!isOversized && rawSize == null)
         {
-            using var ms = new System.IO.MemoryStream();
-            message.WriteTo(ms);
-            rawSize = ms.Length;
+            try
+            {
+                using var ms = new System.IO.MemoryStream();
+                message.WriteTo(ms);
+                rawSize = ms.Length;
+            }
+            catch { rawSize = null; }
         }
-        catch { rawSize = null; }
+        // Blocker 4: bounded attachment count up to max+1, no List(totalCount) allocation
+        int totalAttachmentCount = 0;
+        bool countExceeded = false;
+        int maxAttachments = quota.MaxAttachmentsPerMessage > 0 ? quota.MaxAttachmentsPerMessage : VSHelpDesk.Domain.Mail.MailboxQuota.MaxAttachmentsPerMessage;
+        {
+            int c = 0;
+            foreach (var _ in message.Attachments)
+            {
+                c++;
+                if (c > maxAttachments)
+                {
+                    countExceeded = true;
+                    totalAttachmentCount = c; // > max
+                    break;
+                }
+            }
+            if (!countExceeded) totalAttachmentCount = c;
+        }
+
+        // If oversized, do not decode attachments at all; return metadata-only
+        IReadOnlyList<IncomingEmailAttachment> attachments;
+        if (isOversized)
+        {
+            attachments = Array.Empty<IncomingEmailAttachment>();
+        }
+        else if (countExceeded)
+        {
+            logger.LogWarning(
+                "IMAP attachments exceed per-message limit count>{Max} will be quarantined before decoding",
+                maxAttachments);
+            attachments = Array.Empty<IncomingEmailAttachment>();
+        }
+        else
+        {
+            attachments = MapAttachments(message);
+        }
 
         return new IncomingEmail(
             MessageId: messageId,
@@ -141,9 +182,11 @@ public sealed class ImapEmailReceiver(
             Body: body,
             IsHtml: false,
             ReceivedAt: receivedAt,
-            Attachments: MapAttachments(message),
+            Attachments: attachments,
             AuthenticationVerdict: verdict,
-            RawSize: rawSize);
+            RawSize: rawSize,
+            TotalAttachmentCount: totalAttachmentCount,
+            IsOversized: isOversized);
     }
 
     /// <summary>
@@ -219,31 +262,6 @@ public sealed class ImapEmailReceiver(
     private IReadOnlyList<IncomingEmailAttachment> MapAttachments(MimeMessage message)
     {
         var maxFileSizeBytes = fileStorageOptions.Value.MaxFileSizeBytes;
-        var maxAttachmentsPerMessage = quota.MaxAttachmentsPerMessage > 0
-            ? quota.MaxAttachmentsPerMessage
-            : VSHelpDesk.Domain.Mail.MailboxQuota.MaxAttachmentsPerMessage;
-        // Blocker 5: enforce count before decoding/mapping every attachment.
-        var totalCount = message.Attachments.Count();
-        if (totalCount > maxAttachmentsPerMessage)
-        {
-            logger.LogWarning(
-                "IMAP attachments exceed per-message limit count={Count} maxAttachmentsPerMessage={Max} will be quarantined before decoding",
-                totalCount,
-                maxAttachmentsPerMessage);
-            // Return placeholder list with count > limit so normalizer quarantines without decoding bodies (saves memory/CPU)
-            var placeholder = new List<IncomingEmailAttachment>(totalCount);
-            foreach (var att in message.Attachments)
-            {
-                if (att is MimePart p)
-                {
-                    var fn = p.FileName ?? p.ContentType?.Name ?? "attachment";
-                    var ct = p.ContentType?.MimeType ?? "application/octet-stream";
-                    placeholder.Add(new IncomingEmailAttachment(fn, ct, 0, Array.Empty<byte>()));
-                }
-            }
-            return placeholder;
-        }
-
         var attachments = new List<IncomingEmailAttachment>();
         foreach (var attachment in message.Attachments)
         {
@@ -345,14 +363,6 @@ public sealed class ImapEmailReceiver(
                     "IMAP attachment content load failed; omitting fileName={FileName}",
                     fileName);
             }
-        }
-
-        if (attachments.Count > maxAttachmentsPerMessage)
-        {
-            logger.LogWarning(
-                "IMAP attachments exceed per-message limit count={Count} maxAttachmentsPerMessage={Max} quarantined=quota-exceeded",
-                attachments.Count,
-                maxAttachmentsPerMessage);
         }
 
         return attachments;

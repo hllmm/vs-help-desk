@@ -4,6 +4,7 @@ using MailKit.Search;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MimeKit;
+using VSHelpDesk.Application.Abstractions.Email;
 
 namespace VSHelpDesk.Infrastructure.Email;
 
@@ -13,10 +14,11 @@ namespace VSHelpDesk.Infrastructure.Email;
 public sealed class MailKitImapMailboxClient(
     IOptions<EmailOptions> emailOptions,
     ILogger<MailKitImapMailboxClient> logger,
-    IOptions<MailboxQuotaOptions>? quotaOptions = null) : IImapMailboxClient
+    IOptions<MailboxQuotaOptions>? quotaOptions = null,
+    IMailboxQuotaSettings? quotaSettings = null) : IImapMailboxClient
 {
     private readonly EmailOptions options = emailOptions.Value;
-    private readonly MailboxQuotaOptions quota = quotaOptions?.Value ?? new MailboxQuotaOptions();
+    private readonly IMailboxQuotaSettings quota = quotaSettings ?? quotaOptions?.Value ?? new MailboxQuotaOptions();
     private readonly ImapClient client = new();
     private IMailFolder? folder;
     private bool disposed;
@@ -73,35 +75,49 @@ public sealed class MailKitImapMailboxClient(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Never mark Seen here for quota-rejected mail; let Application layer create durable quarantine first (blocker 4).
-            // Pre-fetch size is used only for logging, not for immediate Seen. Oversized will be fetched and then
-            // quarantined via normalizer/Handler which commits ProcessedEmailMessage before MarkSeen.
+            // Blocker 3: for SIZE above limit, do not call GetMessageAsync and do not serialize into MemoryStream.
+            // Return metadata-only oversized item (IsOversized) for durable quarantine in Application layer.
             if (sizeByUid.TryGetValue(uid.Id, out var size) && size.HasValue && size.Value > quota.MaxRawMessageBytes)
             {
                 logger.LogWarning(
-                    "IMAP message oversized uid={Uid} size={Size} maxRawMessageBytes={MaxRawMessageBytes} will be quarantined after durable record",
+                    "IMAP message oversized uid={Uid} size={Size} maxRawMessageBytes={MaxRawMessageBytes} metadata-only, will be durably quarantined",
                     uid.Id,
                     size.Value,
                     quota.MaxRawMessageBytes);
-                // Still fetch to allow durable quarantine path; do not mark Seen here
+                var placeholder = new MimeMessage();
+                placeholder.MessageId = $"<oversized-{uid.Id}@placeholder>";
+                placeholder.Subject = "[Oversized message]";
+                placeholder.From.Add(new MailboxAddress("unknown", "unknown@example.invalid"));
+                placeholder.Body = new TextPart("plain") { Text = "[Oversized message content not downloaded]" };
+                // Use Date.Now for received
+                placeholder.Date = DateTimeOffset.UtcNow;
+                items.Add(new ImapMailboxItem(uidValidity, uid.Id, placeholder, size.Value, IsOversized: true));
+                continue;
             }
 
             var message = await openFolder
                 .GetMessageAsync(uid, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Note: raw size after fetch is logged but not used to skip/mark here; let Application layer quarantine durably.
-            var rawSize = EstimateRawSize(message);
-            if (rawSize > quota.MaxRawMessageBytes)
+            // Fallback raw size check after download only for servers without SIZE; do not use MemoryStream for oversized already handled.
+            // For normal messages, Estimate via WriteTo is acceptable but we already have Size for most; only do if Size missing.
+            long? rawSize = null;
+            if (!sizeByUid.ContainsKey(uid.Id))
             {
-                logger.LogWarning(
-                    "IMAP message oversized after fetch uid={Uid} rawSize={RawSize} maxRawMessageBytes={MaxRawMessageBytes} will be quarantined after durable record",
-                    uid.Id,
-                    rawSize,
-                    quota.MaxRawMessageBytes);
+                rawSize = EstimateRawSize(message);
+                if (rawSize > quota.MaxRawMessageBytes)
+                {
+                    logger.LogWarning(
+                        "IMAP message oversized after fetch uid={Uid} rawSize={RawSize} maxRawMessageBytes={MaxRawMessageBytes} will be quarantined after durable record",
+                        uid.Id,
+                        rawSize,
+                        quota.MaxRawMessageBytes);
+                    items.Add(new ImapMailboxItem(uidValidity, uid.Id, message, rawSize, IsOversized: true));
+                    continue;
+                }
             }
 
-            items.Add(new ImapMailboxItem(uidValidity, uid.Id, message));
+            items.Add(new ImapMailboxItem(uidValidity, uid.Id, message, sizeByUid.GetValueOrDefault(uid.Id), IsOversized: false));
         }
 
         if (uids.Count > take)
