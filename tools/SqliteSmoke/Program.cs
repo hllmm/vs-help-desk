@@ -106,32 +106,40 @@ if (missingIndexes.Count > 0)
 
 Console.WriteLine($"All {expectedIndexes.Length} expected indexes present.");
 
-// Verify that SQLite model does NOT contain xmin/phr_trgm artifacts (Postgres-only)
+// Verify that SQLite model does NOT contain xmin/pg_trgm artifacts (Postgres-only)
 // Check that Tickets table does not have xmin column (should be integer Version instead)
 var pragmaCmd = connection.CreateCommand();
 pragmaCmd.CommandText = "PRAGMA table_info(Tickets);";
-var columns = new List<string>();
+var columns = new List<(string Name, string Type)>();
 using (var reader = await pragmaCmd.ExecuteReaderAsync())
 {
     while (await reader.ReadAsync())
     {
-        // column name is at index 1
-        columns.Add(reader.GetString(1));
+        // PRAGMA table_info: cid(0), name(1), type(2), notnull(3), dflt_value(4), pk(5)
+        columns.Add((reader.GetString(1), reader.GetString(2)));
     }
 }
 
-Console.WriteLine("Tickets columns: " + string.Join(", ", columns));
+Console.WriteLine("Tickets columns: " + string.Join(", ", columns.Select(c => $"{c.Name}({c.Type})")));
 
-if (columns.Contains("xmin"))
+if (columns.Any(c => c.Name == "xmin"))
 {
     Console.Error.WriteLine("Unexpected xmin column found in SQLite Tickets table — provider-specific model should not contain xmin for SQLite.");
     Environment.Exit(1);
 }
 
-if (!columns.Contains("Version"))
+var versionCol = columns.FirstOrDefault(c => c.Name == "Version");
+if (versionCol.Name is null)
 {
     Console.Error.WriteLine("Missing Version column in SQLite Tickets table.");
     Environment.Exit(1);
 }
 
+if (!string.Equals(versionCol.Type, "INTEGER", StringComparison.OrdinalIgnoreCase))
+{
+    Console.Error.WriteLine($"Unexpected Version type '{versionCol.Type}' in SQLite Tickets table — expected INTEGER for provider-specific SQLite model (Postgres uses xid/xmin).");
+    Environment.Exit(1);
+}
+
+Console.WriteLine("SQLite Version column verified as INTEGER, no xmin — provider-specific model correct.");
 Console.WriteLine("SQLite smoke verification passed.");
