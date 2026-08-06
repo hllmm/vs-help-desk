@@ -15,11 +15,10 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
     [Fact]
     public async Task Handler_quarantines_remaining_when_aggregate_exceeds_50MB()
     {
-        // Each mail has 20MB attachments -> 3 mails would be 60MB, so third should be quota-quarantined
-        var twentyMb = 20L * 1024 * 1024;
-        var mail1 = MailWithAttachments("fake\\m1", twentyMb);
-        var mail2 = MailWithAttachments("fake\\m2", twentyMb);
-        var mail3 = MailWithAttachments("fake\\m3", twentyMb);
+        // Streaming disposition: third mail is AggregateBudgetExceeded from IMAP client
+        var mail1 = MailWithAttachments("fake\\m1", 1024);
+        var mail2 = MailWithAttachments("fake\\m2", 1024);
+        var mail3 = MailWithDisposition("fake\\m3", ImapItemDisposition.AggregateBudgetExceeded);
 
         var receiver = new FakeReceiver([mail1, mail2, mail3]);
         var factory = new ScriptedFactory([
@@ -31,10 +30,10 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
         var result = await handler.HandleAsync(new ProcessIncomingEmailsCommand(), CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        // Only first 2 should be processed, third quarantined by quota
+        // Only first 2 should be processed, third quarantined by disposition
         Assert.Equal(2, factory.ProcessCallCount);
         Assert.Equal(1, result.Value!.Quarantined);
-        Assert.Contains(result.Value.Failures, f => f.Code == "aggregate-quota-exceeded");
+        Assert.Contains(result.Value.Failures, f => f.Code == "AggregateBudgetExceeded");
         // Third mail still marked as processed (quota-quarantined)
         Assert.Contains(receiver.Marked, h => h.Value == "fake\\m3");
     }
@@ -64,9 +63,8 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
     [Fact]
     public async Task Handler_single_huge_mail_exceeding_limit_is_quarantined()
     {
-        // Single mail with 60MB > 50MB limit should be quarantined directly
-        var sixtyMb = 60L * 1024 * 1024;
-        var mail = MailWithAttachments("fake\\huge", sixtyMb);
+        // Single mail disposition RawMessageTooLarge from IMAP client
+        var mail = MailWithDisposition("fake\\huge", ImapItemDisposition.RawMessageTooLarge);
         var receiver = new FakeReceiver([mail]);
         var factory = new ScriptedFactory([]);
 
@@ -76,16 +74,15 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
         Assert.True(result.IsSuccess);
         Assert.Equal(0, factory.ProcessCallCount);
         Assert.Equal(1, result.Value!.Quarantined);
-        Assert.Contains(result.Value.Failures, f => f.Code == "aggregate-quota-exceeded");
+        Assert.Contains(result.Value.Failures, f => f.Code == "RawMessageTooLarge");
     }
 
     [Fact]
     public async Task Handler_quarantine_persistence_failure_leaves_mail_unseen()
     {
-        var twentyMb = 20L * 1024 * 1024;
-        var mail1 = MailWithAttachments("fake\\m1", twentyMb);
-        var mail2 = MailWithAttachments("fake\\m2", twentyMb);
-        var mail3 = MailWithAttachments("fake\\m3", twentyMb); // will exceed aggregate
+        var mail1 = MailWithAttachments("fake\\m1", 1024);
+        var mail2 = MailWithAttachments("fake\\m2", 1024);
+        var mail3 = MailWithDisposition("fake\\m3", ImapItemDisposition.AggregateBudgetExceeded); // disposition quarantine
 
         var receiver = new FakeReceiver([mail1, mail2, mail3]);
         var factory = new ScriptedFactory([
@@ -106,10 +103,9 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
     [Fact]
     public async Task Handler_quarantine_persists_before_mark_ordering()
     {
-        var twentyMb = 20L * 1024 * 1024;
-        var mail1 = MailWithAttachments("fake\\m1", twentyMb);
-        var mail2 = MailWithAttachments("fake\\m2", twentyMb);
-        var mail3 = MailWithAttachments("fake\\m3", twentyMb);
+        var mail1 = MailWithAttachments("fake\\m1", 1024);
+        var mail2 = MailWithAttachments("fake\\m2", 1024);
+        var mail3 = MailWithDisposition("fake\\m3", ImapItemDisposition.AggregateBudgetExceeded);
 
         var events = new List<string>();
         var receiver = new OrderedFakeReceiver([mail1, mail2, mail3], events);
@@ -187,6 +183,23 @@ public sealed class ProcessIncomingEmailsHandlerQuotaTests
             ReceivedAt: DateTime.UtcNow,
             Attachments: [attachment]);
     }
+
+    private static IncomingEmail MailWithDisposition(string receiptValue, ImapItemDisposition disposition) =>
+        new(
+            MessageId: null,
+            ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, receiptValue),
+            FromAddress: null,
+            FromDisplayName: null,
+            Subject: null,
+            Body: string.Empty,
+            IsHtml: false,
+            ReceivedAt: DateTime.UtcNow,
+            Attachments: Array.Empty<IncomingEmailAttachment>(),
+            AuthenticationVerdict: null,
+            RawSize: 1024,
+            TotalAttachmentCount: 0,
+            IsOversized: true,
+            Disposition: disposition);
 
     private static ProcessIncomingEmailsHandler CreateHandler(IEmailReceiver receiver, IInboundEmailItemProcessorFactory factory, IProcessedEmailRepository? repo = null, IUnitOfWork? uow = null, IDatabaseErrorClassifier? classifier = null)
     {

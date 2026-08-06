@@ -62,18 +62,194 @@ public sealed class ProcessIncomingEmailsHandler(
             ackSent += retrySummary.Sent;
             ackFailed += retrySummary.Failed;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             logger.LogError(ex, "ProcessIncomingEmails acknowledgement retry pass failed");
             // Continue to fetch/process receipts; durable pending rows remain for a later run.
         }
 
-        List<IncomingEmail> unread = new();
+        var createdTicketNumbers = new List<string>();
+        var failures = new List<ProcessIncomingEmailFailure>();
+        var createdTickets = 0;
+        var customerReplies = 0;
+        var reopenedTickets = 0;
+        var alreadyProcessed = 0;
+        var quarantined = 0;
+        var retryableFailures = 0;
+        _ = mailboxQuota;
+        var fetched = 0;
+
         try
         {
-            await foreach (var m in emailReceiver.FetchUnreadAsync(cancellationToken).WithCancellation(cancellationToken))
+            await foreach (var mail in emailReceiver.FetchUnreadAsync().WithCancellation(cancellationToken))
             {
-                unread.Add(m);
+                fetched++;
+                var itemReference = ToItemReference(mail.ReceiptHandle);
+
+                if (mail.Disposition != ImapItemDisposition.Ready)
+                {
+                    bool quarantineCommitted = false;
+                    try
+                    {
+                        var identity = InboundEmailIdentityFactory.Create(mail);
+                        var existing = await processedEmailRepository.GetByIdempotencyKeyAsync(identity.IdempotencyKey, cancellationToken);
+                        if (existing == null)
+                        {
+                            var now = timeProvider.GetUtcNow().UtcDateTime;
+                            await processedEmailRepository.AddAsync(VSHelpDesk.Domain.Entities.ProcessedEmailMessage.ForQuarantine(
+                                identity.IdempotencyKey,
+                                sourceMessageId: identity.SourceMessageId,
+                                processedAtUtc: now,
+                                processingNote: InboundMailLimits.BoundProcessingNote($"{mail.Disposition}: {itemReference}")), cancellationToken);
+                            await unitOfWork.SaveChangesAsync(cancellationToken);
+                        }
+                        quarantineCommitted = true;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex) when (databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
+                    {
+                        unitOfWork.ClearTrackedChanges();
+                        quarantineCommitted = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Failed to create durable quarantine for disposition itemReference={ItemReference} disposition={Disposition}", itemReference, mail.Disposition);
+                        failures.Add(new ProcessIncomingEmailFailure("quarantine-failed", itemReference));
+                        continue;
+                    }
+
+                    if (!quarantineCommitted)
+                    {
+                        failures.Add(new ProcessIncomingEmailFailure("quarantine-failed", itemReference));
+                        continue;
+                    }
+
+                    try
+                    {
+                        await emailReceiver.MarkAsProcessedAsync(mail.ReceiptHandle, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(
+                            ex,
+                            "ProcessIncomingEmails MarkAsProcessed failed for quarantined item itemReference={ItemReference} receiptKind={ReceiptKind} disposition={Disposition}",
+                            itemReference,
+                            mail.ReceiptHandle.Kind,
+                            mail.Disposition);
+                        failures.Add(new ProcessIncomingEmailFailure("mark-seen-failed", itemReference));
+                    }
+
+                    quarantined++;
+                    failures.Add(new ProcessIncomingEmailFailure(mail.Disposition.ToString(), itemReference));
+                    continue;
+                }
+
+                InboundEmailItemResult item;
+                try
+                {
+                    item = await itemProcessorFactory.ProcessAsync(mail, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "ProcessIncomingEmails item failed itemReference={ItemReference}",
+                        itemReference);
+                    retryableFailures++;
+                    failures.Add(new ProcessIncomingEmailFailure("processing-failed", itemReference));
+                    continue;
+                }
+
+                var shouldMark = false;
+                switch (item.Outcome)
+                {
+                    case InboundEmailItemOutcome.CreatedTicket:
+                        createdTickets++;
+                        if (!string.IsNullOrWhiteSpace(item.TicketNumber))
+                        {
+                            createdTicketNumbers.Add(item.TicketNumber);
+                        }
+
+                        if (item.AcknowledgementSent)
+                        {
+                            ackSent++;
+                        }
+
+                        if (item.AcknowledgementFailed)
+                        {
+                            ackFailed++;
+                        }
+
+                        // Mark even when SMTP failed: durable retry state was committed.
+                        shouldMark = true;
+                        break;
+
+                    case InboundEmailItemOutcome.AppendedReply:
+                        customerReplies++;
+                        if (item.WasReopened)
+                        {
+                            reopenedTickets++;
+                        }
+
+                        shouldMark = true;
+                        break;
+
+                    case InboundEmailItemOutcome.AlreadyProcessed:
+                        alreadyProcessed++;
+                        shouldMark = true;
+                        break;
+
+                    case InboundEmailItemOutcome.Quarantined:
+                        quarantined++;
+                        shouldMark = true;
+                        break;
+
+                    case InboundEmailItemOutcome.RetryableFailure:
+                        retryableFailures++;
+                        failures.Add(new ProcessIncomingEmailFailure(
+                            item.FailureCode ?? "retryable-failure",
+                            itemReference));
+                        shouldMark = false;
+                        break;
+                }
+
+                if (!shouldMark)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await emailReceiver.MarkAsProcessedAsync(mail.ReceiptHandle, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "ProcessIncomingEmails MarkAsProcessed failed itemReference={ItemReference} receiptKind={ReceiptKind}",
+                        itemReference,
+                        mail.ReceiptHandle.Kind);
+                    failures.Add(new ProcessIncomingEmailFailure("mark-seen-failed", itemReference));
+                }
             }
         }
         catch (OperationCanceledException)
@@ -90,183 +266,10 @@ public sealed class ProcessIncomingEmailsHandler(
                 messageProvider.Get(MessageKeys.MailProcessing.FailedToFetchUnreadEmails));
         }
 
-        var createdTicketNumbers = new List<string>();
-        var failures = new List<ProcessIncomingEmailFailure>();
-        var createdTickets = 0;
-        var customerReplies = 0;
-        var reopenedTickets = 0;
-        var alreadyProcessed = 0;
-        var quarantined = 0;
-        var retryableFailures = 0;
-        long aggregateDecodedBytes = 0;
-
-        foreach (var mail in unread)
-        {
-            var itemReference = ToItemReference(mail.ReceiptHandle);
-
-            var mailAttachmentBytes = mail.Attachments.Sum(a => a.FileSize);
-            if (aggregateDecodedBytes + mailAttachmentBytes > mailboxQuota.MaxAggregateBytesPerRun)
-            {
-                logger.LogWarning(
-                    "ProcessIncomingEmails aggregate quota exceeded itemReference={ItemReference} aggregateDecodedBytes={Aggregate} mailBytes={MailBytes} maxAggregateBytesPerRun={Max} quarantined=quota-exceeded",
-                    itemReference,
-                    aggregateDecodedBytes,
-                    mailAttachmentBytes,
-                    mailboxQuota.MaxAggregateBytesPerRun);
-
-                // Durable quarantine before marking Seen (blocker 4) — required, never mark unless committed
-                bool quarantineCommitted = false;
-                try
-                {
-                    var identity = InboundEmailIdentityFactory.Create(mail);
-                    var existing = await processedEmailRepository.GetByIdempotencyKeyAsync(identity.IdempotencyKey, cancellationToken);
-                    if (existing == null)
-                    {
-                        var now = timeProvider.GetUtcNow().UtcDateTime;
-                        await processedEmailRepository.AddAsync(VSHelpDesk.Domain.Entities.ProcessedEmailMessage.ForQuarantine(
-                            identity.IdempotencyKey,
-                            sourceMessageId: identity.SourceMessageId,
-                            processedAtUtc: now,
-                            processingNote: InboundMailLimits.BoundProcessingNote($"Aggregate quota exceeded: {aggregateDecodedBytes + mailAttachmentBytes} > {mailboxQuota.MaxAggregateBytesPerRun}")), cancellationToken);
-                        await unitOfWork.SaveChangesAsync(cancellationToken);
-                    }
-                    quarantineCommitted = true;
-                }
-                catch (Exception ex) when (databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
-                {
-                    unitOfWork.ClearTrackedChanges();
-                    quarantineCommitted = true; // idempotent conflict means already persisted
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Failed to create durable quarantine for aggregate quota itemReference={ItemReference}", itemReference);
-                    retryableFailures++;
-                    failures.Add(new ProcessIncomingEmailFailure("quarantine-failed", itemReference));
-                    continue; // do not mark Seen
-                }
-
-                if (!quarantineCommitted)
-                {
-                    retryableFailures++;
-                    failures.Add(new ProcessIncomingEmailFailure("quarantine-failed", itemReference));
-                    continue;
-                }
-
-                quarantined++;
-                failures.Add(new ProcessIncomingEmailFailure("aggregate-quota-exceeded", itemReference));
-
-                try
-                {
-                    await emailReceiver.MarkAsProcessedAsync(mail.ReceiptHandle, cancellationToken);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    logger.LogWarning(
-                        ex,
-                        "ProcessIncomingEmails MarkAsProcessed failed for quota-quarantined item itemReference={ItemReference} receiptKind={ReceiptKind}",
-                        itemReference,
-                        mail.ReceiptHandle.Kind);
-                    failures.Add(new ProcessIncomingEmailFailure("mark-seen-failed", itemReference));
-                }
-
-                continue;
-            }
-
-            aggregateDecodedBytes += mailAttachmentBytes;
-
-            InboundEmailItemResult item;
-            try
-            {
-                item = await itemProcessorFactory.ProcessAsync(mail, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(
-                    ex,
-                    "ProcessIncomingEmails item failed itemReference={ItemReference}",
-                    itemReference);
-                retryableFailures++;
-                failures.Add(new ProcessIncomingEmailFailure("processing-failed", itemReference));
-                continue;
-            }
-
-            var shouldMark = false;
-            switch (item.Outcome)
-            {
-                case InboundEmailItemOutcome.CreatedTicket:
-                    createdTickets++;
-                    if (!string.IsNullOrWhiteSpace(item.TicketNumber))
-                    {
-                        createdTicketNumbers.Add(item.TicketNumber);
-                    }
-
-                    if (item.AcknowledgementSent)
-                    {
-                        ackSent++;
-                    }
-
-                    if (item.AcknowledgementFailed)
-                    {
-                        ackFailed++;
-                    }
-
-                    // Mark even when SMTP failed: durable retry state was committed.
-                    shouldMark = true;
-                    break;
-
-                case InboundEmailItemOutcome.AppendedReply:
-                    customerReplies++;
-                    if (item.WasReopened)
-                    {
-                        reopenedTickets++;
-                    }
-
-                    shouldMark = true;
-                    break;
-
-                case InboundEmailItemOutcome.AlreadyProcessed:
-                    alreadyProcessed++;
-                    shouldMark = true;
-                    break;
-
-                case InboundEmailItemOutcome.Quarantined:
-                    quarantined++;
-                    shouldMark = true;
-                    break;
-
-                case InboundEmailItemOutcome.RetryableFailure:
-                    retryableFailures++;
-                    failures.Add(new ProcessIncomingEmailFailure(
-                        item.FailureCode ?? "retryable-failure",
-                        itemReference));
-                    shouldMark = false;
-                    break;
-            }
-
-            if (!shouldMark)
-            {
-                continue;
-            }
-
-            try
-            {
-                await emailReceiver.MarkAsProcessedAsync(mail.ReceiptHandle, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning(
-                    ex,
-                    "ProcessIncomingEmails MarkAsProcessed failed itemReference={ItemReference} receiptKind={ReceiptKind}",
-                    itemReference,
-                    mail.ReceiptHandle.Kind);
-                failures.Add(new ProcessIncomingEmailFailure("mark-seen-failed", itemReference));
-            }
-        }
-
         logger.LogInformation(
             "ProcessIncomingEmails finished receiverMode={ReceiverMode} fetched={Fetched} created={Created} replies={Replies} reopened={Reopened} alreadyProcessed={AlreadyProcessed} ackSent={AckSent} ackFailed={AckFailed} quarantined={Quarantined} retryableFailures={RetryableFailures} failures={FailureCount}",
             mode,
-            unread.Count,
+            fetched,
             createdTickets,
             customerReplies,
             reopenedTickets,
@@ -279,7 +282,7 @@ public sealed class ProcessIncomingEmailsHandler(
 
         return Result.Success(new ProcessIncomingEmailsResult(
             mode,
-            unread.Count,
+            fetched,
             createdTickets,
             customerReplies,
             reopenedTickets,
