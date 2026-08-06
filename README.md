@@ -139,6 +139,22 @@ curl -sS -X POST http://localhost:5154/api/jobs/process-incoming-emails \
 ```
 
 Demo akışı ve bilinen kısıtlar: [docs/demo-runbook.md](docs/demo-runbook.md), [docs/known-limitations.md](docs/known-limitations.md).
+
+## Güvenlik sertleştirmesi (2026-08-06)
+
+| Alan | Politika |
+|------|----------|
+| **JWT** | Ömür **60 dk** (`Auth:ExpirationMinutes`), aralık **15–60** (`AuthOptionsValidator`). `SecurityStamp` iptali: rol / `IsActive` / parola değişiminde tüm eski tokenlar anında geçersiz (`AuthenticationExtensions.OnTokenValidated`). `ClockSkew` 1 dk. |
+| **Proxy / ForwardedHeaders** | 2-hop zincir `edge/Ingress → web nginx → API`. `ForwardedHeaders:ForwardLimit=2` (1–10, dışı startup fail), `TrustedNetworks` yalnızca bilinen CIDR’lar. `RequireHeaderSymmetry=false`; web nginx `$forwarded_proto` map ile orijinal `X-Forwarded-Proto` korunur. Rate limiter `auth-login` sanitized `RemoteIpAddress` kullanır. |
+| **Inbound mail güven sınırı** | Production MTA `Authentication-Results: dmarc=pass` eklemeli. DMARC hizalı değilse müşteri reply’ı **quarantine** (yeni ticket oluşturulmaz, mevcut ticketa eklenmez); normalizer `Sender authentication failed (DMARC)` notu. `Fake` receiver quarantine yolu ile test edilebilir. |
+| **IMAP kotaları** | `InboundMailLimits`: **100 msg/run**, **10 ek/msg**, **50 MiB aggregate**, **5 MiB raw/msg**. Aşımda kalan mailler `aggregate-quota-exceeded` ile quarantine; ek fazlası `Too many attachments…` quarantine. |
+| **Ek politikası** | Extension→MIME allowlist (`pdf/png/jpeg/gif/webp/txt/docx/xlsx`), `application/msword` reddedilir, OOXML zip içinde `vbaProject.bin` makro taraması → `attachment-macro-rejected`, `ScanVerdict` (`Unscanned/Quarantined/Allowed`) saklanır. Dosya adı `1–255`, charset `a-zA-Z0-9._-`. |
+| **CSP / Başlıklar** | `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'` + `Permissions-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` — `frontend/nginx.conf` ve `deploy/k8s/base/web-nginx-configmap.yaml` (`always`). |
+| **Audit** | `UserAuditEvents` (append-only): `ActorUserId/TargetUserId`, `EventType` (Created/RoleChanged/ActiveChanged/PasswordReset), `Before/After` rol & aktif, `CreatedAt`, `CorrelationId`; parola/hash asla yazılmaz. Index `(TargetUserId, CreatedAt)`. |
+| **Supply chain** | nginx **1.28-alpine** (digest pinli), curl **8.13.0** (CronJobs), CI: `npm audit --audit-level=moderate`, `Trivy` HIGH/CRITICAL, `gitleaks`, `dotnet list package --vulnerable`. |
+
+Detay: [docs/architecture.md](docs/architecture.md) § Mail trust boundary / Quota / Audit · [docs/deploy-production.md](docs/deploy-production.md) · [docs/deploy-kubernetes.md](docs/deploy-kubernetes.md) · [docs/superpowers/plans/2026-08-06-verification-checklist.md](docs/superpowers/plans/2026-08-06-verification-checklist.md).
+
 ## Mail / job yapılandırması (Hafta 2 hardening)
 
 ### Receiver modes
