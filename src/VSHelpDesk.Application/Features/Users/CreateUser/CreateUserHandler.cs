@@ -1,7 +1,7 @@
 using System.Net.Mail;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
+using VSHelpDesk.Application.Abstractions.Correlation;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Features.Users.GetUsers;
@@ -19,7 +19,7 @@ public sealed class CreateUserHandler(
     ICurrentUserService currentUserService,
     TimeProvider? timeProvider = null,
     ILogger<CreateUserHandler>? logger = null,
-    IHttpContextAccessor? httpContextAccessor = null)
+    ICorrelationIdProvider? correlationIdProvider = null)
 {
     public const int MinPasswordLength = 12;
     public const int MaxPasswordLength = 128;
@@ -58,7 +58,7 @@ public sealed class CreateUserHandler(
         if (currentUserService.UserId is Guid actorId && actorId != Guid.Empty)
         {
             var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
-            var correlationId = httpContextAccessor?.HttpContext?.TraceIdentifier;
+            var correlationId = correlationIdProvider?.GetCorrelationId();
             var audit = new UserAuditEvent(
                 actorId,
                 user.Id,

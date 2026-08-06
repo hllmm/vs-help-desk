@@ -3,10 +3,13 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
 using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
+using VSHelpDesk.Domain.Mail;
 
 namespace VSHelpDesk.Application.Features.MailProcessing.ProcessIncomingEmails;
 
@@ -20,7 +23,11 @@ public sealed class ProcessIncomingEmailsHandler(
     IInboundEmailItemProcessorFactory itemProcessorFactory,
     IProcessIncomingEmailsGate processIncomingEmailsGate,
     IMessageProvider messageProvider,
-    ILogger<ProcessIncomingEmailsHandler> logger)
+    ILogger<ProcessIncomingEmailsHandler> logger,
+    IProcessedEmailRepository? processedEmailRepository = null,
+    IUnitOfWork? unitOfWork = null,
+    TimeProvider? timeProvider = null,
+    IDatabaseErrorClassifier? databaseErrorClassifier = null)
 {
     public async Task<Result<ProcessIncomingEmailsResult>> HandleAsync(
         ProcessIncomingEmailsCommand command,
@@ -90,14 +97,45 @@ public sealed class ProcessIncomingEmailsHandler(
             var itemReference = ToItemReference(mail.ReceiptHandle);
 
             var mailAttachmentBytes = mail.Attachments.Sum(a => a.FileSize);
-            if (aggregateDecodedBytes + mailAttachmentBytes > InboundMailLimits.MaxAggregateBytesPerRun)
+            if (aggregateDecodedBytes + mailAttachmentBytes > MailboxQuota.MaxAggregateBytesPerRun)
             {
                 logger.LogWarning(
                     "ProcessIncomingEmails aggregate quota exceeded itemReference={ItemReference} aggregateDecodedBytes={Aggregate} mailBytes={MailBytes} maxAggregateBytesPerRun={Max} quarantined=quota-exceeded",
                     itemReference,
                     aggregateDecodedBytes,
                     mailAttachmentBytes,
-                    InboundMailLimits.MaxAggregateBytesPerRun);
+                    MailboxQuota.MaxAggregateBytesPerRun);
+
+                // Durable quarantine before marking Seen (blocker 4)
+                if (processedEmailRepository != null && unitOfWork != null && timeProvider != null)
+                {
+                    try
+                    {
+                        var identity = InboundEmailIdentityFactory.Create(mail);
+                        var existing = await processedEmailRepository.GetByIdempotencyKeyAsync(identity.IdempotencyKey, cancellationToken);
+                        if (existing == null)
+                        {
+                            var now = timeProvider.GetUtcNow().UtcDateTime;
+                            await processedEmailRepository.AddAsync(VSHelpDesk.Domain.Entities.ProcessedEmailMessage.ForQuarantine(
+                                identity.IdempotencyKey,
+                                sourceMessageId: identity.SourceMessageId,
+                                processedAtUtc: now,
+                                processingNote: InboundMailLimits.BoundProcessingNote($"Aggregate quota exceeded: {aggregateDecodedBytes + mailAttachmentBytes} > {MailboxQuota.MaxAggregateBytesPerRun}")), cancellationToken);
+                            await unitOfWork.SaveChangesAsync(cancellationToken);
+                        }
+                    }
+                    catch (Exception ex) when (databaseErrorClassifier != null && databaseErrorClassifier.IsProcessedEmailIdempotencyConflict(ex))
+                    {
+                        unitOfWork?.ClearTrackedChanges();
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Failed to create durable quarantine for aggregate quota itemReference={ItemReference}", itemReference);
+                        retryableFailures++;
+                        failures.Add(new ProcessIncomingEmailFailure("quarantine-failed", itemReference));
+                        continue; // do not mark Seen
+                    }
+                }
 
                 quarantined++;
                 failures.Add(new ProcessIncomingEmailFailure("aggregate-quota-exceeded", itemReference));

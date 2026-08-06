@@ -1,7 +1,7 @@
 using System.Transactions;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using VSHelpDesk.Application.Abstractions.Authentication;
+using VSHelpDesk.Application.Abstractions.Correlation;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Common.Exceptions;
@@ -18,7 +18,7 @@ public sealed class UpdateUserHandler(
     ICurrentUserService currentUserService,
     TimeProvider? timeProvider = null,
     ILogger<UpdateUserHandler>? logger = null,
-    IHttpContextAccessor? httpContextAccessor = null)
+    ICorrelationIdProvider? correlationIdProvider = null)
 {
     private static readonly SemaphoreSlim AdminUpdateLock = new(1, 1);
     public async Task<UserListItemDto> HandleAsync(
@@ -74,7 +74,7 @@ public sealed class UpdateUserHandler(
             if (currentUserService.UserId is Guid actorId2 && actorId2 != Guid.Empty)
             {
                 var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
-                var correlationId = httpContextAccessor?.HttpContext?.TraceIdentifier;
+                var correlationId = correlationIdProvider?.GetCorrelationId();
                 if (!string.Equals(beforeRole, afterRole, StringComparison.Ordinal))
                 {
                     dbContext.Add(new UserAuditEvent(

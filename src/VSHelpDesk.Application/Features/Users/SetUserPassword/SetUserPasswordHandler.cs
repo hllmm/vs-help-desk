@@ -1,5 +1,5 @@
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using VSHelpDesk.Application.Abstractions.Correlation;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
@@ -17,7 +17,7 @@ public sealed class SetUserPasswordHandler(
     ICurrentUserService currentUserService,
     TimeProvider? timeProvider = null,
     ILogger<SetUserPasswordHandler>? logger = null,
-    IHttpContextAccessor? httpContextAccessor = null)
+    ICorrelationIdProvider? correlationIdProvider = null)
 {
     public async Task HandleAsync(
         SetUserPasswordCommand command,
@@ -36,7 +36,7 @@ public sealed class SetUserPasswordHandler(
         if (currentUserService.UserId is Guid actorId && actorId != Guid.Empty)
         {
             var now = (timeProvider ?? TimeProvider.System).GetUtcNow().UtcDateTime;
-            var correlationId = httpContextAccessor?.HttpContext?.TraceIdentifier;
+            var correlationId = correlationIdProvider?.GetCorrelationId();
             dbContext.Add(new UserAuditEvent(
                 actorId,
                 user.Id,

@@ -73,54 +73,32 @@ public sealed class MailKitImapMailboxClient(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // Never mark Seen here for quota-rejected mail; let Application layer create durable quarantine first (blocker 4).
+            // Pre-fetch size is used only for logging, not for immediate Seen. Oversized will be fetched and then
+            // quarantined via normalizer/Handler which commits ProcessedEmailMessage before MarkSeen.
             if (sizeByUid.TryGetValue(uid.Id, out var size) && size.HasValue && size.Value > quota.MaxRawMessageBytes)
             {
                 logger.LogWarning(
-                    "IMAP message quarantined as oversized uid={Uid} size={Size} maxRawMessageBytes={MaxRawMessageBytes} quarantined=quota-exceeded",
+                    "IMAP message oversized uid={Uid} size={Size} maxRawMessageBytes={MaxRawMessageBytes} will be quarantined after durable record",
                     uid.Id,
                     size.Value,
                     quota.MaxRawMessageBytes);
-                try
-                {
-                    await openFolder.AddFlagsAsync(uid, MessageFlags.Seen, true, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(
-                        ex,
-                        "IMAP failed to mark oversized message seen uid={Uid}",
-                        uid.Id);
-                }
-
-                continue;
+                // Still fetch to allow durable quarantine path; do not mark Seen here
             }
 
             var message = await openFolder
                 .GetMessageAsync(uid, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Fallback raw size check after download (covers servers without SIZE).
+            // Note: raw size after fetch is logged but not used to skip/mark here; let Application layer quarantine durably.
             var rawSize = EstimateRawSize(message);
             if (rawSize > quota.MaxRawMessageBytes)
             {
                 logger.LogWarning(
-                    "IMAP message quarantined as oversized after fetch uid={Uid} rawSize={RawSize} maxRawMessageBytes={MaxRawMessageBytes} quarantined=quota-exceeded",
+                    "IMAP message oversized after fetch uid={Uid} rawSize={RawSize} maxRawMessageBytes={MaxRawMessageBytes} will be quarantined after durable record",
                     uid.Id,
                     rawSize,
                     quota.MaxRawMessageBytes);
-                try
-                {
-                    await openFolder.AddFlagsAsync(uid, MessageFlags.Seen, true, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(
-                        ex,
-                        "IMAP failed to mark oversized-after-fetch message seen uid={Uid}",
-                        uid.Id);
-                }
-
-                continue;
             }
 
             items.Add(new ImapMailboxItem(uidValidity, uid.Id, message));

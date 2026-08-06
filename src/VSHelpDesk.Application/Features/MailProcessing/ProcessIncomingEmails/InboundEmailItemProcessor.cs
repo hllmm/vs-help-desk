@@ -58,11 +58,9 @@ public sealed class InboundEmailItemProcessor(
             return await BuildAlreadyProcessedAsync(identity.IdempotencyKey, existing, cancellationToken);
         }
 
-        // Trust-boundary defense-in-depth: if normalizer was bypassed, still quarantine unauthenticated
-        // ticket-number replies. Normalizer already quarantines, but processor must not allow append
-        // when Authentication-Results lacks dmarc=pass.
+        // Trust-boundary defense-in-depth: typed verdict parsed once in Infrastructure.
         if (TicketNumberParser.TryFindInText(normalized.Subject, out var ticketNumberForAuth) &&
-            !HasTrustedAuthentication(email.AuthenticationResults))
+            email.AuthenticationVerdict?.IsTrusted != true)
         {
             return await QuarantineAsync(
                 identity,
@@ -73,7 +71,7 @@ public sealed class InboundEmailItemProcessor(
         try
         {
             if (TicketNumberParser.TryFindInText(normalized.Subject, out var ticketNumber) &&
-                await TryGetMatchingCustomerTicketAsync(ticketNumber, normalized.FromAddress, email.AuthenticationResults, cancellationToken))
+                await TryGetMatchingCustomerTicketAsync(ticketNumber, normalized.FromAddress, email.AuthenticationVerdict, cancellationToken))
             {
                 return await AppendAsync(normalized, ticketNumber, cancellationToken);
             }
@@ -322,7 +320,7 @@ public sealed class InboundEmailItemProcessor(
     private async Task<bool> TryGetMatchingCustomerTicketAsync(
         string ticketNumber,
         string fromAddress,
-        string? authenticationResults,
+        EmailAuthenticationVerdict? verdict,
         CancellationToken cancellationToken)
     {
         var found = await ticketRepository.GetByNumberAsync(ticketNumber, cancellationToken);
@@ -336,20 +334,14 @@ public sealed class InboundEmailItemProcessor(
             return false;
         }
 
-        // Trust-boundary: matched sender but without dmarc=pass must not append.
-        // Return false so caller treats as new ticket (processor already quarantines above;
-        // this guard ensures defense-in-depth if quarantine is bypassed).
-        if (!HasTrustedAuthentication(authenticationResults))
+        // Trust-boundary: typed verdict must be trusted.
+        if (verdict?.IsTrusted != true)
         {
             return false;
         }
 
         return true;
     }
-
-    private static bool HasTrustedAuthentication(string? header) =>
-        !string.IsNullOrWhiteSpace(header) &&
-        header.Contains("dmarc=pass", StringComparison.OrdinalIgnoreCase);
 
     private async Task<InboundEmailItemResult> BuildAlreadyProcessedAsync(
         string idempotencyKey,

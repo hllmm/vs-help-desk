@@ -491,8 +491,15 @@ public sealed class InboundEmailItemProcessorTests
         string body,
         EmailReceiptHandle? receipt = null,
         IReadOnlyList<IncomingEmailAttachment>? attachments = null,
-        string? authenticationResults = null) =>
-        new(
+        string? authenticationResults = null)
+    {
+        EmailAuthenticationVerdict? verdict = null;
+        if (authenticationResults != null)
+        {
+            var isTrusted = System.Text.RegularExpressions.Regex.IsMatch(authenticationResults, @"\bdmarc=pass\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            verdict = new EmailAuthenticationVerdict(isTrusted, isTrusted, null, authenticationResults);
+        }
+        return new(
             MessageId: messageId,
             ReceiptHandle: receipt ?? new EmailReceiptHandle(
                 EmailReceiptKind.Fake,
@@ -504,7 +511,8 @@ public sealed class InboundEmailItemProcessorTests
             IsHtml: false,
             ReceivedAt: FixedNow.UtcDateTime,
             Attachments: attachments ?? Array.Empty<IncomingEmailAttachment>(),
-            AuthenticationResults: authenticationResults);
+            AuthenticationVerdict: verdict);
+    }
 
     private sealed class NeverConflictClassifier : IDatabaseErrorClassifier
     {

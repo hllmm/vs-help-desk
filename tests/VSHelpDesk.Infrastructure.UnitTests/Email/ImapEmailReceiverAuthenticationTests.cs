@@ -27,10 +27,11 @@ public sealed class ImapEmailReceiverAuthenticationTests
         var receiver = CreateReceiver(client);
         var unread = await receiver.FetchUnreadAsync();
         var item = Assert.Single(unread);
-        Assert.NotNull(item.AuthenticationResults);
-        Assert.Contains("dmarc=pass", item.AuthenticationResults!, StringComparison.OrdinalIgnoreCase);
-        Assert.True(EmailAuthenticationResultParser.IsTrusted(item.AuthenticationResults));
-        var parsed = EmailAuthenticationResultParser.Parse(item.AuthenticationResults);
+        Assert.NotNull(item.AuthenticationVerdict);
+        Assert.True(item.AuthenticationVerdict!.IsTrusted);
+        Assert.Contains("dmarc=pass", item.AuthenticationVerdict!.RawHeader!, StringComparison.OrdinalIgnoreCase);
+        Assert.True(item.AuthenticationVerdict!.DmarcPassed);
+        var parsed = EmailAuthenticationResultParser.Parse(item.AuthenticationVerdict!.RawHeader);
         Assert.True(parsed.DmarcPassed);
         Assert.True(parsed.SpfPassed);
     }
@@ -53,9 +54,10 @@ public sealed class ImapEmailReceiverAuthenticationTests
         var receiver = CreateReceiver(client);
         var unread = await receiver.FetchUnreadAsync();
         var item = Assert.Single(unread);
-        Assert.Null(item.AuthenticationResults);
-        Assert.False(EmailAuthenticationResultParser.IsTrusted(item.AuthenticationResults));
-        var parsed = EmailAuthenticationResultParser.Parse(item.AuthenticationResults);
+        Assert.NotNull(item.AuthenticationVerdict);
+        Assert.False(item.AuthenticationVerdict!.IsTrusted);
+        Assert.Null(item.AuthenticationVerdict!.RawHeader);
+        var parsed = EmailAuthenticationResultParser.Parse(item.AuthenticationVerdict!.RawHeader);
         Assert.False(parsed.DmarcPassed);
     }
 
@@ -77,9 +79,9 @@ public sealed class ImapEmailReceiverAuthenticationTests
         var receiver = CreateReceiver(client);
         var unread = await receiver.FetchUnreadAsync();
         var item = Assert.Single(unread);
-        Assert.NotNull(item.AuthenticationResults);
-        Assert.Contains("dmarc=fail", item.AuthenticationResults!, StringComparison.OrdinalIgnoreCase);
-        Assert.False(EmailAuthenticationResultParser.IsTrusted(item.AuthenticationResults));
+        Assert.NotNull(item.AuthenticationVerdict);
+        Assert.False(item.AuthenticationVerdict!.IsTrusted);
+        Assert.Contains("dmarc=fail", item.AuthenticationVerdict!.RawHeader!, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]

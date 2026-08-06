@@ -10,10 +10,11 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            var isNpgsql = migrationBuilder.ActiveProvider?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) == true;
             migrationBuilder.AddColumn<int>(
                 name: "ScanVerdict",
                 table: "TicketAttachments",
-                type: "integer",
+                type: isNpgsql ? "integer" : "int",
                 nullable: false,
                 defaultValue: 0);
         }

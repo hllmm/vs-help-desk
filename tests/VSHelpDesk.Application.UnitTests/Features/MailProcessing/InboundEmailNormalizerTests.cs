@@ -110,7 +110,7 @@ public sealed class InboundEmailNormalizerTests
             false,
             DateTime.UtcNow,
             Array.Empty<IncomingEmailAttachment>(),
-            AuthenticationResults: "mx.test; dmarc=pass header.from=example.test");
+            AuthenticationVerdict: new EmailAuthenticationVerdict(true, true, "mx.test", "mx.test; dmarc=pass header.from=example.test"));
         var result = InboundEmailNormalizer.Normalize(email);
         Assert.Equal(InboundEmailPolicyOutcome.Process, result.Outcome);
         Assert.NotNull(result.Email);
@@ -140,7 +140,7 @@ public sealed class InboundEmailNormalizerTests
             false,
             DateTime.UtcNow,
             Array.Empty<IncomingEmailAttachment>(),
-            AuthenticationResults: "mx.test; dmarc=fail spf=fail");
+            AuthenticationVerdict: new EmailAuthenticationVerdict(false, false, "mx.test", "mx.test; dmarc=fail spf=fail"));
         var result = InboundEmailNormalizer.Normalize(email);
         Assert.Equal(InboundEmailPolicyOutcome.Quarantine, result.Outcome);
     }
@@ -150,8 +150,15 @@ public sealed class InboundEmailNormalizerTests
         string? fromDisplayName,
         string? subject,
         string? body,
-        string? authenticationResults = null) =>
-        new(
+        string? authenticationResults = null)
+    {
+        EmailAuthenticationVerdict? verdict = null;
+        if (authenticationResults != null)
+        {
+            var isTrusted = System.Text.RegularExpressions.Regex.IsMatch(authenticationResults, @"\bdmarc=pass\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            verdict = new EmailAuthenticationVerdict(isTrusted, isTrusted, null, authenticationResults);
+        }
+        return new(
             MessageId: "<msg@test>",
             ReceiptHandle: new EmailReceiptHandle(EmailReceiptKind.Fake, "fake\0fixture-norm"),
             FromAddress: fromAddress,
@@ -161,5 +168,6 @@ public sealed class InboundEmailNormalizerTests
             IsHtml: false,
             ReceivedAt: new DateTime(2026, 7, 20, 12, 0, 0, DateTimeKind.Utc),
             Attachments: Array.Empty<IncomingEmailAttachment>(),
-            AuthenticationResults: authenticationResults);
+            AuthenticationVerdict: verdict);
+    }
 }

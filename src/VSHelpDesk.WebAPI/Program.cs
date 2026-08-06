@@ -56,6 +56,7 @@ builder.Services.AddControllers()
 builder.Services.AddOpenApi();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, HttpCurrentUserService>();
+builder.Services.AddScoped<VSHelpDesk.Application.Abstractions.Correlation.ICorrelationIdProvider, VSHelpDesk.WebAPI.Services.HttpCorrelationIdProvider>();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);

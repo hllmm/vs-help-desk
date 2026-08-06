@@ -112,10 +112,25 @@ public sealed class ImapEmailReceiver(
             : message.Date.UtcDateTime;
 
         // Trust-boundary: Authentication-Results is added by the trusted MTA and must
-        // be stripped from client-supplied headers upstream. We pass the raw header
-        // through as IncomingEmail.AuthenticationResults; verification requires
-        // dmarc=pass (case-insensitive). Missing or failing header is untrusted.
-        var authenticationResults = message.Headers["Authentication-Results"];
+        // be stripped from client-supplied headers upstream. Parsed once here with exact token boundaries.
+        var rawAuthHeader = message.Headers["Authentication-Results"];
+        var trustedId = emailOptions.Value.TrustedAuthServId;
+        var parsed = EmailAuthenticationResultParser.Parse(rawAuthHeader, trustedId);
+        var verdict = new VSHelpDesk.Application.Abstractions.Email.EmailAuthenticationVerdict(
+            IsTrusted: parsed.DmarcPassed,
+            DmarcPassed: parsed.DmarcPassed,
+            AuthServId: string.IsNullOrWhiteSpace(trustedId) ? null : trustedId,
+            RawHeader: rawAuthHeader);
+
+        // Raw size for durable quarantine (never mark Seen without DB record)
+        long? rawSize = null;
+        try
+        {
+            using var ms = new System.IO.MemoryStream();
+            message.WriteTo(ms);
+            rawSize = ms.Length;
+        }
+        catch { rawSize = null; }
 
         return new IncomingEmail(
             MessageId: messageId,
@@ -127,7 +142,8 @@ public sealed class ImapEmailReceiver(
             IsHtml: false,
             ReceivedAt: receivedAt,
             Attachments: MapAttachments(message),
-            AuthenticationResults: authenticationResults);
+            AuthenticationVerdict: verdict,
+            RawSize: rawSize);
     }
 
     /// <summary>
@@ -205,9 +221,29 @@ public sealed class ImapEmailReceiver(
         var maxFileSizeBytes = fileStorageOptions.Value.MaxFileSizeBytes;
         var maxAttachmentsPerMessage = quota.MaxAttachmentsPerMessage > 0
             ? quota.MaxAttachmentsPerMessage
-            : InboundMailLimits.MaxAttachmentsPerMessage;
-        // Do not truncate: collect all attachments so InboundEmailNormalizer can quarantine >MaxAttachmentsPerMessage (I2).
-        // Capacity grows as needed; excessive counts are bounded downstream by normalizer assurance.
+            : VSHelpDesk.Domain.Mail.MailboxQuota.MaxAttachmentsPerMessage;
+        // Blocker 5: enforce count before decoding/mapping every attachment.
+        var totalCount = message.Attachments.Count();
+        if (totalCount > maxAttachmentsPerMessage)
+        {
+            logger.LogWarning(
+                "IMAP attachments exceed per-message limit count={Count} maxAttachmentsPerMessage={Max} will be quarantined before decoding",
+                totalCount,
+                maxAttachmentsPerMessage);
+            // Return placeholder list with count > limit so normalizer quarantines without decoding bodies (saves memory/CPU)
+            var placeholder = new List<IncomingEmailAttachment>(totalCount);
+            foreach (var att in message.Attachments)
+            {
+                if (att is MimePart p)
+                {
+                    var fn = p.FileName ?? p.ContentType?.Name ?? "attachment";
+                    var ct = p.ContentType?.MimeType ?? "application/octet-stream";
+                    placeholder.Add(new IncomingEmailAttachment(fn, ct, 0, Array.Empty<byte>()));
+                }
+            }
+            return placeholder;
+        }
+
         var attachments = new List<IncomingEmailAttachment>();
         foreach (var attachment in message.Attachments)
         {

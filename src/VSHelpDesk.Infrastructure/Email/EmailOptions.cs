@@ -38,4 +38,10 @@ public sealed class EmailOptions
     public string SupportMailboxAddress { get; init; } = string.Empty;
 
     public string SupportMailboxDisplayName { get; init; } = "VS Help Desk";
+
+    /// <summary>
+    /// Trusted authserv-id for Authentication-Results. If set, header's authserv-id must match exactly (case-insensitive) for IsTrusted.
+    /// If empty, any authserv-id is considered (legacy).
+    /// </summary>
+    public string TrustedAuthServId { get; init; } = string.Empty;
 }

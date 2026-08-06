@@ -1,7 +1,7 @@
 # VSHelpDesk System Architecture Document
 
 ## Overview
-VSHelpDesk is an enterprise customer support ticketing system built with Clean Architecture, Domain-Driven Design (DDD), and ASP.NET Core 9 / React 19 SPA.
+VSHelpDesk is an enterprise customer support ticketing system built with Clean Architecture, Domain-Driven Design (DDD), and .NET 10 / ASP.NET Core 10 / React 19 SPA.
 
 ## Architectural Layers
 ```

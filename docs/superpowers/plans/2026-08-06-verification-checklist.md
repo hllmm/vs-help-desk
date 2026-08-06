@@ -33,10 +33,10 @@ cd frontend && npx playwright test   # 4 viewport projects (Weeks 2–4)
 
 ## 4) IMAP Quotas (SEC-003)
 
-- [ ] `InboundMailLimits`: `MaxMessagesPerRun=100`, `MaxAttachmentsPerMessage=10`, `MaxAggregateBytesPerRun=52428800` (50 MiB), `MaxRawMessageBytes=5242880` (5 MiB).
-- [ ] Ingest 500 unseen mails → handler processes ≤100, remainder deferred to next run; `aggregate-quota-exceeded` quarantine for overshoot.
-- [ ] Message with 15 attachments → quarantined `Too many attachments: 15 exceeds limit 10`.
-- [ ] Raw message >5 MiB → skipped with raw-size quarantine before HTML parsing.
+- [ ] `MailboxQuota` (single source: `VSHelpDesk.Domain.Mail.MailboxQuota`): `MaxMessagesPerRun=100`, `MaxAttachmentsPerMessage=10`, `MaxAggregateBytesPerRun=52428800` (50 MiB), `MaxRawMessageBytes=5242880` (5 MiB) — `MailboxQuotaOptions` defaults to same, `InboundMailLimits` no longer duplicates.
+- [ ] Ingest 500 unseen mails → handler processes ≤100, remainder deferred to next run; `aggregate-quota-exceeded` durable quarantine (DB record before Seen) for overshoot.
+- [ ] Message with 15 attachments → quarantined `Too many attachments: 15 exceeds limit 10` (count checked before decoding, durable quarantine).
+- [ ] Raw message >5 MiB → durable quarantine (`RawSize` check in normalizer) before Seen, no infinite re-fetch loop.
 
 ## 5) Proxy & Rate Limit (SEC-005)
 

@@ -33,7 +33,8 @@ public sealed record IncomingEmail(
     bool IsHtml,
     DateTime ReceivedAt,
     IReadOnlyList<IncomingEmailAttachment> Attachments,
-    string? AuthenticationResults = null);
+    EmailAuthenticationVerdict? AuthenticationVerdict = null,
+    long? RawSize = null);
 
 public sealed record IncomingEmailAttachment(
     string FileName,

@@ -1,5 +1,6 @@
 using System.Net.Mail;
 using VSHelpDesk.Application.Abstractions.Email;
+using VSHelpDesk.Domain.Mail;
 using VSHelpDesk.Domain.Tickets;
 
 namespace VSHelpDesk.Application.Features.MailProcessing;
@@ -21,7 +22,7 @@ public sealed record NormalizedIncomingEmail(
     string Body,
     DateTime ReceivedAt,
     IReadOnlyList<IncomingEmailAttachment> Attachments,
-    string? AuthenticationResults = null);
+    EmailAuthenticationVerdict? AuthenticationVerdict = null);
 
 public sealed record InboundEmailNormalizationResult(
     InboundEmailPolicyOutcome Outcome,
@@ -50,13 +51,20 @@ public static class InboundEmailNormalizer
                 InboundMailLimits.BoundProcessingNote(quarantineNote));
         }
 
+        // Raw size durable quarantine (blocker 4): never mark Seen without DB record; quarantine here before any processing.
+        if (email.RawSize.HasValue && email.RawSize.Value > MailboxQuota.MaxRawMessageBytes)
+        {
+            return new InboundEmailNormalizationResult(
+                InboundEmailPolicyOutcome.Quarantine,
+                Email: null,
+                identity,
+                InboundMailLimits.BoundProcessingNote($"Message raw size {email.RawSize.Value} exceeds limit {MailboxQuota.MaxRawMessageBytes}."));
+        }
+
         // Trust-boundary: unauthenticated From+ticket-number must not allow append.
-        // If subject contains a ticket number but Authentication-Results lacks dmarc=pass,
-        // quarantine at the boundary. This prevents spoofed replies from attacker@evil
-        // impersonating the ticket's customer. Production MTA must add Authentication-Results
-        // with dmarc=pass and strip client-supplied headers.
+        // Typed verdict is parsed once in Infrastructure with exact token boundaries + trusted authserv-id.
         if (TicketNumberParser.TryFindInText(email.Subject, out _) &&
-            !HasTrustedAuthentication(email.AuthenticationResults))
+            email.AuthenticationVerdict?.IsTrusted != true)
         {
             return new InboundEmailNormalizationResult(
                 InboundEmailPolicyOutcome.Quarantine,
@@ -66,14 +74,14 @@ public static class InboundEmailNormalizer
         }
 
         var attachments = email.Attachments ?? Array.Empty<IncomingEmailAttachment>();
-        if (attachments.Count > InboundMailLimits.MaxAttachmentsPerMessage)
+        if (attachments.Count > MailboxQuota.MaxAttachmentsPerMessage)
         {
             return new InboundEmailNormalizationResult(
                 InboundEmailPolicyOutcome.Quarantine,
                 Email: null,
                 identity,
                 InboundMailLimits.BoundProcessingNote(
-                    $"Too many attachments: {attachments.Count} exceeds limit {InboundMailLimits.MaxAttachmentsPerMessage}."));
+                    $"Too many attachments: {attachments.Count} exceeds limit {MailboxQuota.MaxAttachmentsPerMessage}."));
         }
 
         var normalized = new NormalizedIncomingEmail(
@@ -86,7 +94,7 @@ public static class InboundEmailNormalizer
             Body: InboundMailLimits.NormalizeBody(email.Body),
             ReceivedAt: email.ReceivedAt,
             Attachments: attachments,
-            AuthenticationResults: email.AuthenticationResults);
+            AuthenticationVerdict: email.AuthenticationVerdict);
 
         return new InboundEmailNormalizationResult(
             InboundEmailPolicyOutcome.Process,
@@ -153,7 +161,4 @@ public static class InboundEmailNormalizer
         return false;
     }
 
-    internal static bool HasTrustedAuthentication(string? header) =>
-        !string.IsNullOrWhiteSpace(header) &&
-        header.Contains("dmarc=pass", StringComparison.OrdinalIgnoreCase);
 }

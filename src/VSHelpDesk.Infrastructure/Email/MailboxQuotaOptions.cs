@@ -1,14 +1,16 @@
+using VSHelpDesk.Domain.Mail;
+
 namespace VSHelpDesk.Infrastructure.Email;
 
 public sealed class MailboxQuotaOptions
 {
     public const string SectionName = "MailboxQuota";
 
-    public int MaxMessagesPerRun { get; init; } = 100;
+    public int MaxMessagesPerRun { get; init; } = MailboxQuota.MaxMessagesPerRun;
 
-    public int MaxAttachmentsPerMessage { get; init; } = 10;
+    public int MaxAttachmentsPerMessage { get; init; } = MailboxQuota.MaxAttachmentsPerMessage;
 
-    public long MaxAggregateBytesPerRun { get; init; } = 50 * 1024 * 1024;
+    public long MaxAggregateBytesPerRun { get; init; } = MailboxQuota.MaxAggregateBytesPerRun;
 
-    public long MaxRawMessageBytes { get; init; } = 5 * 1024 * 1024;
+    public long MaxRawMessageBytes { get; init; } = MailboxQuota.MaxRawMessageBytes;
 }

@@ -15,10 +15,10 @@ public sealed class MailKitImapQuotaTests
     public void MailboxQuotaOptions_defaults_match_limits()
     {
         var opts = new MailboxQuotaOptions();
-        Assert.Equal(InboundMailLimits.MaxMessagesPerRun, opts.MaxMessagesPerRun);
-        Assert.Equal(InboundMailLimits.MaxAttachmentsPerMessage, opts.MaxAttachmentsPerMessage);
-        Assert.Equal(InboundMailLimits.MaxAggregateBytesPerRun, opts.MaxAggregateBytesPerRun);
-        Assert.Equal(InboundMailLimits.MaxRawMessageBytes, opts.MaxRawMessageBytes);
+        Assert.Equal(VSHelpDesk.Domain.Mail.MailboxQuota.MaxMessagesPerRun, opts.MaxMessagesPerRun);
+        Assert.Equal(VSHelpDesk.Domain.Mail.MailboxQuota.MaxAttachmentsPerMessage, opts.MaxAttachmentsPerMessage);
+        Assert.Equal(VSHelpDesk.Domain.Mail.MailboxQuota.MaxAggregateBytesPerRun, opts.MaxAggregateBytesPerRun);
+        Assert.Equal(VSHelpDesk.Domain.Mail.MailboxQuota.MaxRawMessageBytes, opts.MaxRawMessageBytes);
         Assert.Equal(100, opts.MaxMessagesPerRun);
         Assert.Equal(10, opts.MaxAttachmentsPerMessage);
         Assert.Equal(50L * 1024 * 1024, opts.MaxAggregateBytesPerRun);
@@ -26,12 +26,12 @@ public sealed class MailKitImapQuotaTests
     }
 
     [Fact]
-    public void InboundMailLimits_constants_are_correct()
+    public void MailboxQuota_constants_are_correct()
     {
-        Assert.Equal(100, InboundMailLimits.MaxMessagesPerRun);
-        Assert.Equal(10, InboundMailLimits.MaxAttachmentsPerMessage);
-        Assert.Equal(50L * 1024 * 1024, InboundMailLimits.MaxAggregateBytesPerRun);
-        Assert.Equal(5L * 1024 * 1024, InboundMailLimits.MaxRawMessageBytes);
+        Assert.Equal(100, VSHelpDesk.Domain.Mail.MailboxQuota.MaxMessagesPerRun);
+        Assert.Equal(10, VSHelpDesk.Domain.Mail.MailboxQuota.MaxAttachmentsPerMessage);
+        Assert.Equal(50L * 1024 * 1024, VSHelpDesk.Domain.Mail.MailboxQuota.MaxAggregateBytesPerRun);
+        Assert.Equal(5L * 1024 * 1024, VSHelpDesk.Domain.Mail.MailboxQuota.MaxRawMessageBytes);
     }
 
     [Fact]

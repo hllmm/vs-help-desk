@@ -46,8 +46,8 @@ jobs:
       SeedUser__FullName: CI Support
       SeedUser__Email: support@vshelpdesk.local
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: "10.0.x"
       - name: Restore
@@ -75,8 +75,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "22.22.0"
           cache: npm
@@ -95,7 +95,7 @@ jobs:
     name: Kustomize validate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Validate kustomize build
         run: |
           kubectl kustomize deploy/k8s/base >/dev/null
@@ -105,10 +105,10 @@ jobs:
     name: Secrets scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -116,13 +116,13 @@ jobs:
     name: Image scan (Trivy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Build API image
         run: docker build -t vshelpdesk:api -f Dockerfile .
       - name: Build frontend image
         run: docker build -t vshelpdesk:frontend -f frontend/Dockerfile ./frontend
       - name: Run Trivy vulnerability scanner (API)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # v0.24.0
         with:
           image-ref: vshelpdesk:api
           severity: HIGH,CRITICAL
@@ -130,7 +130,7 @@ jobs:
           ignore-unfixed: true
           format: table
       - name: Run Trivy vulnerability scanner (Frontend)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@6e7b7d1fd3e4fef0c5fa8cce1229c54b2c9bd0d8 # v0.24.0
         with:
           image-ref: vshelpdesk:frontend
           severity: HIGH,CRITICAL
@@ -162,8 +162,8 @@ jobs:
       Auth__SigningKey: ci-signing-key-with-at-least-32-bytes!!
       Jobs__ApiKey: ci-jobs-api-key-32-characters!!
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: "10.0.x"
       - name: Restore
@@ -235,8 +235,8 @@ jobs:
       Auth__SigningKey: ci-signing-key-with-at-least-32-bytes!!
       Jobs__ApiKey: ci-jobs-api-key-32-characters!!
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: "10.0.x"
       - name: Restore
@@ -271,11 +271,11 @@ jobs:
       ConnectionStrings__DefaultConnection: >-
         Host=localhost;Port=5432;Database=VS_HelpDesk_Perf;Username=stajyer;Password=ci_postgres_password
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: "10.0.x"
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "22.22.0"
       - name: Restore
@@ -346,7 +346,7 @@ jobs:
           test -s ticket-read-performance.json
       - name: Upload performance evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ticket-read-performance-json
           path: |

@@ -500,6 +500,10 @@ performance/ticket-read-performance.json
 
 # AI agent directories
 docs/
+!docs/architecture.md
+!docs/deploy-production.md
+!docs/deploy-kubernetes.md
+!docs/superpowers/
 # Local dotnet CLI cache
 .dotnet/
 
