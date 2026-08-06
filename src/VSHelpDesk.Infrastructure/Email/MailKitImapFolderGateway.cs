@@ -95,21 +95,13 @@ public sealed class MailKitImapFolderGateway : IImapFolderGateway
         {
             throw;
         }
-        catch
+        catch (NotSupportedException)
         {
-            // Fallback: fetch full message and serialize bounded
-            var msg = await folder.GetMessageAsync(new UniqueId(uid), ct).ConfigureAwait(false);
-            using var raw = new MemoryStream();
-            msg.WriteTo(raw);
-            var all = raw.ToArray();
-            if (all.Length <= limit)
-            {
-                return (all, all.Length);
-            }
-
-            var bounded = new byte[limit];
-            Array.Copy(all, bounded, limit);
-            return (bounded, limit);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new NotSupportedException("GetStreamAsync failed and fallback is disabled (fail-closed).", ex);
         }
     }
 }

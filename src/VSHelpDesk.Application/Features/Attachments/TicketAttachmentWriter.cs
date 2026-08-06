@@ -244,20 +244,113 @@ public sealed class TicketAttachmentWriter(
                         _messages.Get(MessageKeys.Attachments.MaxSizeBytesExceeded, uploadPolicy.MaxFileSizeBytes));
                 }
 
+                // Bounded temp file spool for seekable too (Length is fast-reject only).
+                // Prevents lying Length or large seekable bypassing max+1 check via direct content reuse.
+                FileStream tmp;
+                string path;
                 try
                 {
-                    content.Position = 0;
+                    var created = _temporaryFileFactory.CreateTempFile();
+                    tmp = created.Stream;
+                    path = created.Path;
                 }
                 catch (OperationCanceledException)
                 {
                     throw;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    logger.LogError(
+                        ex,
+                        "Failed to create temp file for messageId={MessageId}",
+                        ticketMessageId);
+                    return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
                 }
 
-                scanStream = content;
-                contentToSave = content;
+                ownedTemp = tmp;
+                tmpPath = path;
+
+                try
+                {
+                    if (headerRead > 0)
+                    {
+                        await ownedTemp.WriteAsync(header.AsMemory(0, headerRead), cancellationToken);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Failed to spool header to temp file for messageId={MessageId}",
+                        ticketMessageId);
+                    return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
+                }
+
+                long total = headerRead;
+                if (total > max)
+                {
+                    return TicketAttachmentWriteResult.Skipped(
+                        _messages.Get(MessageKeys.Attachments.MaxSizeBytesExceeded, uploadPolicy.MaxFileSizeBytes));
+                }
+
+                var buf = new byte[8192];
+                try
+                {
+                    while (total <= max)
+                    {
+                        long remaining = (max + 1) - total;
+                        if (remaining <= 0) break;
+                        int toRead = (int)Math.Min(buf.Length, remaining);
+                        int read = await content.ReadAsync(buf.AsMemory(0, toRead), cancellationToken);
+                        if (read == 0) break;
+                        total += read;
+                        await ownedTemp.WriteAsync(buf.AsMemory(0, read), cancellationToken);
+                        if (total > max) break;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Failed to spool attachment to temp file for messageId={MessageId}",
+                        ticketMessageId);
+                    return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
+                }
+
+                if (total > max)
+                {
+                    return TicketAttachmentWriteResult.Skipped(
+                        _messages.Get(MessageKeys.Attachments.MaxSizeBytesExceeded, uploadPolicy.MaxFileSizeBytes));
+                }
+
+                try
+                {
+                    await ownedTemp.FlushAsync(cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(
+                        ex,
+                        "Failed to flush temp file for messageId={MessageId}",
+                        ticketMessageId);
+                    return TicketAttachmentWriteResult.Skipped(_messages.Get(MessageKeys.Attachments.FailedToReadFile));
+                }
+
+                ownedTemp.Position = 0;
+                scanStream = ownedTemp;
+                contentToSave = ownedTemp;
             }
 
             bool consistent;
