@@ -174,6 +174,36 @@ Passed! Failed:0 Passed:189 Total:189 Duration:354 ms
 ```
 Handler logic not modified; `grep aggregateDecodedBytes src/` still 0, `grep Disposition` still single branch.
 
+## Fix Round 2 (2026-08-06) — remove vacuous assertions, revert CountingFactory
+
+**BASE for fix diff:** `016e281` (Fix Round 1 commit)
+**Issue (re-review):** 
+- `Assert.DoesNotContain(Array.Empty<ProcessIncomingEmailFailure>(), f=>f.Code=="cancellation")` always passes (vacuous — searching empty collection). Must assert against actual Result.Failures or handler state, but handler throws OCE so Result is not returned — instead verify via receiver/mark counts and that no retryable increment occurred.
+- Duplicate `Assert.Equal(0, factory.ProcessCallCount)` at `ProcessIncomingEmailsHandlerTask8Tests.cs:59` duplicates `cs:57`.
+- `CountingFactory` throwing `InvalidOperationException` obscures OCE test — should just count without throwing, so that fetch-OCE path verifies OCE propagate without conflating processing-failure retryable increment.
+
+**What changed (only test, no handler logic):** `tests/VSHelpDesk.Application.UnitTests/Features/MailProcessing/ProcessIncomingEmailsHandlerTask8Tests.cs`
+- `Handler_OCE_propagates_no_mark_no_failure`: removed `Assert.DoesNotContain(Array.Empty<...>)` vacuous line, replaced with meaningful assertions via `Assert.IsType<OperationCanceledException>(ex)` and receiver/factory counts. Reverted `CountingFactory` to just count and return `AlreadyProcessed` (no throw) so `MarkProcessedCount` becomes meaningful; updated assert to `Assert.Equal(1, receiver.MarkProcessedCount)` (first Ready processed+marked before OCE on second fetch) plus `Assert.Equal(1, factory.ProcessCallCount)` and `Assert.Equal(2, receiver.FetchAttempts)` to verify second message not processed and fetched stops. Verifies OCE not wrapped and no extra Process/Mark beyond first.
+- `Handler_quarantine_OCE_propagates_during_persist`: removed `Assert.DoesNotContain(Array.Empty<...>)` and duplicate `Assert.Equal(0, factory.ProcessCallCount)` (kept single). Added `Assert.IsType<OperationCanceledException>(ex)` and kept `Assert.Empty(receiver.Marked)` and `Assert.Equal(0, factory.ProcessCallCount)` — verifies `MarkProcessedCount==0`, retryable not incremented (factory not called for quarantine path), second Ready not processed, and OCE propagated without being recorded as cancellation failure.
+- `CountingFactory`: reverted to `ProcessCallCount++; return AlreadyProcessed` without throwing `InvalidOperationException`; `RetryDueAcknowledgementsAsync` unchanged. Now counts `ProcessAsync` without obscuring OCE with processing-failed retryable increment.
+
+**Verification (rerun covering tests):**
+```
+dotnet test --filter ProcessIncomingEmailsHandlerTask8Tests -c Release
+Passed! Failed:0 Passed:3 Total:3
+  Passed Handler_quarantine_order_Add_Save_Mark
+  Passed Handler_quarantine_OCE_propagates_during_persist
+  Passed Handler_OCE_propagates_no_mark_no_failure
+
+dotnet test tests/VSHelpDesk.Application.UnitTests -c Release --no-build
+Passed! Failed:0 Passed:189 Total:189
+
+grep "DoesNotContain.*Array.Empty" tests/.../ProcessIncomingEmailsHandlerTask8Tests.cs => 0
+grep "ProcessCallCount" => 1 per test (no duplicate)
+CountingFactory no longer throws InvalidOperationException
+```
+Handler logic not modified; `grep aggregateDecodedBytes src/` still 0, `grep Disposition` still single branch.
+
 ## Outstanding / Next
 
 - Task 9 will finalize fakes to streaming `IAsyncEnumerable` with budget (already `FakeReceiver`/`FakeMailboxClient` streaming via `yield return` + `Task.Yield()`).

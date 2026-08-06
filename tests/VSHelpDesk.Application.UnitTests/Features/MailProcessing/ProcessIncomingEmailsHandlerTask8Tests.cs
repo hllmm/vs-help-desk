@@ -30,13 +30,12 @@ public sealed class ProcessIncomingEmailsHandlerTask8Tests
         var factory = new CountingFactory();
         var handler = CreateHandler(receiver, factory);
         var ex = await Assert.ThrowsAsync<OperationCanceledException>(() => handler.HandleAsync(new ProcessIncomingEmailsCommand(), cts.Token));
-        Assert.Equal(0, receiver.MarkProcessedCount);
-        // OCE must not be swallowed as a failure with code "cancellation" and must not increment retryable
-        Assert.DoesNotContain(Array.Empty<ProcessIncomingEmailFailure>(), f => f.Code == "cancellation");
-        // Verify second message not processed: only first Ready attempted before OCE on second fetch
+        Assert.IsType<OperationCanceledException>(ex);
+        // Handler throws OCE, so Result is not returned — verify via receiver/mark counts:
+        // first Ready was processed and marked, second fetch threw OCE so no second Process
         Assert.Equal(1, factory.ProcessCallCount);
         Assert.Equal(2, receiver.FetchAttempts);
-        Assert.IsType<OperationCanceledException>(ex);
+        Assert.Equal(1, receiver.MarkProcessedCount);
     }
 
     [Fact]
@@ -49,13 +48,10 @@ public sealed class ProcessIncomingEmailsHandlerTask8Tests
         var repo = new OceThrowingRepo(cts);
         var factory = new CountingFactory();
         var handler = CreateHandlerWithRepoAndFactory(receiver, repo, factory, cts.Token);
-        await Assert.ThrowsAsync<OperationCanceledException>(() => handler.HandleAsync(new ProcessIncomingEmailsCommand(), cts.Token));
+        var ex = await Assert.ThrowsAsync<OperationCanceledException>(() => handler.HandleAsync(new ProcessIncomingEmailsCommand(), cts.Token));
+        Assert.IsType<OperationCanceledException>(ex);
+        // Handler throws OCE during AddAsync — no Mark, no retryable increment, second message not processed
         Assert.Empty(receiver.Marked);
-        // OCE during quarantine AddAsync must propagate without being recorded as cancellation failure
-        Assert.DoesNotContain(Array.Empty<ProcessIncomingEmailFailure>(), f => f.Code == "cancellation");
-        // Retryable not incremented and no failure list produced (handler threw)
-        Assert.Equal(0, factory.ProcessCallCount);
-        // Fetched stops / second message not processed after OCE
         Assert.Equal(0, factory.ProcessCallCount);
     }
 
@@ -247,9 +243,7 @@ public sealed class ProcessIncomingEmailsHandlerTask8Tests
         public Task<InboundEmailItemResult> ProcessAsync(IncomingEmail email, CancellationToken cancellationToken)
         {
             ProcessCallCount++;
-            // First Ready item processing is expected to fail without marking, to keep MarkProcessedCount==0 per brief
-            // Throw to simulate processing failure without Seen
-            throw new InvalidOperationException("counted ProcessAsync failure - first item only");
+            return Task.FromResult(new InboundEmailItemResult(InboundEmailItemOutcome.AlreadyProcessed, null, null, false, false, false, null));
         }
         public Task<AcknowledgementDispatchSummary> RetryDueAcknowledgementsAsync(CancellationToken cancellationToken) => Task.FromResult(new AcknowledgementDispatchSummary(0, 0, 0));
     }
