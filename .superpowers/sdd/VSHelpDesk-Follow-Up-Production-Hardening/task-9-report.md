@@ -29,12 +29,17 @@ out. No digest was inferred from a platform-specific child manifest.
 ## Policy and CI changes
 
 - Added `scripts/check-dockerfile-pins.sh`, which discovers repository
-  `Dockerfile`/`Dockerfile.*` files in deterministic sorted order, requires
-  every `FROM` to use `@sha256:` followed by 64 lowercase hex characters, and
-  rejects live `apk`, `apt`, `dnf`, `yum`, `zypper`, and `pacman` upgrade forms.
-- Added checker fixtures for missing pins, uppercase digests, `apk upgrade`,
-  `apt-get upgrade`, `apt upgrade`, `dnf` update/upgrade, `yum` update/upgrade,
-  `zypper` update/upgrade, and `pacman -Syu`, plus a safe pinned fixture.
+  `Dockerfile`, `Dockerfile.*`, and `*.Dockerfile` files in deterministic
+  sorted order while intentionally pruning `policy/dockerfile/fixtures`.
+  It parses the actual `FROM` image token after skipping flags and ignoring
+  trailing comment tokens, requires `@sha256:` followed by 64 lowercase hex
+  characters, joins backslash continuations, and conservatively rejects live
+  `apk`, `apt`, `dnf`, `yum`, `zypper`, and `pacman` upgrade forms and flags.
+- Added checker fixtures for missing pins, uppercase digests, trailing-comment
+  digests, lowercase and `--platform` `FROM` instructions, multiline
+  `apk upgrade`, `apk add --upgrade`, `apt-get install --only-upgrade`,
+  `pacman --sync --refresh --sysupgrade`, quoted `sh -c` upgrades, and the
+  original upgrade forms, plus safe discovery/pinned fixtures.
 - Added `scripts/test-dockerfile-pins.sh` and a dedicated CI policy job.
 - Extended `scripts/verify-ci-gates.mjs` to require both Dockerfile policy
   commands in CI.
@@ -57,6 +62,49 @@ Dockerfile pin check: FAIL (4 violation(s))
 The final fixture suite also caught and drove fixes for uppercase digest
 acceptance and the case-normalized `pacman -Syu` pattern.
 
+## Scoped review-fix round
+
+Review-fix baseline: commit `5675107`.
+
+The requested fixtures and test assertions were added before changing the
+checker. The current checker then produced the expected RED:
+
+```text
+$ bash scripts/test-dockerfile-pins.sh
+exit: 1
+FAIL: default discovery did not scan policy/dockerfile/Dockerfile.example
+FAIL: default discovery did not scan policy/dockerfile/example.Dockerfile
+FAIL: default discovery did not scan the expected four real Dockerfiles
+FAIL: expected rejection for unsafe-from-trailing-comment.Dockerfile
+FAIL: expected rejection for unsafe-lowercase-from-missing-pin.Dockerfile
+FAIL: expected rejection for unsafe-multiline-apk-upgrade.Dockerfile
+FAIL: expected rejection for unsafe-apk-add-upgrade.Dockerfile
+FAIL: expected rejection for unsafe-apt-install-only-upgrade.Dockerfile
+FAIL: expected rejection for unsafe-pacman-long-upgrade.Dockerfile
+FAIL: expected rejection for unsafe-sh-c-apk-upgrade.Dockerfile
+Dockerfile checker fixtures: 10 failure(s)
+```
+
+The GREEN fix parses case-insensitive `FROM` instructions, skips `FROM`
+flags, validates only the first non-flag image token, and joins Dockerfile
+backslash continuations before checking upgrade commands. Default discovery
+now reports the two repository Dockerfiles plus the two safe pattern
+sentinels, while the unsafe policy fixture directory remains excluded:
+
+```text
+$ bash scripts/test-dockerfile-pins.sh
+EXPECTED DEFAULT DISCOVERY: real Dockerfile patterns scanned; policy fixtures excluded
+...
+Dockerfile checker fixtures: PASS
+
+$ bash scripts/check-dockerfile-pins.sh
+CHECK: Dockerfile
+CHECK: frontend/Dockerfile
+CHECK: policy/dockerfile/Dockerfile.example
+CHECK: policy/dockerfile/example.Dockerfile
+Dockerfile pin check: PASS (4 Dockerfile(s))
+```
+
 ## Verification
 
 ```text
@@ -64,7 +112,7 @@ $ bash scripts/test-dockerfile-pins.sh
 Dockerfile checker fixtures: PASS
 
 $ bash scripts/check-dockerfile-pins.sh
-Dockerfile pin check: PASS (2 Dockerfile(s))
+Dockerfile pin check: PASS (4 Dockerfile(s))
 
 $ node scripts/verify-ci-gates.mjs
 All CI gates verified.
