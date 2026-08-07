@@ -6,12 +6,12 @@ Applies on top of `docs/deploy-production.md`. Images and manifests live under `
 
 ```bash
 kubectl kustomize deploy/k8s/base >/dev/null         # smoke
-kubectl kustomize deploy/k8s/overlays/prod >/dev/null
-kubectl apply -k deploy/k8s/overlays/prod
+kubectl kustomize deploy/k8s/overlays/prod >/dev/null # syntax only; not deployable
 ```
 
 - `deploy/k8s/base`: API + web Deployments, Services, Postgres StatefulSet, `web-nginx-configmap.yaml`, CronJobs (`process-incoming-emails`, `resolve-inactive-tickets` via `curlimages/curl:8.13.0` digest-pinned), Ingress, `secret.example.yaml`.
-- `deploy/k8s/overlays/prod`: `ingress-patch.yaml` + image `newName/newTag` rewrites.
+- `deploy/k8s/overlays/prod`: `ingress-patch.yaml`; local base image references
+  remain intentionally unresolved until the renderer supplies verified digests.
 
 ## Production Manifest Mail Egress
 
@@ -42,6 +42,11 @@ WEB_IMAGE='<immutable web image reference>' \
 MAIL_EGRESS_MODE=disabled \
 bash scripts/render-prod-manifest.sh > production.yaml
 ```
+
+`API_IMAGE` and `WEB_IMAGE` must use the exact allow-listed repositories with
+lowercase `@sha256:<64 hex>` digests. The checked-in overlay is rejected by
+`scripts/check-prod-manifest.sh`; only the renderer's validated output is
+deployable.
 
 For enabled mode, set the two explicit relay-list variables to the real
 operator-supplied values before invoking the same renderer.

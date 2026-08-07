@@ -8,11 +8,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 RENDERER = ROOT / "scripts" / "render-prod-manifest.sh"
+CHECKER = ROOT / "scripts" / "check-prod-manifest.sh"
 CONFTEST = ROOT / ".tools" / "conftest"
 POLICY_DIR = ROOT / "policy" / "networkpolicy"
 ORDINARY_MAIL_POLICY = POLICY_DIR / "fixtures" / "unsafe-renamed-mail-policy.yaml"
-API_IMAGE = "ghcr.io/vs-help-desk/api@sha256:" + "a" * 64
-WEB_IMAGE = "ghcr.io/vs-help-desk/web@sha256:" + "b" * 64
+API_IMAGE = "ghcr.io/vs-help-desk/api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+WEB_IMAGE = "ghcr.io/vs-help-desk/web@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 MISSING = object()
 
 
@@ -42,6 +43,15 @@ class RenderProdManifestTests(unittest.TestCase):
         return subprocess.run(
             [str(CONFTEST), "test", "--policy", str(POLICY_DIR), str(manifest_path)],
             cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+
+    def run_checker(self, manifest):
+        return subprocess.run(
+            ["bash", str(CHECKER)],
+            cwd=ROOT,
+            input=manifest,
             capture_output=True,
             text=True,
         )
@@ -140,6 +150,62 @@ class RenderProdManifestTests(unittest.TestCase):
             "SMTP/IMAP egress with an ipBlock is forbidden",
             ordinary_policy_result.stdout + ordinary_policy_result.stderr,
         )
+
+    def test_valid_render_passes_structured_production_image_policy(self):
+        render_result = self.run_renderer(mode="disabled")
+
+        self.assertEqual(render_result.returncode, 0, render_result.stderr)
+
+        policy_result = self.run_checker(render_result.stdout)
+
+        self.assertEqual(
+            policy_result.returncode,
+            0,
+            policy_result.stdout + policy_result.stderr,
+        )
+
+    def test_renderer_rejects_disallowed_image_repository(self):
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "MAIL_EGRESS_MODE": "disabled",
+                "API_IMAGE": API_IMAGE.replace(
+                    "ghcr.io/vs-help-desk/api",
+                    "registry.example.local/vs-help-desk/api",
+                ),
+                "WEB_IMAGE": WEB_IMAGE,
+            }
+        )
+
+        result = subprocess.run(
+            ["bash", str(RENDERER)],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_renderer_rejects_sha_tag_that_is_not_a_digest(self):
+        environment = os.environ.copy()
+        environment.update(
+            {
+                "MAIL_EGRESS_MODE": "disabled",
+                "API_IMAGE": "ghcr.io/vs-help-desk/api:sha-0123456789abcdef0123456789abcdef01234567",
+                "WEB_IMAGE": WEB_IMAGE,
+            }
+        )
+
+        result = subprocess.run(
+            ["bash", str(RENDERER)],
+            cwd=ROOT,
+            env=environment,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

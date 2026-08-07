@@ -106,19 +106,14 @@ jobs:
         run: bash scripts/check-networkpolicy-policy.sh
       - name: Enforce immutable production images
         run: |
-          kubectl kustomize deploy/k8s/overlays/prod > /tmp/prod.yaml
-          bash scripts/check-prod-manifest.sh /tmp/prod.yaml
-          # Also verify render path accepts digests and sha-40
-          MAIL_EGRESS_MODE=disabled \
-          API_IMAGE=ghcr.io/vs-help-desk/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-          WEB_IMAGE=ghcr.io/vs-help-desk/web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
-          bash scripts/render-prod-manifest.sh > /tmp/rendered.yaml
-          bash scripts/check-prod-manifest.sh /tmp/rendered.yaml
-          # Negative check: mutable must be rejected
-          if MAIL_EGRESS_MODE=disabled API_IMAGE=ghcr.io/vs-help-desk/api:latest WEB_IMAGE=ghcr.io/vs-help-desk/web:latest bash scripts/render-prod-manifest.sh > /dev/null 2>&1; then
-            echo "render-prod-manifest should reject :latest" >&2
+          # The checked-in overlay intentionally retains local images and must
+          # never be accepted as a deployable production manifest.
+          if kubectl kustomize deploy/k8s/overlays/prod | bash scripts/check-prod-manifest.sh; then
+            echo "unrendered production overlay must fail structured image validation" >&2
             exit 1
           fi
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_prod_manifest_policy.py
+          PYTHONDONTWRITEBYTECODE=1 python3 scripts/test_render_prod_manifest.py
 
   e2e-real:
     name: Real API E2E (Playwright)

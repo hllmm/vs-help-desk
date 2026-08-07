@@ -34,22 +34,32 @@ case "$MAIL_EGRESS_MODE" in
 esac
 
 if [[ -z "${API_IMAGE:-}" ]]; then
-  echo "ERROR: API_IMAGE must be set (e.g., ghcr.io/vs-help-desk/api@sha256:<64> or :sha-<40>)" >&2
+  echo "ERROR: API_IMAGE must be set to ghcr.io/vs-help-desk/api@sha256:<64 lowercase hex>" >&2
   exit 1
 fi
 if [[ -z "${WEB_IMAGE:-}" ]]; then
-  echo "ERROR: WEB_IMAGE must be set (e.g., ghcr.io/vs-help-desk/web@sha256:<64> or :sha-<40>)" >&2
+  echo "ERROR: WEB_IMAGE must be set to ghcr.io/vs-help-desk/web@sha256:<64 lowercase hex>" >&2
   exit 1
 fi
 
-IMMUTABLE_REGEX='^[^[:space:]]+(@sha256:[a-f0-9]{64}|:sha-[a-f0-9]{40})$'
+API_IMAGE_REGEX='^ghcr\.io/vs-help-desk/api@sha256:[a-f0-9]{64}$'
+WEB_IMAGE_REGEX='^ghcr\.io/vs-help-desk/web@sha256:[a-f0-9]{64}$'
 
-if ! [[ "$API_IMAGE" =~ $IMMUTABLE_REGEX ]]; then
-  echo "ERROR: API_IMAGE must be immutable (repo@sha256:<64 hex> or repo:sha-<40 hex>), got: $API_IMAGE" >&2
+if ! [[ "$API_IMAGE" =~ $API_IMAGE_REGEX ]]; then
+  echo "ERROR: API_IMAGE must use the exact allow-listed repository and a sha256 digest, got: $API_IMAGE" >&2
   exit 1
 fi
-if ! [[ "$WEB_IMAGE" =~ $IMMUTABLE_REGEX ]]; then
-  echo "ERROR: WEB_IMAGE must be immutable (repo@sha256:<64 hex> or repo:sha-<40 hex>), got: $WEB_IMAGE" >&2
+if ! [[ "$WEB_IMAGE" =~ $WEB_IMAGE_REGEX ]]; then
+  echo "ERROR: WEB_IMAGE must use the exact allow-listed repository and a sha256 digest, got: $WEB_IMAGE" >&2
+  exit 1
+fi
+
+if [[ "$API_IMAGE" =~ @sha256:a{64}$ || "$API_IMAGE" =~ @sha256:b{64}$ ]]; then
+  echo "ERROR: API_IMAGE uses a prohibited all-a/all-b placeholder digest" >&2
+  exit 1
+fi
+if [[ "$WEB_IMAGE" =~ @sha256:a{64}$ || "$WEB_IMAGE" =~ @sha256:b{64}$ ]]; then
+  echo "ERROR: WEB_IMAGE uses a prohibited all-a/all-b placeholder digest" >&2
   exit 1
 fi
 
@@ -73,26 +83,19 @@ fi
 
 kubectl kustomize "$ROOT_DIR/deploy/k8s/overlays/prod" > "$TMP"
 
-# Replace the placeholder prod images with the provided immutable ones.
-# Prod kustomization uses vshelpdesk-api:sha-... / vshelpdesk-web:sha-... placeholders; replace the whole image line.
-# Use a delimiter not in image names.
-
-# Replace api
-# Match: image: <anything vshelpdesk-api ...>  -> image: $API_IMAGE
-# We handle both with and without digest/tag remnants.
-sed -i -E "s|image:[[:space:]]*vshelpdesk-api[^[:space:]]*|image: $API_IMAGE|g" "$TMP"
-sed -i -E "s|image:[[:space:]]*ghcr\.io[^[:space:]]*vshelpdesk-api[^[:space:]]*|image: $API_IMAGE|g" "$TMP"
-
-# Replace web
-sed -i -E "s|image:[[:space:]]*vshelpdesk-web[^[:space:]]*|image: $WEB_IMAGE|g" "$TMP"
-sed -i -E "s|image:[[:space:]]*ghcr\.io[^[:space:]]*vshelpdesk-web[^[:space:]]*|image: $WEB_IMAGE|g" "$TMP"
-
-# Also handle generic ghcr.io/vs-help-desk/api or web if prod already uses ghcr prefix
-sed -i -E "s|image:[[:space:]]*ghcr\.io/vs-help-desk/api[^[:space:]]*|image: $API_IMAGE|g" "$TMP"
-sed -i -E "s|image:[[:space:]]*ghcr\.io/vs-help-desk/web[^[:space:]]*|image: $WEB_IMAGE|g" "$TMP"
+# Replace only the known base local image references. If either reference is
+# absent, the structured validator below rejects the rendered artifact.
+sed -i -E "s|vshelpdesk-api:local|$API_IMAGE|g" "$TMP"
+sed -i -E "s|vshelpdesk-web:local|$WEB_IMAGE|g" "$TMP"
 
 if [[ "$MAIL_EGRESS_MODE" == "enabled" ]]; then
   printf '%s\n' "$MAIL_EGRESS_POLICY" >> "$TMP"
+fi
+
+# Keep stdout as a deployable YAML stream. Validator diagnostics go to stderr.
+if ! bash "$ROOT_DIR/scripts/check-prod-manifest.sh" "$TMP" >&2; then
+  echo "ERROR: rendered production manifest failed structured image validation" >&2
+  exit 1
 fi
 
 cat "$TMP"
