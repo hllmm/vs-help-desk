@@ -31,6 +31,10 @@ public sealed class PortalTicketIdempotencyApiTests : IClassFixture<CustomWebApp
         using (var response = await SendCreateAsync(client, csrf, key: null, CreateRequest("missing-key")))
         {
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "portal-idempotency-key-required",
+                body.RootElement.GetProperty("code").GetString());
         }
     }
 
@@ -42,6 +46,10 @@ public sealed class PortalTicketIdempotencyApiTests : IClassFixture<CustomWebApp
         using (var response = await SendCreateAsync(client, csrf, "not-a-uuid", CreateRequest("invalid-key")))
         {
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "portal-idempotency-key-invalid",
+                body.RootElement.GetProperty("code").GetString());
         }
     }
 
@@ -64,6 +72,58 @@ public sealed class PortalTicketIdempotencyApiTests : IClassFixture<CustomWebApp
         finally
         {
             client.Dispose();
+        }
+    }
+
+    [Theory]
+    [InlineData("not-an-email")]
+    [InlineData("Display Name <customer@example.test>")]
+    public async Task CreatePortalTicket_RejectsInvalidCustomerEmail(string email)
+    {
+        var request = CreateRequest($"invalid-email-{Guid.NewGuid():N}") with
+        {
+            CustomerEmail = email
+        };
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+
+        using (client)
+        using (var response = await SendCreateAsync(
+            client,
+            csrf,
+            Guid.NewGuid().ToString("D"),
+            request))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "portal-ticket-customer-email-invalid",
+                body.RootElement.GetProperty("code").GetString());
+            Assert.Equal(0, await CountTicketsAsync(request.Subject));
+        }
+    }
+
+    [Fact]
+    public async Task CreatePortalTicket_RejectsOversizedContentWithoutTruncatingOrPersisting()
+    {
+        var request = CreateRequest($"oversized-content-{Guid.NewGuid():N}") with
+        {
+            Content = new string('x', 262_145)
+        };
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+
+        using (client)
+        using (var response = await SendCreateAsync(
+            client,
+            csrf,
+            Guid.NewGuid().ToString("D"),
+            request))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.Equal(
+                "portal-ticket-content-too-long",
+                body.RootElement.GetProperty("code").GetString());
+            Assert.Equal(0, await CountTicketsAsync(request.Subject));
         }
     }
 

@@ -168,12 +168,12 @@ public sealed class TicketsController(
         if (!Request.Headers.TryGetValue("Idempotency-Key", out var idempotencyKeyHeader)
             || idempotencyKeyHeader.Count != 1)
         {
-            return BadRequest(new { code = "idempotency-key-required" });
+            return BadRequest(new { code = CreatePortalTicketErrorCodes.IdempotencyKeyRequired });
         }
 
         if (!Guid.TryParse(idempotencyKeyHeader[0], out var idempotencyKey))
         {
-            return BadRequest(new { code = "idempotency-key-invalid" });
+            return BadRequest(new { code = CreatePortalTicketErrorCodes.IdempotencyKeyInvalid });
         }
 
         var command = new CreatePortalTicketCommand(
@@ -186,12 +186,10 @@ public sealed class TicketsController(
         var result = await createPortalTicketHandler.HandleAsync(command, cancellationToken);
         if (result.IsFailure)
         {
-            if (result.Error == CreatePortalTicketErrorCodes.PayloadConflict)
-            {
-                return Conflict(new { code = result.Error });
-            }
-
-            return BadRequest(new { message = result.Error });
+            var payload = new { code = result.Error };
+            return result.Error == CreatePortalTicketErrorCodes.PayloadConflict
+                ? Conflict(payload)
+                : BadRequest(payload);
         }
 
         if (result.Value!.WasAlreadyProcessed)
