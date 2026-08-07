@@ -2,6 +2,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY VSHelpDesk.slnx ./
+COPY Directory.Packages.props ./
 COPY src/VSHelpDesk.Domain/VSHelpDesk.Domain.csproj src/VSHelpDesk.Domain/
 COPY src/VSHelpDesk.Application/VSHelpDesk.Application.csproj src/VSHelpDesk.Application/
 COPY src/VSHelpDesk.Infrastructure/VSHelpDesk.Infrastructure.csproj src/VSHelpDesk.Infrastructure/
