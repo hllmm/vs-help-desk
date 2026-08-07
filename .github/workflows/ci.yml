@@ -250,6 +250,17 @@ jobs:
         if: always()
         run: pkill -f "VSHelpDesk.WebAPI" || true
 
+  docs-links:
+    name: Docs link check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22.22.0"
+      - name: Check markdown links
+        run: node scripts/check-markdown-links.mjs
+
   secrets-scan:
     name: Secrets scan (gitleaks)
     runs-on: ubuntu-latest

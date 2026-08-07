@@ -504,6 +504,7 @@ docs/*
 !docs/deploy-production.md
 !docs/deploy-kubernetes.md
 !docs/security-verification.md
+!docs/known-limitations.md
 # Local dotnet CLI cache
 .dotnet/
 
