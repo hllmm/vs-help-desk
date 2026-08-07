@@ -14,6 +14,9 @@ public interface IApplicationDbContext
 
     IQueryable<ProcessedEmailMessage> ProcessedEmailMessages { get; }
 
+    IQueryable<PortalTicketRequest> PortalTicketRequests =>
+        Enumerable.Empty<PortalTicketRequest>().AsQueryable();
+
     IQueryable<ApplicationParameter> ApplicationParameters { get; }
 
     IQueryable<ParameterChangeLog> ParameterChangeLogs { get; }
