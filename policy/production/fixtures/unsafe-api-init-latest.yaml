@@ -13,10 +13,10 @@ spec:
     spec:
       initContainers:
         - name: prepare
-          image: ghcr.io/vs-help-desk/api:latest
+          image: registry.test.invalid/fixtures/api:latest
       containers:
         - name: api
-          image: ghcr.io/vs-help-desk/api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          image: registry.test.invalid/fixtures/api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -33,4 +33,4 @@ spec:
     spec:
       containers:
         - name: web
-          image: ghcr.io/vs-help-desk/web@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+          image: registry.test.invalid/fixtures/web@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef

@@ -13,4 +13,4 @@ spec:
     spec:
       containers:
         - name: web
-          image: ghcr.io/vs-help-desk/web@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+          image: registry.test.invalid/fixtures/web@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef

@@ -9,6 +9,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFTEST_BIN="${CONFTEST_BIN:-$ROOT_DIR/.tools/conftest}"
 POLICY_DIR="$ROOT_DIR/policy/production"
 INPUT="${1:-/dev/stdin}"
+ALLOWLIST_FILE="${PRODUCTION_IMAGE_ALLOWLIST_FILE:-}"
 
 if [[ "$INPUT" != "/dev/stdin" && ! -f "$INPUT" ]]; then
   echo "ERROR: manifest file not found: $INPUT" >&2
@@ -20,10 +21,16 @@ if [[ ! -x "$CONFTEST_BIN" ]]; then
   exit 1
 fi
 
+if [[ -z "$ALLOWLIST_FILE" || ! -f "$ALLOWLIST_FILE" ]]; then
+  echo "ERROR: PRODUCTION_IMAGE_ALLOWLIST_FILE must name an existing operator-managed allowlist" >&2
+  exit 1
+fi
+
 "$CONFTEST_BIN" test \
   --combine \
   --no-color \
   --parser yaml \
+  --data "$ALLOWLIST_FILE" \
   --policy "$POLICY_DIR" \
   "$INPUT"
 

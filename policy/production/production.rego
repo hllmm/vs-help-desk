@@ -2,10 +2,7 @@ package main
 
 import rego.v1
 
-allowed_repositories := {
-    "api": "ghcr.io/vs-help-desk/api",
-    "web": "ghcr.io/vs-help-desk/web",
-}
+allowed_repositories := data.production_image_allowlist
 
 mutable_tags := {"latest", "local", "stable"}
 
@@ -63,10 +60,25 @@ is_allowed_immutable_image(workload, image) if {
     is_string(image)
     parts := split(image, "@")
     count(parts) == 2
-    parts[0] == allowed_repositories[workload]
+    repository := object.get(allowed_repositories, workload, "")
+    is_string(repository)
+    repository != ""
+    parts[0] == repository
     regex.match("^sha256:[0-9a-f]{64}$", parts[1])
     not regex.match("^sha256:a{64}$", parts[1])
     not regex.match("^sha256:b{64}$", parts[1])
+}
+
+has_allowed_repository(workload) if {
+    repository := object.get(allowed_repositories, workload, "")
+    is_string(repository)
+    repository != ""
+}
+
+deny contains msg if {
+    workload := ["api", "web"][_]
+    not has_allowed_repository(workload)
+    msg := sprintf("production image allowlist must provide a non-empty %s repository", [workload])
 }
 
 deny contains msg if {

@@ -12,15 +12,22 @@ CHECKER = ROOT / "scripts" / "check-prod-manifest.sh"
 CONFTEST = ROOT / ".tools" / "conftest"
 POLICY_DIR = ROOT / "policy" / "networkpolicy"
 ORDINARY_MAIL_POLICY = POLICY_DIR / "fixtures" / "unsafe-renamed-mail-policy.yaml"
-API_IMAGE = "ghcr.io/vs-help-desk/api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-WEB_IMAGE = "ghcr.io/vs-help-desk/web@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+ALLOWLIST = ROOT / "policy" / "production" / "fixtures" / "image-allowlist.yaml"
+API_IMAGE = "registry.test.invalid/fixtures/api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+WEB_IMAGE = "registry.test.invalid/fixtures/web@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
 MISSING = object()
 
 
 class RenderProdManifestTests(unittest.TestCase):
     def run_renderer(self, mode=MISSING, smtp=MISSING, imap=MISSING):
         environment = os.environ.copy()
-        environment.update({"API_IMAGE": API_IMAGE, "WEB_IMAGE": WEB_IMAGE})
+        environment.update(
+            {
+                "API_IMAGE": API_IMAGE,
+                "WEB_IMAGE": WEB_IMAGE,
+                "PRODUCTION_IMAGE_ALLOWLIST_FILE": str(ALLOWLIST),
+            }
+        )
         for name, value in (
             ("MAIL_EGRESS_MODE", mode),
             ("SMTP_RELAY_CIDRS", smtp),
@@ -48,9 +55,12 @@ class RenderProdManifestTests(unittest.TestCase):
         )
 
     def run_checker(self, manifest):
+        environment = os.environ.copy()
+        environment["PRODUCTION_IMAGE_ALLOWLIST_FILE"] = str(ALLOWLIST)
         return subprocess.run(
             ["bash", str(CHECKER)],
             cwd=ROOT,
+            env=environment,
             input=manifest,
             capture_output=True,
             text=True,
@@ -169,8 +179,9 @@ class RenderProdManifestTests(unittest.TestCase):
         environment.update(
             {
                 "MAIL_EGRESS_MODE": "disabled",
+                "PRODUCTION_IMAGE_ALLOWLIST_FILE": str(ALLOWLIST),
                 "API_IMAGE": API_IMAGE.replace(
-                    "ghcr.io/vs-help-desk/api",
+                    "registry.test.invalid/fixtures/api",
                     "registry.example.local/vs-help-desk/api",
                 ),
                 "WEB_IMAGE": WEB_IMAGE,
@@ -192,7 +203,8 @@ class RenderProdManifestTests(unittest.TestCase):
         environment.update(
             {
                 "MAIL_EGRESS_MODE": "disabled",
-                "API_IMAGE": "ghcr.io/vs-help-desk/api:sha-0123456789abcdef0123456789abcdef01234567",
+                "PRODUCTION_IMAGE_ALLOWLIST_FILE": str(ALLOWLIST),
+                "API_IMAGE": "registry.test.invalid/fixtures/api:sha-0123456789abcdef0123456789abcdef01234567",
                 "WEB_IMAGE": WEB_IMAGE,
             }
         )

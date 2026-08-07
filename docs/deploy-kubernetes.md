@@ -34,19 +34,34 @@ renderer-owned policy's explicit relay `ipBlock` rules while ordinary and
 base mail policies remain rejected. World CIDRs remain rejected even when the
 marker is present.
 
-The image variables remain required in both modes:
+The image variables and an operator-managed repository allowlist remain
+required in both modes. Keep the allowlist outside this repository; it names
+the approved API and web repositories without committing a registry decision
+or a deployable image reference.
 
 ```bash
+export PRODUCTION_IMAGE_ALLOWLIST_FILE=/secure/vshelpdesk-production-image-allowlist.yaml
+
 API_IMAGE='<immutable API image reference>' \
 WEB_IMAGE='<immutable web image reference>' \
 MAIL_EGRESS_MODE=disabled \
 bash scripts/render-prod-manifest.sh > production.yaml
 ```
 
-`API_IMAGE` and `WEB_IMAGE` must use the exact allow-listed repositories with
-lowercase `@sha256:<64 hex>` digests. The checked-in overlay is rejected by
+The file must have this shape, with the real approved repositories supplied by
+the deployment operator:
+
+```yaml
+production_image_allowlist:
+  api: <approved-api-repository>
+  web: <approved-web-repository>
+```
+
+`API_IMAGE` and `WEB_IMAGE` must use those exact repositories with lowercase
+`@sha256:<64 hex>` digests. The checked-in overlay is rejected by
 `scripts/check-prod-manifest.sh`; only the renderer's validated output is
-deployable.
+deployable. Keep `PRODUCTION_IMAGE_ALLOWLIST_FILE` exported when validating the
+artifact with that checker.
 
 For enabled mode, set the two explicit relay-list variables to the real
 operator-supplied values before invoking the same renderer.

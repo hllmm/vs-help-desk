@@ -13,4 +13,4 @@ spec:
     spec:
       containers:
         - name: api
-          image: ghcr.io/vs-help-desk/api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          image: registry.test.invalid/fixtures/api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

@@ -1,0 +1,3 @@
+production_image_allowlist:
+  api: registry.test.invalid/fixtures/api
+  web: registry.test.invalid/fixtures/web

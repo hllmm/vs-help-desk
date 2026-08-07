@@ -2,12 +2,17 @@
 set -euo pipefail
 
 # render-prod-manifest.sh — generate immutable production manifest
-# Usage: API_IMAGE=... WEB_IMAGE=... MAIL_EGRESS_MODE=disabled bash scripts/render-prod-manifest.sh > production.yaml
-#   or:  API_IMAGE=... WEB_IMAGE=... MAIL_EGRESS_MODE=enabled SMTP_RELAY_CIDRS=... IMAP_RELAY_CIDRS=... bash scripts/render-prod-manifest.sh > production.yaml
+# Usage: PRODUCTION_IMAGE_ALLOWLIST_FILE=... API_IMAGE=... WEB_IMAGE=... MAIL_EGRESS_MODE=disabled bash scripts/render-prod-manifest.sh > production.yaml
+#   or:  PRODUCTION_IMAGE_ALLOWLIST_FILE=... API_IMAGE=... WEB_IMAGE=... MAIL_EGRESS_MODE=enabled SMTP_RELAY_CIDRS=... IMAP_RELAY_CIDRS=... bash scripts/render-prod-manifest.sh > production.yaml
 #
 # Validates the mail egress contract and immutable images, then renders kustomize and substitutes them.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ -z "${PRODUCTION_IMAGE_ALLOWLIST_FILE:-}" || ! -f "$PRODUCTION_IMAGE_ALLOWLIST_FILE" ]]; then
+  echo "ERROR: PRODUCTION_IMAGE_ALLOWLIST_FILE must name an existing operator-managed allowlist" >&2
+  exit 1
+fi
 
 if [[ -z "${MAIL_EGRESS_MODE:-}" ]]; then
   echo "ERROR: MAIL_EGRESS_MODE must be set to enabled or disabled" >&2
@@ -34,23 +39,22 @@ case "$MAIL_EGRESS_MODE" in
 esac
 
 if [[ -z "${API_IMAGE:-}" ]]; then
-  echo "ERROR: API_IMAGE must be set to ghcr.io/vs-help-desk/api@sha256:<64 lowercase hex>" >&2
+  echo "ERROR: API_IMAGE must be set to an allow-listed repository@sha256:<64 lowercase hex>" >&2
   exit 1
 fi
 if [[ -z "${WEB_IMAGE:-}" ]]; then
-  echo "ERROR: WEB_IMAGE must be set to ghcr.io/vs-help-desk/web@sha256:<64 lowercase hex>" >&2
+  echo "ERROR: WEB_IMAGE must be set to an allow-listed repository@sha256:<64 lowercase hex>" >&2
   exit 1
 fi
 
-API_IMAGE_REGEX='^ghcr\.io/vs-help-desk/api@sha256:[a-f0-9]{64}$'
-WEB_IMAGE_REGEX='^ghcr\.io/vs-help-desk/web@sha256:[a-f0-9]{64}$'
+IMMUTABLE_IMAGE_REGEX='^[^[:space:]@]+@sha256:[a-f0-9]{64}$'
 
-if ! [[ "$API_IMAGE" =~ $API_IMAGE_REGEX ]]; then
-  echo "ERROR: API_IMAGE must use the exact allow-listed repository and a sha256 digest, got: $API_IMAGE" >&2
+if ! [[ "$API_IMAGE" =~ $IMMUTABLE_IMAGE_REGEX ]]; then
+  echo "ERROR: API_IMAGE must use an immutable sha256 digest, got: $API_IMAGE" >&2
   exit 1
 fi
-if ! [[ "$WEB_IMAGE" =~ $WEB_IMAGE_REGEX ]]; then
-  echo "ERROR: WEB_IMAGE must use the exact allow-listed repository and a sha256 digest, got: $WEB_IMAGE" >&2
+if ! [[ "$WEB_IMAGE" =~ $IMMUTABLE_IMAGE_REGEX ]]; then
+  echo "ERROR: WEB_IMAGE must use an immutable sha256 digest, got: $WEB_IMAGE" >&2
   exit 1
 fi
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import subprocess
 import unittest
+import os
 from pathlib import Path
 
 
@@ -8,20 +9,30 @@ ROOT = Path(__file__).resolve().parent.parent
 CHECKER = ROOT / "scripts" / "check-prod-manifest.sh"
 FIXTURES = ROOT / "policy" / "production" / "fixtures"
 PROD_OVERLAY = ROOT / "deploy" / "k8s" / "overlays" / "prod"
+ALLOWLIST = FIXTURES / "image-allowlist.yaml"
 
 
 class ProductionManifestPolicyTests(unittest.TestCase):
-    def run_checker(self, manifest=None, fixture=None):
+    def run_checker(self, manifest=None, fixture=None, allowlist=True):
         command = ["bash", str(CHECKER)]
         if fixture is not None:
             command.append(str(FIXTURES / fixture))
 
+        environment = os.environ.copy()
+        if allowlist:
+            environment["PRODUCTION_IMAGE_ALLOWLIST_FILE"] = str(ALLOWLIST)
+        else:
+            environment.pop("PRODUCTION_IMAGE_ALLOWLIST_FILE", None)
+
         if manifest is None:
-            return subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
+            return subprocess.run(
+                command, cwd=ROOT, env=environment, capture_output=True, text=True
+            )
 
         return subprocess.run(
             command,
             cwd=ROOT,
+            env=environment,
             input=manifest,
             capture_output=True,
             text=True,
@@ -31,6 +42,12 @@ class ProductionManifestPolicyTests(unittest.TestCase):
         result = self.run_checker(fixture="valid-api-web.yaml")
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_requires_an_explicit_operator_image_allowlist(self):
+        result = self.run_checker(fixture="valid-api-web.yaml", allowlist=False)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PRODUCTION_IMAGE_ALLOWLIST_FILE", result.stderr)
 
     def test_rejects_the_unrendered_production_overlay(self):
         rendered = subprocess.run(
