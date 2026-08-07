@@ -1,3 +1,5 @@
 production_image_allowlist:
   api: registry.test.invalid/fixtures/api
   web: registry.test.invalid/fixtures/web
+  postgres: postgres:16-alpine
+  jobs: curlimages/curl:8.13.0
