@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Runs NetworkPolicy policy fixtures. Current base manifests are an expected
-# rejection until Task 6 removes their known unsafe rules.
+# Runs NetworkPolicy policy fixtures and requires the rendered base to pass.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFTEST_BIN="${CONFTEST_BIN:-$ROOT_DIR/.tools/conftest}"
@@ -36,6 +35,20 @@ expect_rejected() {
   echo "EXPECTED REJECT: ${input_file#$ROOT_DIR/}"
 }
 
+expect_accepted() {
+  local input_file="$1"
+  local output
+
+  if output="$("$CONFTEST_BIN" test --policy "$POLICY_DIR" "$input_file" 2>&1)"; then
+    echo "EXPECTED ACCEPT: ${input_file#$ROOT_DIR/}"
+    return 0
+  fi
+
+  echo "ERROR: expected policy acceptance for ${input_file#$ROOT_DIR/}" >&2
+  echo "$output" >&2
+  return 1
+}
+
 expect_rejected "$FIXTURE_DIR/unsafe-world-ipv4.yaml" "unrestricted ipBlock CIDR 0.0.0.0/0 is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-world-ipv6.yaml" "unrestricted ipBlock CIDR ::/0 is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-world-ipv6-expanded.yaml" "unrestricted ipBlock CIDR 0:0:0:0:0:0:0:0/0 is forbidden"
@@ -46,12 +59,11 @@ expect_rejected "$FIXTURE_DIR/unsafe-renamed-mail-policy.yaml" "SMTP/IMAP egress
 expect_rejected "$FIXTURE_DIR/unsafe-mail-port-range.yaml" "SMTP/IMAP egress with an ipBlock is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-placeholder-relay-cidr.yaml" "example relay CIDR 10.20.30.0/24 is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-placeholder-relay-ip.yaml" "example relay CIDR 192.168.100.10/32 is forbidden"
-expect_rejected "$ROOT_DIR/deploy/k8s/base" \
-  "unrestricted ipBlock CIDR 0.0.0.0/0 is forbidden" \
-  "web ingress must combine namespaceSelector and podSelector in one peer" \
-  "SMTP/IMAP egress with an ipBlock is forbidden" \
-  "example relay CIDR 10.20.30.0/24 is forbidden" \
-  "example relay CIDR 192.168.100.10/32 is forbidden"
+
+RENDERED_BASE="$(mktemp --suffix=.yaml)"
+trap 'rm -f "$RENDERED_BASE"' EXIT
+kubectl kustomize "$ROOT_DIR/deploy/k8s/base" >"$RENDERED_BASE"
+expect_accepted "$RENDERED_BASE"
 
 "$CONFTEST_BIN" test --policy "$POLICY_DIR" "$FIXTURE_DIR/safe-required-configuration.yaml"
 "$CONFTEST_BIN" test --policy "$POLICY_DIR" "$FIXTURE_DIR/safe-unrelated-tcp-cidr.yaml"
