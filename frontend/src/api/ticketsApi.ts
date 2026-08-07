@@ -28,6 +28,10 @@ export type TicketMutationOptions = {
   signal?: AbortSignal
 }
 
+export type CreateTicketOptions = TicketMutationOptions & {
+  idempotencyKey: string
+}
+
 export function fetchTickets(
   options: FetchTicketsOptions = {},
 ): Promise<TicketListPage> {
@@ -130,11 +134,12 @@ export function resolveTicket(
 
 export function createTicket(
   request: { subject: string; customerName: string; customerEmail: string; content: string },
-  options: TicketMutationOptions = {},
+  options: CreateTicketOptions,
 ): Promise<{ ticketId: string; ticketNumber: string }> {
   return apiRequest<{ ticketId: string; ticketNumber: string }>('/api/tickets', {
     method: 'POST',
     body: request,
     signal: options.signal,
+    headers: { 'Idempotency-Key': options.idempotencyKey },
   })
 }

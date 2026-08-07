@@ -50,6 +50,7 @@ export function TicketListPage(): ReactElement {
   const [createCustomerEmail, setCreateCustomerEmail] = useState('')
   const [createContent, setCreateContent] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
+  const [createIdempotencyKey, setCreateIdempotencyKey] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const {
     tickets,
@@ -111,6 +112,13 @@ export function TicketListPage(): ReactElement {
     !hasRows &&
     hasServerFilter
 
+  const resetFailedCreateOperation = () => {
+    if (!isCreating && createError !== null) {
+      setCreateIdempotencyKey(null)
+      setCreateError(null)
+    }
+  }
+
   return (
     <section
       className="ticket-workspace"
@@ -152,7 +160,16 @@ export function TicketListPage(): ReactElement {
             <button
               type="button"
               className="button button--primary"
-              onClick={() => setShowCreate((v) => !v)}
+              onClick={() => {
+                if (showCreate) {
+                  setShowCreate(false)
+                  setCreateError(null)
+                  setCreateIdempotencyKey(null)
+                  return
+                }
+
+                setShowCreate(true)
+              }}
             >
               {showCreate ? 'İptal' : 'Yeni talep oluştur'}
             </button>
@@ -167,6 +184,10 @@ export function TicketListPage(): ReactElement {
                     setCreateError('Tüm alanlar zorunludur.')
                     return
                   }
+                  const idempotencyKey = createIdempotencyKey ?? crypto.randomUUID()
+                  if (createIdempotencyKey === null) {
+                    setCreateIdempotencyKey(idempotencyKey)
+                  }
                   setIsCreating(true)
                   try {
                     const { createTicket } = await import('../api/ticketsApi')
@@ -175,11 +196,12 @@ export function TicketListPage(): ReactElement {
                       customerName: createCustomerName.trim(),
                       customerEmail: createCustomerEmail.trim(),
                       content: createContent.trim(),
-                    })
+                    }, { idempotencyKey })
                     setCreateSubject('')
                     setCreateCustomerName('')
                     setCreateCustomerEmail('')
                     setCreateContent('')
+                    setCreateIdempotencyKey(null)
                     setShowCreate(false)
                     await refresh()
                   } catch (err) {
@@ -192,19 +214,31 @@ export function TicketListPage(): ReactElement {
               >
                 <div className="form-field">
                   <label htmlFor="create-subject">Konu</label>
-                  <input id="create-subject" value={createSubject} onChange={(e) => setCreateSubject(e.target.value)} required />
+                  <input id="create-subject" value={createSubject} onChange={(e) => {
+                    resetFailedCreateOperation()
+                    setCreateSubject(e.target.value)
+                  }} required />
                 </div>
                 <div className="form-field">
                   <label htmlFor="create-customer-name">Müşteri adı</label>
-                  <input id="create-customer-name" value={createCustomerName} onChange={(e) => setCreateCustomerName(e.target.value)} required />
+                  <input id="create-customer-name" value={createCustomerName} onChange={(e) => {
+                    resetFailedCreateOperation()
+                    setCreateCustomerName(e.target.value)
+                  }} required />
                 </div>
                 <div className="form-field">
                   <label htmlFor="create-customer-email">Müşteri e-posta</label>
-                  <input id="create-customer-email" type="email" value={createCustomerEmail} onChange={(e) => setCreateCustomerEmail(e.target.value)} required />
+                  <input id="create-customer-email" type="email" value={createCustomerEmail} onChange={(e) => {
+                    resetFailedCreateOperation()
+                    setCreateCustomerEmail(e.target.value)
+                  }} required />
                 </div>
                 <div className="form-field">
                   <label htmlFor="create-content">İçerik</label>
-                  <textarea id="create-content" value={createContent} onChange={(e) => setCreateContent(e.target.value)} required />
+                  <textarea id="create-content" value={createContent} onChange={(e) => {
+                    resetFailedCreateOperation()
+                    setCreateContent(e.target.value)
+                  }} required />
                 </div>
                 {createError ? <p role="alert" className="form-error">{createError}</p> : null}
                 <button type="submit" className="button button--primary" disabled={isCreating}>
