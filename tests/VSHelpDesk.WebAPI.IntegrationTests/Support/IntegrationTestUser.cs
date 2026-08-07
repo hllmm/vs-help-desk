@@ -11,7 +11,15 @@ public sealed record IntegrationTestUser(
     string Username,
     string Password)
 {
+    public static Task<IntegrationTestUser> CreateActiveAsync(IServiceProvider services) =>
+        CreateAsync(services, isActive: true);
+
     public static async Task<IntegrationTestUser> CreateInactiveAsync(IServiceProvider services)
+    {
+        return await CreateAsync(services, isActive: false);
+    }
+
+    private static async Task<IntegrationTestUser> CreateAsync(IServiceProvider services, bool isActive)
     {
         ArgumentNullException.ThrowIfNull(services);
 
@@ -20,18 +28,22 @@ public sealed record IntegrationTestUser(
         var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
 
         var token = Guid.NewGuid().ToString("N");
-        var username = $"inactive-{token[..12]}";
-        var email = $"inactive-{token[..12]}@example.test";
+        var prefix = isActive ? "active" : "inactive";
+        var username = $"{prefix}-{token[..12]}";
+        var email = $"{prefix}-{token[..12]}@example.test";
         var password = $"Pw-{token[..16]}!";
         var passwordHash = passwordHasher.Hash(password);
 
         var user = new User(
-            fullName: "Inactive Integration User",
+            fullName: isActive ? "Active Integration User" : "Inactive Integration User",
             username: username,
             email: email,
             passwordHash: passwordHash,
             role: UserRole.Support);
-        user.Deactivate();
+        if (!isActive)
+        {
+            user.Deactivate();
+        }
 
         db.Users.Add(user);
         await db.SaveChangesAsync();
