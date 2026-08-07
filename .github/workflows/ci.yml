@@ -267,7 +267,6 @@ jobs:
       CI: "true"
       Auth__SigningKey: ci-production-security-smoke-signing-key-with-at-least-32-bytes!!
       Jobs__ApiKey: ci-production-security-smoke-jobs-api-key-32-characters!!
-      SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/vshd-production-security-smoke
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
@@ -283,6 +282,8 @@ jobs:
         run: bash scripts/test-production-security-smoke.sh
       - name: Run Production TLS security smoke
         run: bash scripts/run-production-security-smoke.sh
+        env:
+          SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/vshd-production-security-smoke
       - name: Upload Production TLS smoke evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
