@@ -131,12 +131,18 @@ public sealed class AuthControllerTests
     {
         var userRepository = new FakeUserRepository(user);
         var unitOfWork = new FakeUnitOfWork();
+        var loginSecurityOptions = Microsoft.Extensions.Options.Options.Create(new LoginSecurityOptions
+        {
+            MaxFailedAttempts = 5,
+            LockoutMinutes = 15
+        });
         var handler = new LoginHandler(
             userRepository,
             unitOfWork,
             new FakePasswordHasher(validPassword),
             new FakeTokenService("access-token"),
-            new FixedTimeProvider(LoginTime));
+            new FixedTimeProvider(LoginTime),
+            loginSecurityOptions);
         var env = new FakeHostEnvironment { EnvironmentName = Environments.Development };
         var authOptions = Microsoft.Extensions.Options.Options.Create(new AuthOptions
         {

@@ -1,4 +1,4 @@
-namespace VSHelpDesk.WebAPI.Options;
+namespace VSHelpDesk.Application.Features.Authentication.Login;
 
 public sealed class LoginSecurityOptions
 {

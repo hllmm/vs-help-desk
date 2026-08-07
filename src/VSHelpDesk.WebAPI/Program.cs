@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using VSHelpDesk.Application;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Common.Localization;
+using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
