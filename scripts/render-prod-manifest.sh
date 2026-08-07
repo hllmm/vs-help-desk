@@ -2,10 +2,36 @@
 set -euo pipefail
 
 # render-prod-manifest.sh — generate immutable production manifest
-# Usage: API_IMAGE=ghcr.io/org/api@sha256:<64> WEB_IMAGE=ghcr.io/org/web@sha256:<64> bash scripts/render-prod-manifest.sh > production.yaml
-#   or:  API_IMAGE=ghcr.io/org/api:sha-<40> WEB_IMAGE=ghcr.io/org/web:sha-<40> bash scripts/render-prod-manifest.sh > production.yaml
+# Usage: API_IMAGE=... WEB_IMAGE=... MAIL_EGRESS_MODE=disabled bash scripts/render-prod-manifest.sh > production.yaml
+#   or:  API_IMAGE=... WEB_IMAGE=... MAIL_EGRESS_MODE=enabled SMTP_RELAY_CIDRS=... IMAP_RELAY_CIDRS=... bash scripts/render-prod-manifest.sh > production.yaml
 #
-# Validates that both images are immutable, then renders kustomize and substitutes them.
+# Validates the mail egress contract and immutable images, then renders kustomize and substitutes them.
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ -z "${MAIL_EGRESS_MODE:-}" ]]; then
+  echo "ERROR: MAIL_EGRESS_MODE must be set to enabled or disabled" >&2
+  exit 1
+fi
+
+case "$MAIL_EGRESS_MODE" in
+  disabled)
+    ;;
+  enabled)
+    if [[ -z "${SMTP_RELAY_CIDRS:-}" ]]; then
+      echo "ERROR: SMTP_RELAY_CIDRS must be set when MAIL_EGRESS_MODE=enabled" >&2
+      exit 1
+    fi
+    if [[ -z "${IMAP_RELAY_CIDRS:-}" ]]; then
+      echo "ERROR: IMAP_RELAY_CIDRS must be set when MAIL_EGRESS_MODE=enabled" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "ERROR: MAIL_EGRESS_MODE must be exactly enabled or disabled, got: $MAIL_EGRESS_MODE" >&2
+    exit 1
+    ;;
+esac
 
 if [[ -z "${API_IMAGE:-}" ]]; then
   echo "ERROR: API_IMAGE must be set (e.g., ghcr.io/vs-help-desk/api@sha256:<64> or :sha-<40>)" >&2
@@ -36,7 +62,16 @@ if ! command -v kubectl >/dev/null 2>&1; then
   exit 1
 fi
 
-kubectl kustomize deploy/k8s/overlays/prod > "$TMP"
+MAIL_EGRESS_POLICY=""
+if [[ "$MAIL_EGRESS_MODE" == "enabled" ]]; then
+  if ! MAIL_EGRESS_POLICY="$(python3 "$ROOT_DIR/scripts/generate_mail_egress_policy.py" \
+    --smtp-relay-cidrs "$SMTP_RELAY_CIDRS" \
+    --imap-relay-cidrs "$IMAP_RELAY_CIDRS")"; then
+    exit 1
+  fi
+fi
+
+kubectl kustomize "$ROOT_DIR/deploy/k8s/overlays/prod" > "$TMP"
 
 # Replace the placeholder prod images with the provided immutable ones.
 # Prod kustomization uses vshelpdesk-api:sha-... / vshelpdesk-web:sha-... placeholders; replace the whole image line.
@@ -55,5 +90,9 @@ sed -i -E "s|image:[[:space:]]*ghcr\.io[^[:space:]]*vshelpdesk-web[^[:space:]]*|
 # Also handle generic ghcr.io/vs-help-desk/api or web if prod already uses ghcr prefix
 sed -i -E "s|image:[[:space:]]*ghcr\.io/vs-help-desk/api[^[:space:]]*|image: $API_IMAGE|g" "$TMP"
 sed -i -E "s|image:[[:space:]]*ghcr\.io/vs-help-desk/web[^[:space:]]*|image: $WEB_IMAGE|g" "$TMP"
+
+if [[ "$MAIL_EGRESS_MODE" == "enabled" ]]; then
+  printf '%s\n' "$MAIL_EGRESS_POLICY" >> "$TMP"
+fi
 
 cat "$TMP"

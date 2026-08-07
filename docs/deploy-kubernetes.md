@@ -13,6 +13,32 @@ kubectl apply -k deploy/k8s/overlays/prod
 - `deploy/k8s/base`: API + web Deployments, Services, Postgres StatefulSet, `web-nginx-configmap.yaml`, CronJobs (`process-incoming-emails`, `resolve-inactive-tickets` via `curlimages/curl:8.13.0` digest-pinned), Ingress, `secret.example.yaml`.
 - `deploy/k8s/overlays/prod`: `ingress-patch.yaml` + image `newName/newTag` rewrites.
 
+## Production Manifest Mail Egress
+
+`scripts/render-prod-manifest.sh` requires `MAIL_EGRESS_MODE` to be exactly
+`disabled` or `enabled`.
+
+- `MAIL_EGRESS_MODE=disabled` renders the base and production resources without
+  an `api-mail-egress` NetworkPolicy. `SMTP_RELAY_CIDRS` and
+  `IMAP_RELAY_CIDRS` are not required in this mode.
+- `MAIL_EGRESS_MODE=enabled` requires both `SMTP_RELAY_CIDRS` and
+  `IMAP_RELAY_CIDRS`. Each variable must be a non-empty comma-separated list
+  of operator-supplied CIDRs. Every entry is validated; empty entries,
+  malformed CIDRs, and world CIDRs are rejected. The renderer appends a
+  separate `api-mail-egress` policy for the API pods.
+
+The image variables remain required in both modes:
+
+```bash
+API_IMAGE='<immutable API image reference>' \
+WEB_IMAGE='<immutable web image reference>' \
+MAIL_EGRESS_MODE=disabled \
+bash scripts/render-prod-manifest.sh > production.yaml
+```
+
+For enabled mode, set the two explicit relay-list variables to the real
+operator-supplied values before invoking the same renderer.
+
 ## Forwarded Headers & Rate Limiting
 
 Identical to production Compose (see `docs/deploy-production.md` § Forwarded Headers & Rate Limiting):
