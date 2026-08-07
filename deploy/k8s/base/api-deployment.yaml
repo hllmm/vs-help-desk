@@ -22,6 +22,8 @@ spec:
         runAsUser: 10001
         runAsGroup: 10001
         fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: api
           image: vshelpdesk-api:local
@@ -67,6 +69,8 @@ spec:
           volumeMounts:
             - name: attachments
               mountPath: /var/vshelpdesk/attachments
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /health/live
@@ -92,10 +96,17 @@ spec:
               memory: 1Gi
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10001
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
       volumes:
         - name: attachments
           persistentVolumeClaim:
             claimName: api-attachments
+        - name: tmp
+          emptyDir: {}

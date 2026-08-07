@@ -24,6 +24,10 @@ public sealed class User
 
     public DateTime? LastLoginAt { get; private set; }
 
+    public int FailedLoginAttempts { get; private set; }
+
+    public DateTime? LockoutEndUtc { get; private set; }
+
     private User()
     {
     }
@@ -106,5 +110,43 @@ public sealed class User
 
         PasswordHash = passwordHash;
         RefreshSecurityStamp();
+    }
+
+    public bool IsLoginLocked(DateTime utcNow)
+    {
+        return LockoutEndUtc.HasValue && LockoutEndUtc.Value > utcNow;
+    }
+
+    public void RegisterFailedLogin(DateTime utcNow, int maxFailedAttempts, TimeSpan lockoutDuration)
+    {
+        if (maxFailedAttempts <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxFailedAttempts));
+        }
+
+        if (lockoutDuration <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lockoutDuration));
+        }
+
+        // If previous lockout has expired, reset for a fresh window.
+        if (LockoutEndUtc.HasValue && utcNow >= LockoutEndUtc.Value)
+        {
+            FailedLoginAttempts = 0;
+            LockoutEndUtc = null;
+        }
+
+        FailedLoginAttempts++;
+
+        if (FailedLoginAttempts >= maxFailedAttempts)
+        {
+            LockoutEndUtc = utcNow + lockoutDuration;
+        }
+    }
+
+    public void RegisterSuccessfulLogin()
+    {
+        FailedLoginAttempts = 0;
+        LockoutEndUtc = null;
     }
 }

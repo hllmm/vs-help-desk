@@ -43,7 +43,7 @@ cd frontend && npx playwright test   # 4 viewport projects (Weeks 2–4)
 - [ ] `ForwardedHeaders:ForwardLimit=2` (edge → web nginx → API); setting `0` or `11` → startup throw.
 - [ ] `frontend/nginx.conf` + `deploy/k8s/base/web-nginx-configmap.yaml` map preserves `X-Forwarded-Proto` (`$forwarded_proto`), not `$scheme`.
 - [ ] `GET /__test/remote-ip` (Development) with `X-Forwarded-For: 203.0.113.7, 10.0.0.5` (trusted) returns `203.0.113.7` and `https` when `X-Forwarded-Proto: https`; with untrusted CIDR returns direct `RemoteIpAddress`.
-- [ ] `auth-login` rate limit partitions on sanitized `ip` (and `ip:username` when `X-Login-Username` sent); `X-Login-Username` normalized `Trim+ToLower`.
+- [ ] `auth-login` rate limit partitions on sanitized `ip` only (no client-controlled header values).
 
 ## 6) Supply Chain (SEC-007)
 

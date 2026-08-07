@@ -9,10 +9,10 @@ resources:
 # rewrites name+tag for prod pulls.
 images:
   - name: vshelpdesk-api
-    newName: vshelpdesk-api
-    newTag: "latest"
+    newName: ghcr.io/vs-help-desk/api
+    newTag: "sha-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   - name: vshelpdesk-web
-    newName: vshelpdesk-web
-    newTag: "latest"
+    newName: ghcr.io/vs-help-desk/web
+    newTag: "sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 patches:
   - path: ingress-patch.yaml

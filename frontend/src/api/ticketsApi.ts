@@ -127,3 +127,14 @@ export function resolveTicket(
     { method: 'POST', signal: options.signal },
   )
 }
+
+export function createTicket(
+  request: { subject: string; customerName: string; customerEmail: string; content: string },
+  options: TicketMutationOptions = {},
+): Promise<{ ticketId: string; ticketNumber: string }> {
+  return apiRequest<{ ticketId: string; ticketNumber: string }>('/api/tickets', {
+    method: 'POST',
+    body: request,
+    signal: options.signal,
+  })
+}

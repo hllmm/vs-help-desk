@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using VSHelpDesk.Application;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Common.Localization;
+using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Persistence;
 using VSHelpDesk.Infrastructure.Persistence.Seed;
@@ -66,6 +67,10 @@ builder.Services.AddSingleton<IValidateOptions<JobsOptions>, JobsOptionsValidato
 builder.Services.AddOptions<JobsOptions>()
     .Bind(builder.Configuration.GetSection(JobsOptions.SectionName))
     .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<LoginSecurityOptions>, LoginSecurityOptionsValidator>();
+builder.Services.AddOptions<LoginSecurityOptions>()
+    .Bind(builder.Configuration.GetSection(LoginSecurityOptions.SectionName))
+    .ValidateOnStart();
 builder.Services.AddScoped<JobsApiKeyAuthorizationFilter>();
 
 builder.Services.AddHealthChecks()
@@ -74,7 +79,6 @@ builder.Services.AddHealthChecks()
 // Login abuse protection (single-instance memory partitioner).
 // Partition key uses httpContext.Connection.RemoteIpAddress AFTER ForwardedHeaders sanitization
 // (UseForwardedHeaders runs before UseRateLimiter). ForwardLimit=2 models edge+web nginx (see ForwardedHeadersOptions).
-// X-Login-Username is normalized (Trim+LowerInvariant) and only partitions — not trusted for auth.
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -92,12 +96,8 @@ builder.Services.AddRateLimiter(options =>
         httpContext =>
         {
             var ip = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-            var usernameHeader = httpContext.Request.Headers["X-Login-Username"].FirstOrDefault()?.Trim().ToLowerInvariant();
-            var partitionKey = string.IsNullOrWhiteSpace(usernameHeader)
-                ? $"login:{ip}"
-                : $"login:{ip}:{usernameHeader}";
+            var partitionKey = $"login:{ip}";
 
-            // IP & Username partition; development uses higher limit for integration testing suites.
             var permitLimit = builder.Environment.IsDevelopment() ? 1_000 : 10;
             return RateLimitPartition.GetFixedWindowLimiter(
                 partitionKey: partitionKey,
@@ -230,10 +230,7 @@ if (app.Environment.IsDevelopment())
     app.MapGet("/__test/rate-limit-key", (HttpContext ctx) =>
     {
         var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        var usernameHeader = ctx.Request.Headers["X-Login-Username"].FirstOrDefault()?.Trim().ToLowerInvariant();
-        var key = string.IsNullOrWhiteSpace(usernameHeader)
-            ? $"login:{ip}"
-            : $"login:{ip}:{usernameHeader}";
+        var key = $"login:{ip}";
         return Results.Ok(new { partitionKey = key, ip, scheme = ctx.Request.Scheme });
     }).AllowAnonymous();
 }

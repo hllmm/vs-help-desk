@@ -21,6 +21,8 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(user => user.SecurityStamp).IsRequired().HasMaxLength(64);
         builder.Property(user => user.CreatedAt).IsRequired().HasColumnType("timestamp with time zone");
         builder.Property(user => user.LastLoginAt).HasColumnType("timestamp with time zone");
+        builder.Property(user => user.FailedLoginAttempts).IsRequired().HasDefaultValue(0);
+        builder.Property(user => user.LockoutEndUtc).HasColumnType("timestamp with time zone");
 
         builder.HasIndex(user => user.Username).IsUnique();
     }

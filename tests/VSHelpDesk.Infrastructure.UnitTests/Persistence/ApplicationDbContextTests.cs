@@ -376,6 +376,105 @@ public sealed class ApplicationDbContextTests
         }
     }
 
+    [Fact]
+    public void Model_MapsOnlyVersionToXmin_AndOrdinaryUintNotMapped()
+    {
+        using var context = CreateMetadataContext();
+
+        // Only Version:uint should be mapped to xmin
+        foreach (var entityType in context.Model.GetEntityTypes())
+        {
+            foreach (var prop in entityType.GetProperties())
+            {
+                var columnName = prop.GetColumnName(StoreObjectIdentifier.Table(entityType.GetTableName()!, entityType.GetSchema()));
+                if (columnName == "xmin")
+                {
+                    Assert.Equal("Version", prop.Name);
+                    Assert.Equal(typeof(uint), prop.ClrType);
+                    Assert.True(prop.IsConcurrencyToken);
+                    Assert.Equal("xid", prop.GetColumnType());
+                }
+            }
+        }
+
+        var ticketType = context.Model.FindEntityType(typeof(Ticket))!;
+        var versionProp = ticketType.FindProperty(nameof(Ticket.Version))!;
+        var versionColumn = versionProp.GetColumnName(StoreObjectIdentifier.Table("Tickets", null));
+        Assert.Equal("xmin", versionColumn);
+        Assert.Equal("xid", versionProp.GetColumnType());
+        Assert.True(versionProp.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.OnAddOrUpdate, versionProp.ValueGenerated);
+
+        // Verify ordinary test-only uint is NOT mapped to xmin via a dummy model
+        var dummyOptions = new DbContextOptionsBuilder<DummyXminContext>()
+            .UseNpgsql("Host=localhost;Database=dummy_test;Username=test")
+            .Options;
+        using var dummyContext = new DummyXminContext(dummyOptions);
+        var dummyType = dummyContext.Model.FindEntityType(typeof(DummyWithUint))!;
+        var ordinaryProp = dummyType.FindProperty(nameof(DummyWithUint.SomeCounter))!;
+        var ordinaryColumn = ordinaryProp.GetColumnName(StoreObjectIdentifier.Table("DummyWithUints", null));
+        Assert.NotEqual("xmin", ordinaryColumn);
+        Assert.False(ordinaryProp.IsConcurrencyToken);
+        // SQLite mapping should be integer, not xid
+        var sqliteOptions = new DbContextOptionsBuilder<DummyXminContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+        using var sqliteContext = new DummyXminContext(sqliteOptions);
+        var sqliteType = sqliteContext.Model.FindEntityType(typeof(DummyWithUint))!;
+        var sqliteProp = sqliteType.FindProperty(nameof(DummyWithUint.SomeCounter))!;
+        Assert.NotEqual("xmin", sqliteProp.GetColumnName(StoreObjectIdentifier.Table("DummyWithUints", null)));
+        Assert.False(sqliteProp.IsConcurrencyToken);
+        var sqliteVersion = sqliteContext.Model.FindEntityType(typeof(DummyWithVersion))!.FindProperty(nameof(DummyWithVersion.Version))!;
+        Assert.Equal("integer", sqliteVersion.GetColumnType());
+        Assert.False(sqliteVersion.IsConcurrencyToken);
+    }
+
+    private sealed class DummyWithUint
+    {
+        public Guid Id { get; set; }
+        public uint SomeCounter { get; set; }
+    }
+
+    private sealed class DummyWithVersion
+    {
+        public Guid Id { get; set; }
+        public uint Version { get; set; }
+    }
+
+    private sealed class DummyXminContext : DbContext
+    {
+        public DummyXminContext(DbContextOptions<DummyXminContext> options) : base(options) { }
+        public DbSet<DummyWithUint> DummyWithUints => Set<DummyWithUint>();
+        public DbSet<DummyWithVersion> DummyWithVersions => Set<DummyWithVersion>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            var isPostgres = Database.IsNpgsql();
+            // Replicate ApplicationDbContext's Version-only xmin logic
+            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+            {
+                var versionProperty = entityType.FindProperty("Version");
+                if (versionProperty != null && versionProperty.ClrType == typeof(uint))
+                {
+                    if (isPostgres)
+                    {
+                        versionProperty.SetColumnType("xid");
+                        versionProperty.SetColumnName("xmin");
+                        versionProperty.IsConcurrencyToken = true;
+                        versionProperty.ValueGenerated = ValueGenerated.OnAddOrUpdate;
+                    }
+                    else
+                    {
+                        versionProperty.SetColumnType("integer");
+                        versionProperty.IsConcurrencyToken = false;
+                        versionProperty.ValueGenerated = ValueGenerated.Never;
+                    }
+                }
+            }
+            base.OnModelCreating(modelBuilder);
+        }
+    }
+
     private static ApplicationDbContext CreateMetadataContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

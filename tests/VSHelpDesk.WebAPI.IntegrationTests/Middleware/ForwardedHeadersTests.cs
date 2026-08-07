@@ -59,7 +59,7 @@ public sealed class ForwardedHeadersTests
         var data = JsonSerializer.Deserialize<RateLimitKeyResponse>(json, JsonOpts);
         Assert.NotNull(data);
         Assert.Equal("203.0.113.7", data!.ip);
-        Assert.Equal("login:203.0.113.7:admin", data.partitionKey);
+        Assert.Equal("login:203.0.113.7", data.partitionKey);
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class ForwardedHeadersTests
     }
 
     [Fact]
-    public async Task Rate_limit_partition_normalizes_username_case_and_trims()
+    public async Task Rate_limit_partition_ignores_username_header_and_uses_ip_only()
     {
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -141,6 +141,6 @@ public sealed class ForwardedHeadersTests
         using var response = await client.SendAsync(request);
         var json = await response.Content.ReadAsStringAsync();
         var data = JsonSerializer.Deserialize<RateLimitKeyResponse>(json, JsonOpts);
-        Assert.Equal("login:203.0.113.7:admin", data!.partitionKey);
+        Assert.Equal("login:203.0.113.7", data!.partitionKey);
     }
 }
