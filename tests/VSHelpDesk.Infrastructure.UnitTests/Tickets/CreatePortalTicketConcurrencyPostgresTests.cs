@@ -3,7 +3,6 @@ using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Security;
-using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Features.Tickets.CreatePortalTicket;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -184,9 +183,7 @@ public sealed class CreatePortalTicketConcurrencyPostgresTests
             new TicketNumberGenerator(new PostgresSequenceAllocator(context)),
             TimeProvider.System,
             new FixedCurrentUserService(userId),
-            new PostgresDatabaseErrorClassifier(),
-            new PassthroughHtmlSanitizer(),
-            new TestMessageProvider());
+            new PostgresDatabaseErrorClassifier());
 
         return await handler.HandleAsync(command, CancellationToken.None);
     }
@@ -264,19 +261,5 @@ public sealed class CreatePortalTicketConcurrencyPostgresTests
         public Guid? UserId => userId;
 
         public bool IsAuthenticated => true;
-    }
-
-    private sealed class PassthroughHtmlSanitizer : IHtmlSanitizerService
-    {
-        public string SanitizeHtml(string inputHtml) => inputHtml;
-
-        public string ToPlainText(string inputHtml) => inputHtml;
-    }
-
-    private sealed class TestMessageProvider : IMessageProvider
-    {
-        public string Get(string key) => key;
-
-        public string Get(string key, params object[] args) => key;
     }
 }

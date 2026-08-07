@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
+import { createTicket } from '../api/ticketsApi'
+import { createTicketErrorMessage } from '../features/tickets/createTicketError'
 import { TicketFilters } from '../features/tickets/TicketFilters'
 import { TicketLifecycleRail } from '../features/tickets/TicketLifecycleRail'
 import type {
@@ -190,7 +192,6 @@ export function TicketListPage(): ReactElement {
                   }
                   setIsCreating(true)
                   try {
-                    const { createTicket } = await import('../api/ticketsApi')
                     await createTicket({
                       subject: createSubject.trim(),
                       customerName: createCustomerName.trim(),
@@ -205,8 +206,7 @@ export function TicketListPage(): ReactElement {
                     setShowCreate(false)
                     await refresh()
                   } catch (err) {
-                    const msg = err instanceof Error ? err.message : 'Talep oluşturulamadı.'
-                    setCreateError(msg)
+                    setCreateError(createTicketErrorMessage(err))
                   } finally {
                     setIsCreating(false)
                   }
@@ -214,28 +214,28 @@ export function TicketListPage(): ReactElement {
               >
                 <div className="form-field">
                   <label htmlFor="create-subject">Konu</label>
-                  <input id="create-subject" value={createSubject} onChange={(e) => {
+                  <input id="create-subject" maxLength={500} value={createSubject} onChange={(e) => {
                     resetFailedCreateOperation()
                     setCreateSubject(e.target.value)
                   }} required />
                 </div>
                 <div className="form-field">
                   <label htmlFor="create-customer-name">Müşteri adı</label>
-                  <input id="create-customer-name" value={createCustomerName} onChange={(e) => {
+                  <input id="create-customer-name" maxLength={200} value={createCustomerName} onChange={(e) => {
                     resetFailedCreateOperation()
                     setCreateCustomerName(e.target.value)
                   }} required />
                 </div>
                 <div className="form-field">
                   <label htmlFor="create-customer-email">Müşteri e-posta</label>
-                  <input id="create-customer-email" type="email" value={createCustomerEmail} onChange={(e) => {
+                  <input id="create-customer-email" type="email" maxLength={255} value={createCustomerEmail} onChange={(e) => {
                     resetFailedCreateOperation()
                     setCreateCustomerEmail(e.target.value)
                   }} required />
                 </div>
                 <div className="form-field">
                   <label htmlFor="create-content">İçerik</label>
-                  <textarea id="create-content" value={createContent} onChange={(e) => {
+                  <textarea id="create-content" maxLength={262_144} value={createContent} onChange={(e) => {
                     resetFailedCreateOperation()
                     setCreateContent(e.target.value)
                   }} required />
