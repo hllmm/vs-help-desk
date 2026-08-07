@@ -27,6 +27,13 @@ kubectl apply -k deploy/k8s/overlays/prod
   malformed CIDRs, and world CIDRs are rejected. The renderer appends a
   separate `api-mail-egress` policy for the API pods.
 
+The generated policy carries the exact annotation
+`vshelpdesk.io/policy-provenance: task-7-mail-egress-generator`. This is a
+provenance marker consumed by the Task 5 policy-as-code check: it permits the
+renderer-owned policy's explicit relay `ipBlock` rules while ordinary and
+base mail policies remain rejected. World CIDRs remain rejected even when the
+marker is present.
+
 The image variables remain required in both modes:
 
 ```bash

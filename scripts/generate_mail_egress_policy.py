@@ -6,6 +6,12 @@ import ipaddress
 import sys
 
 
+# Task 5 policy-as-code uses this exact marker to distinguish renderer-owned
+# mail egress from ordinary NetworkPolicies that must remain fail-closed.
+GENERATED_POLICY_PROVENANCE_KEY = "vshelpdesk.io/policy-provenance"
+GENERATED_POLICY_PROVENANCE_VALUE = "task-7-mail-egress-generator"
+
+
 def parse_cidr_list(value, variable_name):
     if value is None or not value.strip():
         raise ValueError(f"{variable_name} must be set to a non-empty comma-separated list of CIDRs")
@@ -37,6 +43,8 @@ def render_policy(smtp_cidrs, imap_cidrs):
         "metadata:",
         "  name: api-mail-egress",
         "  namespace: vshelpdesk",
+        "  annotations:",
+        f"    {GENERATED_POLICY_PROVENANCE_KEY}: {GENERATED_POLICY_PROVENANCE_VALUE}",
         "  labels:",
         "    app.kubernetes.io/part-of: vs-help-desk",
         "spec:",

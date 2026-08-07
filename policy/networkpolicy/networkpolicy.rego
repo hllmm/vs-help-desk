@@ -9,6 +9,9 @@ example_relay_cidrs := {"10.20.30.0/24", "192.168.100.10/32"}
 
 mail_ports := {25, 143, 465, 587, 993}
 mail_port_names := {"imap", "imaps", "smtp", "smtps", "submission"}
+generated_mail_policy_name := "api-mail-egress"
+generated_mail_policy_provenance_key := "vshelpdesk.io/policy-provenance"
+generated_mail_policy_provenance_value := "task-7-mail-egress-generator"
 
 is_network_policy if {
   input.kind == "NetworkPolicy"
@@ -107,8 +110,17 @@ has_mail_port_overlap(ports) if {
   port_spec.port in mail_port_names
 }
 
+is_generated_mail_policy if {
+  is_network_policy
+  metadata := object.get(input, "metadata", {})
+  metadata.name == generated_mail_policy_name
+  annotations := object.get(metadata, "annotations", {})
+  object.get(annotations, generated_mail_policy_provenance_key, "") == generated_mail_policy_provenance_value
+}
+
 deny contains "SMTP/IMAP egress with an ipBlock is forbidden" if {
   is_network_policy
+  not is_generated_mail_policy
   some egress_rule in object.get(input.spec, "egress", [])
   has_mail_port_overlap(object.get(egress_rule, "ports", []))
   some peer in object.get(egress_rule, "to", [])

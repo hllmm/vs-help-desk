@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
 RENDERER = ROOT / "scripts" / "render-prod-manifest.sh"
+CONFTEST = ROOT / ".tools" / "conftest"
+POLICY_DIR = ROOT / "policy" / "networkpolicy"
+ORDINARY_MAIL_POLICY = POLICY_DIR / "fixtures" / "unsafe-renamed-mail-policy.yaml"
 API_IMAGE = "ghcr.io/vs-help-desk/api@sha256:" + "a" * 64
 WEB_IMAGE = "ghcr.io/vs-help-desk/web@sha256:" + "b" * 64
 MISSING = object()
@@ -30,6 +34,14 @@ class RenderProdManifestTests(unittest.TestCase):
             ["bash", str(RENDERER)],
             cwd=ROOT,
             env=environment,
+            capture_output=True,
+            text=True,
+        )
+
+    def run_conftest(self, manifest_path):
+        return subprocess.run(
+            [str(CONFTEST), "test", "--policy", str(POLICY_DIR), str(manifest_path)],
+            cwd=ROOT,
             capture_output=True,
             text=True,
         )
@@ -93,11 +105,41 @@ class RenderProdManifestTests(unittest.TestCase):
         self.assertIn("name: api-allow", result.stdout)
         self.assertIn("namespace: vshelpdesk", policy)
         self.assertIn("app.kubernetes.io/name: api", policy)
+        self.assertIn(
+            "vshelpdesk.io/policy-provenance: task-7-mail-egress-generator",
+            policy,
+        )
         self.assertIn("policyTypes:\n  - Egress", policy)
         for cidr in ("203.0.113.0/24", "2001:db8::/64", "192.0.2.10/32"):
             self.assertIn(f"cidr: {cidr}", policy)
         for port in (25, 465, 587, 143, 993):
             self.assertIn(f"port: {port}", policy)
+
+    def test_enabled_render_passes_conftest_but_ordinary_mail_policy_rejects(self):
+        render_result = self.run_renderer(
+            mode="enabled",
+            smtp="203.0.113.0/24",
+            imap="198.51.100.0/24",
+        )
+        self.assertEqual(render_result.returncode, 0, render_result.stderr)
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as rendered:
+            rendered.write(render_result.stdout)
+            rendered.flush()
+            generated_policy_result = self.run_conftest(rendered.name)
+
+        self.assertEqual(
+            generated_policy_result.returncode,
+            0,
+            generated_policy_result.stdout + generated_policy_result.stderr,
+        )
+
+        ordinary_policy_result = self.run_conftest(ORDINARY_MAIL_POLICY)
+        self.assertNotEqual(ordinary_policy_result.returncode, 0)
+        self.assertIn(
+            "SMTP/IMAP egress with an ipBlock is forbidden",
+            ordinary_policy_result.stdout + ordinary_policy_result.stderr,
+        )
 
 
 if __name__ == "__main__":
