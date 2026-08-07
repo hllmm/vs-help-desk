@@ -298,10 +298,29 @@ public sealed class LoginHandlerTests
     }
 
     [Fact]
-    public async Task FinalConcurrencyConflict_ThrowsAuthenticationStateUnavailableException()
+    public async Task FourConcurrencyConflicts_SaveOnFifthAttempt_ReturnsToken()
     {
         var user = CreateUser();
-        var context = new FakeApplicationDbContext(user) { ConcurrencyFailuresRemaining = 3 };
+        var context = new FakeApplicationDbContext(user) { ConcurrencyFailuresRemaining = 4 };
+        var tokenService = new FakeTokenService("token");
+        var handler = CreateHandler(context, new FakePasswordHasher("correct-password"), tokenService);
+
+        var result = await handler.HandleAsync(
+            new LoginCommand(user.Username, "correct-password"),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(5, context.SaveChangesAttemptCount);
+        Assert.Equal(5, context.GetByUsernameCallCount);
+        Assert.Equal(4, context.ClearTrackedChangesCallCount);
+        Assert.Equal(1, tokenService.CreateTokenCallCount);
+    }
+
+    [Fact]
+    public async Task FiveConcurrencyConflicts_ThrowsAuthenticationStateUnavailableException()
+    {
+        var user = CreateUser();
+        var context = new FakeApplicationDbContext(user) { ConcurrencyFailuresRemaining = 5 };
         var handler = CreateHandler(
             context,
             new FakePasswordHasher("correct-password"),
@@ -312,14 +331,14 @@ public sealed class LoginHandlerTests
             CancellationToken.None));
 
         Assert.IsType<AuthenticationStateUnavailableException>(exception);
-        Assert.Equal(3, context.SaveChangesAttemptCount);
+        Assert.Equal(5, context.SaveChangesAttemptCount);
     }
 
     [Fact]
     public async Task FinalConcurrencyConflict_DoesNotCreateToken()
     {
         var user = CreateUser();
-        var context = new FakeApplicationDbContext(user) { ConcurrencyFailuresRemaining = 3 };
+        var context = new FakeApplicationDbContext(user) { ConcurrencyFailuresRemaining = 5 };
         var tokenService = new FakeTokenService("token");
         var handler = CreateHandler(context, new FakePasswordHasher("correct-password"), tokenService);
 

@@ -91,7 +91,7 @@ public sealed class AuthControllerTests
     public async Task Login_WhenAuthenticationStatePersistenceIsUnavailable_Returns503WithoutJwtOrAuthCookie()
     {
         var user = CreateUser();
-        var unitOfWork = new FakeUnitOfWork { ConcurrencyFailuresRemaining = 3 };
+        var unitOfWork = new FakeUnitOfWork { ConcurrencyFailuresRemaining = 5 };
         var tokenService = new FakeTokenService("access-token");
         var controller = CreateController(
             user,

@@ -22,7 +22,7 @@ public sealed class LoginHandler(
     public async Task<Result<LoginResult>> HandleAsync(LoginCommand command, CancellationToken cancellationToken)
     {
         var normalizedUsername = command.Username?.Trim() ?? string.Empty;
-        const int maxPersistenceAttempts = 3;
+        const int maxPersistenceAttempts = 5;
 
         for (var attempt = 0; attempt < maxPersistenceAttempts; attempt++)
         {
