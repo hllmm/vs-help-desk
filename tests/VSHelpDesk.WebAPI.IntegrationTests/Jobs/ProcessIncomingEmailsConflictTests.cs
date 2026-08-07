@@ -107,11 +107,13 @@ public sealed class ProcessIncomingEmailsConflictTests : IClassFixture<CustomWeb
     {
         public int FetchCount { get; private set; }
 
-        public async IAsyncEnumerable<IncomingEmail> FetchUnreadAsync([System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        public async IAsyncEnumerable<IncomingEmail> FetchUnreadAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken)
         {
             FetchCount++;
-            yield break;
             await Task.CompletedTask;
+            yield break;
         }
 
         public Task MarkAsProcessedAsync(
