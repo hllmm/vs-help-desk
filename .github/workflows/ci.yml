@@ -91,6 +91,16 @@ jobs:
       - name: Bundle budget checker tests
         run: node --test scripts/check-bundle-budget.test.mjs
 
+  dockerfile-policy:
+    name: Dockerfile pin policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Check Dockerfile pins and package upgrades
+        run: bash scripts/check-dockerfile-pins.sh
+      - name: Test Dockerfile pin checker fixtures
+        run: bash scripts/test-dockerfile-pins.sh
+
   kustomize:
     name: Kustomize validate
     runs-on: ubuntu-latest
