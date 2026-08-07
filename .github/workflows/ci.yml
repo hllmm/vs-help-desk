@@ -241,7 +241,7 @@ jobs:
           npx playwright test --config=playwright.config.real.ts
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-real-report
           path: |
@@ -251,7 +251,7 @@ jobs:
           if-no-files-found: warn
       - name: Upload API logs
         if: failure()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: api-logs-e2e-real
           path: api.log
@@ -286,7 +286,7 @@ jobs:
           SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/vshd-production-security-smoke
       - name: Upload Production TLS smoke evidence
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-security-smoke-evidence
           path: ${{ runner.temp }}/vshd-production-security-smoke/
@@ -539,7 +539,7 @@ jobs:
           test -s ticket-read-performance.json
       - name: Upload performance evidence
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ticket-read-performance-json
           path: |
