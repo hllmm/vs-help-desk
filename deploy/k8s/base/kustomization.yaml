@@ -15,6 +15,10 @@ resources:
   - ingress.yaml
   - cronjob-process-incoming-emails.yaml
   - cronjob-resolve-inactive-tickets.yaml
+  - networkpolicy-default-deny.yaml
+  - networkpolicy-web-ingress.yaml
+  - networkpolicy-api.yaml
+  - networkpolicy-postgres.yaml
 commonLabels:
   app.kubernetes.io/part-of: vs-help-desk
 
