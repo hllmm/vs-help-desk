@@ -49,6 +49,20 @@ expect_accepted() {
   return 1
 }
 
+expect_combined_accepted() {
+  local input_file="$1"
+  local output
+
+  if output="$("$CONFTEST_BIN" test --combine --policy "$POLICY_DIR" "$input_file" 2>&1)"; then
+    echo "EXPECTED COMBINED ACCEPT: ${input_file#$ROOT_DIR/}"
+    return 0
+  fi
+
+  echo "ERROR: expected combined policy acceptance for ${input_file#$ROOT_DIR/}" >&2
+  echo "$output" >&2
+  return 1
+}
+
 expect_rejected "$FIXTURE_DIR/unsafe-world-ipv4.yaml" "unrestricted ipBlock CIDR 0.0.0.0/0 is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-world-ipv6.yaml" "unrestricted ipBlock CIDR ::/0 is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-world-ipv6-expanded.yaml" "unrestricted ipBlock CIDR 0:0:0:0:0:0:0:0/0 is forbidden"
@@ -64,6 +78,7 @@ RENDERED_BASE="$(mktemp --suffix=.yaml)"
 trap 'rm -f "$RENDERED_BASE"' EXIT
 kubectl kustomize "$ROOT_DIR/deploy/k8s/base" >"$RENDERED_BASE"
 expect_accepted "$RENDERED_BASE"
+expect_combined_accepted "$RENDERED_BASE"
 
 "$CONFTEST_BIN" test --policy "$POLICY_DIR" "$FIXTURE_DIR/safe-required-configuration.yaml"
 "$CONFTEST_BIN" test --policy "$POLICY_DIR" "$FIXTURE_DIR/safe-unrelated-tcp-cidr.yaml"
