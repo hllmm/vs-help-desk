@@ -122,6 +122,8 @@ expect_rejected "$FIXTURE_DIR/unsafe-apt-upgrade.Dockerfile" \
   "live package upgrade is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-apt-install-only-upgrade.Dockerfile" \
   "live package upgrade is forbidden"
+expect_rejected "$FIXTURE_DIR/unsafe-apt-only-upgrade-before-install.Dockerfile" \
+  "live package upgrade is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-dnf-upgrade.Dockerfile" \
   "live package upgrade is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-dnf-update.Dockerfile" \
@@ -138,7 +140,13 @@ expect_rejected "$FIXTURE_DIR/unsafe-pacman-syu.Dockerfile" \
   "live package upgrade is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-pacman-long-upgrade.Dockerfile" \
   "live package upgrade is forbidden"
+expect_rejected "$FIXTURE_DIR/unsafe-pacman-sync-sysupgrade.Dockerfile" \
+  "live package upgrade is forbidden"
+expect_rejected "$FIXTURE_DIR/unsafe-pacman-separated-syu.Dockerfile" \
+  "live package upgrade is forbidden"
 expect_rejected "$FIXTURE_DIR/unsafe-sh-c-apk-upgrade.Dockerfile" \
+  "live package upgrade is forbidden"
+expect_rejected "$FIXTURE_DIR/unsafe-sh-c-pacman-sysupgrade.Dockerfile" \
   "live package upgrade is forbidden"
 
 if (( FAILURES > 0 )); then

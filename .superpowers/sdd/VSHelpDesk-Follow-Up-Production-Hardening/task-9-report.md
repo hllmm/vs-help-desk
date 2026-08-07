@@ -38,8 +38,9 @@ out. No digest was inferred from a platform-specific child manifest.
 - Added checker fixtures for missing pins, uppercase digests, trailing-comment
   digests, lowercase and `--platform` `FROM` instructions, multiline
   `apk upgrade`, `apk add --upgrade`, `apt-get install --only-upgrade`,
-  `pacman --sync --refresh --sysupgrade`, quoted `sh -c` upgrades, and the
-  original upgrade forms, plus safe discovery/pinned fixtures.
+  `apt-get --only-upgrade install`, `pacman --sync --sysupgrade`, separated
+  `pacman -S -y -u`, quoted `sh -c` upgrades, and the original upgrade forms,
+  plus safe discovery/pinned fixtures.
 - Added `scripts/test-dockerfile-pins.sh` and a dedicated CI policy job.
 - Extended `scripts/verify-ci-gates.mjs` to require both Dockerfile policy
   commands in CI.
@@ -103,6 +104,38 @@ CHECK: frontend/Dockerfile
 CHECK: policy/dockerfile/Dockerfile.example
 CHECK: policy/dockerfile/example.Dockerfile
 Dockerfile pin check: PASS (4 Dockerfile(s))
+```
+
+## Final scoped review-fix round
+
+Review-fix baseline: commit `177f98b`.
+
+The four requested bypass fixtures and assertions were added before changing
+the checker. The existing detection then produced the required RED:
+
+```text
+$ bash scripts/test-dockerfile-pins.sh
+exit: 1
+FAIL: expected rejection for unsafe-apt-only-upgrade-before-install.Dockerfile
+FAIL: expected rejection for unsafe-pacman-sync-sysupgrade.Dockerfile
+FAIL: expected rejection for unsafe-pacman-separated-syu.Dockerfile
+FAIL: expected rejection for unsafe-sh-c-pacman-sysupgrade.Dockerfile
+Dockerfile checker fixtures: 4 failure(s)
+```
+
+The fix now rejects any apt/apt-get command segment containing
+`--only-upgrade`, any pacman command segment containing `--sysupgrade`, and
+the separated short `-S -y -u` form while retaining contiguous `-Syu` and all
+previous FROM/discovery/digest behavior:
+
+```text
+$ bash -n scripts/check-dockerfile-pins.sh && bash scripts/test-dockerfile-pins.sh
+exit: 0
+EXPECTED REJECT: unsafe-apt-only-upgrade-before-install.Dockerfile
+EXPECTED REJECT: unsafe-pacman-sync-sysupgrade.Dockerfile
+EXPECTED REJECT: unsafe-pacman-separated-syu.Dockerfile
+EXPECTED REJECT: unsafe-sh-c-pacman-sysupgrade.Dockerfile
+Dockerfile checker fixtures: PASS
 ```
 
 ## Verification

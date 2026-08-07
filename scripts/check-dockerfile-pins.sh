@@ -18,13 +18,15 @@ readonly APK_UPGRADE_RE='(^|[^[:alnum:]_])apk([[:space:]]+[^[:space:];|&]+)*[[:s
 readonly APK_ADD_UPGRADE_RE='(^|[^[:alnum:]_])apk([[:space:]]+[^[:space:];|&]+)*[[:space:]]+add([[:space:]]+[^[:space:];|&]+)*[[:space:]]+--upgrade([^[:alnum:]_]|$)'
 readonly APT_UPGRADE_RE='(^|[^[:alnum:]_])apt(-get)?([[:space:]]+[^[:space:];|&]+)*[[:space:]]+(upgrade|dist-upgrade|full-upgrade)([^[:alnum:]_]|$)'
 readonly APT_INSTALL_ONLY_UPGRADE_RE='(^|[^[:alnum:]_])apt(-get)?([[:space:]]+[^[:space:];|&]+)*[[:space:]]+install([[:space:]]+[^[:space:];|&]+)*[[:space:]]+--only-upgrade([^[:alnum:]_]|$)'
+readonly APT_ONLY_UPGRADE_RE='(^|[^[:alnum:]_])apt(-get)?[^;|&]*--only-upgrade([^[:alnum:]_]|$)'
 readonly DNF_UPGRADE_RE='(^|[^[:alnum:]_])dnf([[:space:]]+[^[:space:];|&]+)*[[:space:]]+(upgrade|update|system-upgrade|distro-sync)([^[:alnum:]_]|$)'
 readonly YUM_UPGRADE_RE='(^|[^[:alnum:]_])yum([[:space:]]+[^[:space:];|&]+)*[[:space:]]+(update|upgrade|distro-sync)([^[:alnum:]_]|$)'
 readonly ZYPPER_UPGRADE_RE='(^|[^[:alnum:]_])zypper([[:space:]]+[^[:space:];|&]+)*[[:space:]]+(update|upgrade|dup|patch)([^[:alnum:]_]|$)'
 readonly PACMAN_SHORT_UPGRADE_RE='(^|[^[:alnum:]_])pacman[^;|&]*-syu([^[:alnum:]_]|$)'
-readonly PACMAN_SYNC_RE='(^|[^[:alnum:]_])pacman[^;|&]*--sync([^[:alnum:]_]|$)'
-readonly PACMAN_REFRESH_RE='(^|[^[:alnum:]_])pacman[^;|&]*--refresh([^[:alnum:]_]|$)'
 readonly PACMAN_SYSUPGRADE_RE='(^|[^[:alnum:]_])pacman[^;|&]*--sysupgrade([^[:alnum:]_]|$)'
+readonly PACMAN_SEPARATED_SYNC_RE='(^|[^[:alnum:]_])pacman[^;|&]*[[:space:]]-s([^[:alnum:]_]|$)'
+readonly PACMAN_SEPARATED_REFRESH_RE='(^|[^[:alnum:]_])pacman[^;|&]*[[:space:]]-y([^[:alnum:]_]|$)'
+readonly PACMAN_SEPARATED_SYSUPGRADE_RE='(^|[^[:alnum:]_])pacman[^;|&]*[[:space:]]-u([^[:alnum:]_]|$)'
 
 for path in "$@"; do
   if [[ ! -e "$path" ]]; then
@@ -64,16 +66,18 @@ is_live_upgrade() {
     [[ "$line" =~ $APK_ADD_UPGRADE_RE ]] ||
     [[ "$line" =~ $APT_UPGRADE_RE ]] ||
     [[ "$line" =~ $APT_INSTALL_ONLY_UPGRADE_RE ]] ||
+    [[ "$line" =~ $APT_ONLY_UPGRADE_RE ]] ||
     [[ "$line" =~ $DNF_UPGRADE_RE ]] ||
     [[ "$line" =~ $YUM_UPGRADE_RE ]] ||
     [[ "$line" =~ $ZYPPER_UPGRADE_RE ]] ||
-    [[ "$line" =~ $PACMAN_SHORT_UPGRADE_RE ]]; then
+    [[ "$line" =~ $PACMAN_SHORT_UPGRADE_RE ]] ||
+    [[ "$line" =~ $PACMAN_SYSUPGRADE_RE ]]; then
     return 0
   fi
 
-  if [[ "$line" =~ $PACMAN_SYNC_RE ]] &&
-    [[ "$line" =~ $PACMAN_REFRESH_RE ]] &&
-    [[ "$line" =~ $PACMAN_SYSUPGRADE_RE ]]; then
+  if [[ "$line" =~ $PACMAN_SEPARATED_SYNC_RE ]] &&
+    [[ "$line" =~ $PACMAN_SEPARATED_REFRESH_RE ]] &&
+    [[ "$line" =~ $PACMAN_SEPARATED_SYSUPGRADE_RE ]]; then
     return 0
   fi
 
