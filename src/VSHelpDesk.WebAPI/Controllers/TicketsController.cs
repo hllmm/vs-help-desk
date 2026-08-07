@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using VSHelpDesk.Application.Features.Tickets.AssignTicket;
+using VSHelpDesk.Application.Features.Tickets.CreateTicket;
 using VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
@@ -26,7 +27,8 @@ public sealed class TicketsController(
     GetTicketDetailsHandler getTicketDetailsHandler,
     GetTicketMessagesHandler getTicketMessagesHandler,
     SupportReplyToTicketHandler supportReplyToTicketHandler,
-    ResolveTicketHandler resolveTicketHandler) : ControllerBase
+    ResolveTicketHandler resolveTicketHandler,
+    CreateTicketHandler createTicketHandler) : ControllerBase
 {
     /// <summary>GET api/tickets/assignees — active users eligible for BR-011 assignment.</summary>
     [HttpGet("assignees")]
@@ -150,5 +152,33 @@ public sealed class TicketsController(
             new ResolveTicketCommand(id),
             cancellationToken);
         return Ok(result);
+    }
+
+    /// <summary>POST api/tickets — create ticket via UI (real E2E)</summary>
+    [HttpPost]
+    public async Task<IActionResult> Create(
+        [FromBody] CreateTicketRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest(new { code = "request-required" });
+        }
+
+        var command = new CreateTicketCommand(
+            IdempotencyKey: Guid.NewGuid().ToString(),
+            SourceMessageId: null,
+            Subject: request.Subject,
+            CustomerName: request.CustomerName,
+            CustomerEmail: request.CustomerEmail,
+            Content: request.Content);
+
+        var result = await createTicketHandler.HandleAsync(command, cancellationToken);
+        if (result.IsFailure)
+        {
+            return BadRequest(new { message = result.Error });
+        }
+
+        return CreatedAtAction(nameof(GetById), new { id = result.Value!.TicketId }, result.Value);
     }
 }

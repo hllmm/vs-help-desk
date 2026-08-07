@@ -44,6 +44,13 @@ export function TicketListPage(): ReactElement {
   const [serverQuery, setServerQuery] = useState('')
   const [selectedStatus, setSelectedStatus] =
     useState<TicketStatusFilter>('all')
+  const [showCreate, setShowCreate] = useState(false)
+  const [createSubject, setCreateSubject] = useState('')
+  const [createCustomerName, setCreateCustomerName] = useState('')
+  const [createCustomerEmail, setCreateCustomerEmail] = useState('')
+  const [createContent, setCreateContent] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [isCreating, setIsCreating] = useState(false)
   const {
     tickets,
     counts,
@@ -141,6 +148,71 @@ export function TicketListPage(): ReactElement {
 
       {showControls ? (
         <>
+          <div className="ticket-create-region">
+            <button
+              type="button"
+              className="button button--primary"
+              onClick={() => setShowCreate((v) => !v)}
+            >
+              {showCreate ? 'İptal' : 'Yeni talep oluştur'}
+            </button>
+            {showCreate ? (
+              <form
+                className="ticket-create-form"
+                aria-label="Yeni talep formu"
+                onSubmit={async (e) => {
+                  e.preventDefault()
+                  setCreateError(null)
+                  if (!createSubject.trim() || !createCustomerName.trim() || !createCustomerEmail.trim() || !createContent.trim()) {
+                    setCreateError('Tüm alanlar zorunludur.')
+                    return
+                  }
+                  setIsCreating(true)
+                  try {
+                    const { createTicket } = await import('../api/ticketsApi')
+                    await createTicket({
+                      subject: createSubject.trim(),
+                      customerName: createCustomerName.trim(),
+                      customerEmail: createCustomerEmail.trim(),
+                      content: createContent.trim(),
+                    })
+                    setCreateSubject('')
+                    setCreateCustomerName('')
+                    setCreateCustomerEmail('')
+                    setCreateContent('')
+                    setShowCreate(false)
+                    await refresh()
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : 'Talep oluşturulamadı.'
+                    setCreateError(msg)
+                  } finally {
+                    setIsCreating(false)
+                  }
+                }}
+              >
+                <div className="form-field">
+                  <label htmlFor="create-subject">Konu</label>
+                  <input id="create-subject" value={createSubject} onChange={(e) => setCreateSubject(e.target.value)} required />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="create-customer-name">Müşteri adı</label>
+                  <input id="create-customer-name" value={createCustomerName} onChange={(e) => setCreateCustomerName(e.target.value)} required />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="create-customer-email">Müşteri e-posta</label>
+                  <input id="create-customer-email" type="email" value={createCustomerEmail} onChange={(e) => setCreateCustomerEmail(e.target.value)} required />
+                </div>
+                <div className="form-field">
+                  <label htmlFor="create-content">İçerik</label>
+                  <textarea id="create-content" value={createContent} onChange={(e) => setCreateContent(e.target.value)} required />
+                </div>
+                {createError ? <p role="alert" className="form-error">{createError}</p> : null}
+                <button type="submit" className="button button--primary" disabled={isCreating}>
+                  {isCreating ? 'Oluşturuluyor…' : 'Oluştur'}
+                </button>
+              </form>
+            ) : null}
+          </div>
           <TicketFilters
             query={query}
             status={selectedStatus}

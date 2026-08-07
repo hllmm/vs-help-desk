@@ -115,6 +115,141 @@ jobs:
             exit 1
           fi
 
+  e2e-real:
+    name: Real API E2E (Playwright)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_USER: stajyer
+          POSTGRES_PASSWORD: ci_postgres_password
+          POSTGRES_DB: VS_HelpDesk_E2E
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stajyer -d VS_HelpDesk_E2E"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: "true"
+      ConnectionStrings__DefaultConnection: >-
+        Host=localhost;Port=5432;Database=VS_HelpDesk_E2E;Username=stajyer;Password=ci_postgres_password
+      Auth__SigningKey: ci-e2e-signing-key-with-at-least-32-bytes!!
+      Auth__Issuer: VSHelpDesk
+      Auth__Audience: VSHelpDesk
+      Auth__ExpirationMinutes: "60"
+      Jobs__ApiKey: ci-e2e-jobs-api-key-32-characters!!
+      Email__ReceiverMode: Fake
+      Email__SmtpHost: localhost
+      Email__SmtpPort: "1025"
+      Email__SmtpSecurityMode: None
+      Email__SupportMailboxAddress: support@example.test
+      Email__TrustedAuthServId: mx.test
+      SeedUser__Enabled: "true"
+      SeedUser__Password: CiSeedPassword123!
+      SeedUser__Username: support
+      SeedUser__FullName: CI Support
+      SeedUser__Email: support@vshelpdesk.local
+      SeedAdmin__Enabled: "false"
+      Cors__AllowedOrigins__0: http://127.0.0.1:4173
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: "10.0.x"
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22.22.0"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Restore
+        run: dotnet restore VSHelpDesk.slnx
+      - name: Restore tools
+        run: dotnet tool restore
+      - name: Build
+        run: dotnet build VSHelpDesk.slnx --no-restore -c Release
+      - name: Apply database migrations
+        run: >-
+          dotnet ef database update
+          --project src/VSHelpDesk.Infrastructure
+          --startup-project src/VSHelpDesk.WebAPI
+          --configuration Release
+          --no-build
+      - name: Start the Release API on 127.0.0.1:8080
+        run: |
+          nohup env \
+            ASPNETCORE_ENVIRONMENT=Development \
+            ASPNETCORE_URLS=http://127.0.0.1:8080 \
+            ConnectionStrings__DefaultConnection="$ConnectionStrings__DefaultConnection" \
+            Auth__SigningKey="$Auth__SigningKey" \
+            Auth__Issuer="$Auth__Issuer" \
+            Auth__Audience="$Auth__Audience" \
+            Auth__ExpirationMinutes="$Auth__ExpirationMinutes" \
+            Jobs__ApiKey="$Jobs__ApiKey" \
+            Email__ReceiverMode="$Email__ReceiverMode" \
+            Email__SmtpHost="$Email__SmtpHost" \
+            Email__SmtpPort="$Email__SmtpPort" \
+            Email__SmtpSecurityMode="$Email__SmtpSecurityMode" \
+            Email__SupportMailboxAddress="$Email__SupportMailboxAddress" \
+            Email__TrustedAuthServId="$Email__TrustedAuthServId" \
+            SeedUser__Enabled="$SeedUser__Enabled" \
+            SeedUser__Password="$SeedUser__Password" \
+            SeedUser__Username="$SeedUser__Username" \
+            SeedUser__FullName="$SeedUser__FullName" \
+            SeedUser__Email="$SeedUser__Email" \
+            SeedAdmin__Enabled="$SeedAdmin__Enabled" \
+            Cors__AllowedOrigins__0="$Cors__AllowedOrigins__0" \
+            dotnet run --project src/VSHelpDesk.WebAPI -c Release --no-build --no-launch-profile \
+            > api.log 2>&1 &
+          echo "API starting (pid $!)"
+      - name: Wait for /health (max 60 seconds)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8080/health >/dev/null; then
+              echo "API healthy after ~$((i * 2))s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "API did not become healthy within 60 seconds"
+          cat api.log
+          exit 1
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+      - name: Install Chromium
+        run: |
+          cd frontend
+          npx playwright install chromium --with-deps
+      - name: Run real API Playwright E2E
+        run: |
+          cd frontend
+          npx playwright test --config=playwright.config.real.ts
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: playwright-real-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+            frontend/blob-report/
+          if-no-files-found: warn
+      - name: Upload API logs
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: api-logs-e2e-real
+          path: api.log
+          if-no-files-found: warn
+      - name: Stop the API
+        if: always()
+        run: pkill -f "VSHelpDesk.WebAPI" || true
+
   secrets-scan:
     name: Secrets scan (gitleaks)
     runs-on: ubuntu-latest
