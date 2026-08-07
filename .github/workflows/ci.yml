@@ -260,6 +260,37 @@ jobs:
         if: always()
         run: pkill -f "VSHelpDesk.WebAPI" || true
 
+  production-security-smoke:
+    name: Production TLS authentication smoke
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      Auth__SigningKey: ci-production-security-smoke-signing-key-with-at-least-32-bytes!!
+      Jobs__ApiKey: ci-production-security-smoke-jobs-api-key-32-characters!!
+      SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/vshd-production-security-smoke
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore VSHelpDesk.slnx
+      - name: Restore tools
+        run: dotnet tool restore
+      - name: Build
+        run: dotnet build VSHelpDesk.slnx --no-restore -c Release
+      - name: Check Production TLS smoke contract
+        run: bash scripts/test-production-security-smoke.sh
+      - name: Run Production TLS security smoke
+        run: bash scripts/run-production-security-smoke.sh
+      - name: Upload Production TLS smoke evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: production-security-smoke-evidence
+          path: ${{ runner.temp }}/vshd-production-security-smoke/
+          if-no-files-found: warn
+
   docs-links:
     name: Docs link check
     runs-on: ubuntu-latest
