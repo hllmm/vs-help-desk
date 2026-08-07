@@ -112,8 +112,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         modelBuilder.ApplyConfiguration(new SystemLogConfiguration());
         modelBuilder.ApplyConfiguration(new UserAuditEventConfiguration());
 
-        // Column type mapping is now provider-aware: Postgres uses pg types + xmin,
-        // SQLite/InMemory use plain integer for uint Version to avoid NOT NULL xmin failures.
+        // Column type mapping is now provider-aware: Postgres uses pg types.
+        // Only explicit Version:uint properties use xmin (Postgres) / integer (SQLite).
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             foreach (var property in entityType.GetProperties())
@@ -151,22 +151,6 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 else if (clrType == typeof(long) || clrType == typeof(long?))
                 {
                     property.SetColumnType("bigint");
-                }
-                else if (clrType == typeof(uint) || clrType == typeof(uint?))
-                {
-                    if (isPostgres)
-                    {
-                        property.SetColumnType("xid");
-                        property.SetColumnName("xmin");
-                        property.IsConcurrencyToken = true;
-                        property.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.OnAddOrUpdate;
-                    }
-                    else
-                    {
-                        property.SetColumnType("integer");
-                        property.IsConcurrencyToken = false;
-                        property.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.Never;
-                    }
                 }
             }
 
