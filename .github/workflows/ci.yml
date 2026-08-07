@@ -100,6 +100,20 @@ jobs:
         run: |
           kubectl kustomize deploy/k8s/base >/dev/null
           kubectl kustomize deploy/k8s/overlays/prod >/dev/null
+      - name: Enforce immutable production images
+        run: |
+          kubectl kustomize deploy/k8s/overlays/prod > /tmp/prod.yaml
+          bash scripts/check-prod-manifest.sh /tmp/prod.yaml
+          # Also verify render path accepts digests and sha-40
+          API_IMAGE=ghcr.io/vs-help-desk/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+          WEB_IMAGE=ghcr.io/vs-help-desk/web@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+          bash scripts/render-prod-manifest.sh > /tmp/rendered.yaml
+          bash scripts/check-prod-manifest.sh /tmp/rendered.yaml
+          # Negative check: mutable must be rejected
+          if API_IMAGE=ghcr.io/vs-help-desk/api:latest WEB_IMAGE=ghcr.io/vs-help-desk/web:latest bash scripts/render-prod-manifest.sh > /dev/null 2>&1; then
+            echo "render-prod-manifest should reject :latest" >&2
+            exit 1
+          fi
 
   secrets-scan:
     name: Secrets scan (gitleaks)
