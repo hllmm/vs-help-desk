@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -9,6 +11,7 @@ using VSHelpDesk.Application.Features.Tickets.ReadModel;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Persistence;
+using VSHelpDesk.Infrastructure.Persistence.Migrations;
 using VSHelpDesk.Infrastructure.Persistence.ReadModel;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Persistence;
@@ -457,6 +460,19 @@ public sealed class ApplicationDbContextTests
         Assert.Equal(ValueGenerated.Never, sqliteVersion.ValueGenerated);
     }
 
+    [Fact]
+    public void AddUserVersionMigration_DoesNotContainPhysicalXminColumnOperations()
+    {
+        var migration = new AddUserVersionProbe();
+
+        Assert.DoesNotContain(
+            migration.CapturedUpOperations,
+            operation => operation is AddColumnOperation { Name: "xmin" });
+        Assert.DoesNotContain(
+            migration.CapturedDownOperations,
+            operation => operation is DropColumnOperation { Name: "xmin" });
+    }
+
     private sealed class DummyWithUint
     {
         public Guid Id { get; set; }
@@ -467,6 +483,21 @@ public sealed class ApplicationDbContextTests
     {
         public Guid Id { get; set; }
         public uint Version { get; set; }
+    }
+
+    private sealed class AddUserVersionProbe : AddUserVersion
+    {
+        public IReadOnlyList<MigrationOperation> CapturedUpOperations => GetOperations(Up);
+
+        public IReadOnlyList<MigrationOperation> CapturedDownOperations => GetOperations(Down);
+
+        private static IReadOnlyList<MigrationOperation> GetOperations(
+            Action<MigrationBuilder> buildOperations)
+        {
+            var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+            buildOperations(migrationBuilder);
+            return migrationBuilder.Operations;
+        }
     }
 
     private sealed class DummyXminContext : DbContext
