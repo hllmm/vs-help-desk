@@ -2,7 +2,7 @@
 /**
  * Smoke check for CI supply-chain and secret scanning gates (Task 9).
  * Verifies:
- *  - .github/workflows/ci.yml is valid YAML and contains npm audit, gitleaks, trivy, dotnet vulnerable gates
+ *  - .github/workflows/ci.yml is valid YAML and contains npm audit, Dockerfile pin, gitleaks, trivy, and dotnet vulnerable gates
  *  - .github/dependabot.yml exists and covers npm + nuget (dotnet) weekly
  *  - kustomize builds are valid (optional, if kubectl available)
  * Usage: node scripts/verify-ci-gates.mjs
@@ -51,6 +51,8 @@ if (ciRaw) {
     check(ciRaw.includes('image-scan'), 'ci.yml contains image-scan job');
     check(ciRaw.includes('dotnet list') && ciRaw.includes('--vulnerable'), 'backend job runs dotnet list package --vulnerable');
     check(ciRaw.includes('--include-transitive'), 'dotnet vulnerable check includes --include-transitive');
+    check(ciRaw.includes('scripts/check-dockerfile-pins.sh'), 'ci.yml runs the Dockerfile pin and package-upgrade checker');
+    check(ciRaw.includes('scripts/test-dockerfile-pins.sh'), 'ci.yml runs Dockerfile checker fixture tests');
     // Validate YAML via python if available
     try {
       execSync(`python3 -c "import yaml, sys; yaml.safe_load(open('${ciPath}'))"`, { stdio: 'pipe' });

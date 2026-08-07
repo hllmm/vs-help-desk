@@ -139,6 +139,40 @@ public sealed class AuthJwtPipelineTests : IClassFixture<CustomWebApplicationFac
     }
 
     [Fact]
+    public async Task Login_LockedAccount_ReturnsSameGeneric401AsWrongPassword()
+    {
+        var user = await IntegrationTestUser.CreateActiveAsync(factory.Services);
+        try
+        {
+            using var client = factory.CreateClient();
+            using var invalidPassword = await client.PostAsJsonAsync(
+                "/api/auth/login",
+                new { username = user.Username, password = "wrong-password" });
+            Assert.Equal(HttpStatusCode.Unauthorized, invalidPassword.StatusCode);
+            var invalidBody = await invalidPassword.Content.ReadAsStringAsync();
+
+            for (var attempt = 2; attempt <= 5; attempt++)
+            {
+                using var failedAttempt = await client.PostAsJsonAsync(
+                    "/api/auth/login",
+                    new { username = user.Username, password = "wrong-password" });
+                Assert.Equal(HttpStatusCode.Unauthorized, failedAttempt.StatusCode);
+            }
+
+            using var lockedAccount = await client.PostAsJsonAsync(
+                "/api/auth/login",
+                new { username = user.Username, password = user.Password });
+
+            Assert.Equal(HttpStatusCode.Unauthorized, lockedAccount.StatusCode);
+            Assert.Equal(invalidBody, await lockedAccount.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            await IntegrationTestUser.DeleteAsync(factory.Services, user.Id);
+        }
+    }
+
+    [Fact]
     public async Task UC001_Login_UnknownUser_Returns401GenericMessage()
     {
         using var client = factory.CreateClient();

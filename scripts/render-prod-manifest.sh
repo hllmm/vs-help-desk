@@ -2,28 +2,68 @@
 set -euo pipefail
 
 # render-prod-manifest.sh — generate immutable production manifest
-# Usage: API_IMAGE=ghcr.io/org/api@sha256:<64> WEB_IMAGE=ghcr.io/org/web@sha256:<64> bash scripts/render-prod-manifest.sh > production.yaml
-#   or:  API_IMAGE=ghcr.io/org/api:sha-<40> WEB_IMAGE=ghcr.io/org/web:sha-<40> bash scripts/render-prod-manifest.sh > production.yaml
+# Usage: PRODUCTION_IMAGE_ALLOWLIST_FILE=... API_IMAGE=... WEB_IMAGE=... MAIL_EGRESS_MODE=disabled bash scripts/render-prod-manifest.sh > production.yaml
+#   or:  PRODUCTION_IMAGE_ALLOWLIST_FILE=... API_IMAGE=... WEB_IMAGE=... MAIL_EGRESS_MODE=enabled SMTP_RELAY_CIDRS=... IMAP_RELAY_CIDRS=... bash scripts/render-prod-manifest.sh > production.yaml
 #
-# Validates that both images are immutable, then renders kustomize and substitutes them.
+# Validates the mail egress contract and immutable images, then renders kustomize and substitutes them.
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ -z "${PRODUCTION_IMAGE_ALLOWLIST_FILE:-}" || ! -f "$PRODUCTION_IMAGE_ALLOWLIST_FILE" ]]; then
+  echo "ERROR: PRODUCTION_IMAGE_ALLOWLIST_FILE must name an existing operator-managed allowlist" >&2
+  exit 1
+fi
+
+if [[ -z "${MAIL_EGRESS_MODE:-}" ]]; then
+  echo "ERROR: MAIL_EGRESS_MODE must be set to enabled or disabled" >&2
+  exit 1
+fi
+
+case "$MAIL_EGRESS_MODE" in
+  disabled)
+    ;;
+  enabled)
+    if [[ -z "${SMTP_RELAY_CIDRS:-}" ]]; then
+      echo "ERROR: SMTP_RELAY_CIDRS must be set when MAIL_EGRESS_MODE=enabled" >&2
+      exit 1
+    fi
+    if [[ -z "${IMAP_RELAY_CIDRS:-}" ]]; then
+      echo "ERROR: IMAP_RELAY_CIDRS must be set when MAIL_EGRESS_MODE=enabled" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "ERROR: MAIL_EGRESS_MODE must be exactly enabled or disabled, got: $MAIL_EGRESS_MODE" >&2
+    exit 1
+    ;;
+esac
 
 if [[ -z "${API_IMAGE:-}" ]]; then
-  echo "ERROR: API_IMAGE must be set (e.g., ghcr.io/vs-help-desk/api@sha256:<64> or :sha-<40>)" >&2
+  echo "ERROR: API_IMAGE must be set to an allow-listed repository@sha256:<64 lowercase hex>" >&2
   exit 1
 fi
 if [[ -z "${WEB_IMAGE:-}" ]]; then
-  echo "ERROR: WEB_IMAGE must be set (e.g., ghcr.io/vs-help-desk/web@sha256:<64> or :sha-<40>)" >&2
+  echo "ERROR: WEB_IMAGE must be set to an allow-listed repository@sha256:<64 lowercase hex>" >&2
   exit 1
 fi
 
-IMMUTABLE_REGEX='^[^[:space:]]+(@sha256:[a-f0-9]{64}|:sha-[a-f0-9]{40})$'
+IMMUTABLE_IMAGE_REGEX='^[^[:space:]@]+@sha256:[a-f0-9]{64}$'
 
-if ! [[ "$API_IMAGE" =~ $IMMUTABLE_REGEX ]]; then
-  echo "ERROR: API_IMAGE must be immutable (repo@sha256:<64 hex> or repo:sha-<40 hex>), got: $API_IMAGE" >&2
+if ! [[ "$API_IMAGE" =~ $IMMUTABLE_IMAGE_REGEX ]]; then
+  echo "ERROR: API_IMAGE must use an immutable sha256 digest, got: $API_IMAGE" >&2
   exit 1
 fi
-if ! [[ "$WEB_IMAGE" =~ $IMMUTABLE_REGEX ]]; then
-  echo "ERROR: WEB_IMAGE must be immutable (repo@sha256:<64 hex> or repo:sha-<40 hex>), got: $WEB_IMAGE" >&2
+if ! [[ "$WEB_IMAGE" =~ $IMMUTABLE_IMAGE_REGEX ]]; then
+  echo "ERROR: WEB_IMAGE must use an immutable sha256 digest, got: $WEB_IMAGE" >&2
+  exit 1
+fi
+
+if [[ "$API_IMAGE" =~ @sha256:a{64}$ || "$API_IMAGE" =~ @sha256:b{64}$ ]]; then
+  echo "ERROR: API_IMAGE uses a prohibited all-a/all-b placeholder digest" >&2
+  exit 1
+fi
+if [[ "$WEB_IMAGE" =~ @sha256:a{64}$ || "$WEB_IMAGE" =~ @sha256:b{64}$ ]]; then
+  echo "ERROR: WEB_IMAGE uses a prohibited all-a/all-b placeholder digest" >&2
   exit 1
 fi
 
@@ -36,24 +76,30 @@ if ! command -v kubectl >/dev/null 2>&1; then
   exit 1
 fi
 
-kubectl kustomize deploy/k8s/overlays/prod > "$TMP"
+MAIL_EGRESS_POLICY=""
+if [[ "$MAIL_EGRESS_MODE" == "enabled" ]]; then
+  if ! MAIL_EGRESS_POLICY="$(python3 "$ROOT_DIR/scripts/generate_mail_egress_policy.py" \
+    --smtp-relay-cidrs "$SMTP_RELAY_CIDRS" \
+    --imap-relay-cidrs "$IMAP_RELAY_CIDRS")"; then
+    exit 1
+  fi
+fi
 
-# Replace the placeholder prod images with the provided immutable ones.
-# Prod kustomization uses vshelpdesk-api:sha-... / vshelpdesk-web:sha-... placeholders; replace the whole image line.
-# Use a delimiter not in image names.
+kubectl kustomize "$ROOT_DIR/deploy/k8s/overlays/prod" > "$TMP"
 
-# Replace api
-# Match: image: <anything vshelpdesk-api ...>  -> image: $API_IMAGE
-# We handle both with and without digest/tag remnants.
-sed -i -E "s|image:[[:space:]]*vshelpdesk-api[^[:space:]]*|image: $API_IMAGE|g" "$TMP"
-sed -i -E "s|image:[[:space:]]*ghcr\.io[^[:space:]]*vshelpdesk-api[^[:space:]]*|image: $API_IMAGE|g" "$TMP"
+# Replace only the known base local image references. If either reference is
+# absent, the structured validator below rejects the rendered artifact.
+sed -i -E "s|vshelpdesk-api:local|$API_IMAGE|g" "$TMP"
+sed -i -E "s|vshelpdesk-web:local|$WEB_IMAGE|g" "$TMP"
 
-# Replace web
-sed -i -E "s|image:[[:space:]]*vshelpdesk-web[^[:space:]]*|image: $WEB_IMAGE|g" "$TMP"
-sed -i -E "s|image:[[:space:]]*ghcr\.io[^[:space:]]*vshelpdesk-web[^[:space:]]*|image: $WEB_IMAGE|g" "$TMP"
+if [[ "$MAIL_EGRESS_MODE" == "enabled" ]]; then
+  printf '%s\n' "$MAIL_EGRESS_POLICY" >> "$TMP"
+fi
 
-# Also handle generic ghcr.io/vs-help-desk/api or web if prod already uses ghcr prefix
-sed -i -E "s|image:[[:space:]]*ghcr\.io/vs-help-desk/api[^[:space:]]*|image: $API_IMAGE|g" "$TMP"
-sed -i -E "s|image:[[:space:]]*ghcr\.io/vs-help-desk/web[^[:space:]]*|image: $WEB_IMAGE|g" "$TMP"
+# Keep stdout as a deployable YAML stream. Validator diagnostics go to stderr.
+if ! bash "$ROOT_DIR/scripts/check-prod-manifest.sh" "$TMP" >&2; then
+  echo "ERROR: rendered production manifest failed structured image validation" >&2
+  exit 1
+fi
 
 cat "$TMP"

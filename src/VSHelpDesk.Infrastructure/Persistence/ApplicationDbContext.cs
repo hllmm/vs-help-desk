@@ -19,6 +19,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public DbSet<ProcessedEmailMessage> ProcessedEmailMessages => Set<ProcessedEmailMessage>();
 
+    public DbSet<PortalTicketRequest> PortalTicketRequests => Set<PortalTicketRequest>();
+
     public DbSet<ApplicationParameter> ApplicationParameters => Set<ApplicationParameter>();
 
     public DbSet<ParameterChangeLog> ParameterChangeLogs => Set<ParameterChangeLog>();
@@ -38,6 +40,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     IQueryable<ProcessedEmailMessage> IApplicationDbContext.ProcessedEmailMessages =>
         ProcessedEmailMessages;
 
+    IQueryable<PortalTicketRequest> IApplicationDbContext.PortalTicketRequests =>
+        PortalTicketRequests;
+
     IQueryable<ApplicationParameter> IApplicationDbContext.ApplicationParameters =>
         ApplicationParameters;
 
@@ -49,6 +54,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     IQueryable<UserAuditEvent> IApplicationDbContext.UserAuditEvents => UserAuditEvents;
 
+    bool IApplicationDbContext.SupportsPostgresRawSql => Database.IsNpgsql();
+
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Add(entity);
 
     void IApplicationDbContext.Remove<TEntity>(TEntity entity) => Remove(entity);
@@ -57,10 +64,13 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public async Task ExecuteSqlRawAsync(string sql, CancellationToken cancellationToken = default)
     {
-        if (Database.IsNpgsql())
+        if (!Database.IsNpgsql())
         {
-            await Database.ExecuteSqlRawAsync(sql, cancellationToken);
+            throw new NotSupportedException(
+                "Raw SQL execution through this abstraction requires PostgreSQL.");
         }
+
+        await Database.ExecuteSqlRawAsync(sql, cancellationToken);
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -107,6 +117,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         modelBuilder.ApplyConfiguration(new TicketMessageConfiguration());
         modelBuilder.ApplyConfiguration(new TicketAttachmentConfiguration());
         modelBuilder.ApplyConfiguration(new ProcessedEmailMessageConfiguration());
+        modelBuilder.ApplyConfiguration(new PortalTicketRequestConfiguration());
         modelBuilder.ApplyConfiguration(new ApplicationParameterConfiguration());
         modelBuilder.ApplyConfiguration(new ParameterChangeLogConfiguration());
         modelBuilder.ApplyConfiguration(new SystemLogConfiguration());

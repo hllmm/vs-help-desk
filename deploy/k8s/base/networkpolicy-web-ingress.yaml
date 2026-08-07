@@ -13,24 +13,13 @@ spec:
     - Egress
   ingress:
     # Allow ingress from ingress controller (nginx) on 8080.
-    # In production, restrict to ingress controller's namespace/CIDR.
-    # Example: ingress-nginx namespace with label kubernetes.io/metadata.name=ingress-nginx
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: ingress-nginx
-        - podSelector:
+          podSelector:
             matchLabels:
               app.kubernetes.io/name: ingress-nginx
-        - ipBlock:
-            cidr: 10.0.0.0/8
-      ports:
-        - port: 8080
-          protocol: TCP
-    # Also allow kubelet probes (liveness/readiness) – they come from node CIDR.
-    - from:
-        - ipBlock:
-            cidr: 0.0.0.0/0
       ports:
         - port: 8080
           protocol: TCP
@@ -49,9 +38,6 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
           podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-        - podSelector:
             matchLabels:
               k8s-app: kube-dns
       ports:

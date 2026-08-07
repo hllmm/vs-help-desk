@@ -77,6 +77,7 @@ public static class DependencyInjection
         services.AddScoped<ITicketAttachmentRepository, EfTicketAttachmentRepository>();
         services.AddScoped<IApplicationParameterRepository, EfApplicationParameterRepository>();
         services.AddScoped<IProcessedEmailRepository, EfProcessedEmailRepository>();
+        services.AddScoped<IPortalTicketRequestRepository, EfPortalTicketRequestRepository>();
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<ITicketListReadRepository, EfTicketListReadRepository>();
         services.AddScoped<ITicketDetailReadRepository, EfTicketDetailReadRepository>();

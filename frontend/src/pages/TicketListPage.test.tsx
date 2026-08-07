@@ -7,11 +7,13 @@ import type {
   TicketListPage,
   TicketStatusCounts,
 } from '../api/types'
+import { ApiError } from '../api/client'
 import { setStoredUser } from '../auth/tokenStorage'
 
 const fetchTickets = vi.hoisted(() => vi.fn())
+const createTicket = vi.hoisted(() => vi.fn())
 
-vi.mock('../api/ticketsApi', () => ({ fetchTickets }))
+vi.mock('../api/ticketsApi', () => ({ fetchTickets, createTicket }))
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -122,8 +124,12 @@ function renderTicketsPage(width = 1280) {
 describe('TicketListPage', () => {
   beforeEach(() => {
     fetchTickets.mockReset()
+    createTicket.mockReset()
     sessionStorage.clear()
     window.history.replaceState({}, '', '/')
+    vi.stubGlobal('crypto', {
+      randomUUID: vi.fn(() => '11111111-1111-4111-8111-111111111111'),
+    })
   })
 
   it('shows Turkish initial loading and empty guidance', async () => {
@@ -427,5 +433,152 @@ describe('TicketListPage', () => {
 
     const badge = await screen.findByText('Bilinmeyen durum')
     expect(badge).toHaveAttribute('data-tone', 'unknown')
+  })
+
+  it.each([
+    new TypeError('Failed to fetch'),
+    new ApiError(429, 'Too many requests'),
+    new ApiError(500, 'Server failure'),
+  ])(
+    'reuses one idempotency key when creation fails with %s',
+    async (failure) => {
+      fetchTickets.mockResolvedValue(page([]))
+      createTicket
+        .mockRejectedValueOnce(failure)
+        .mockResolvedValueOnce({ ticketId: 'ticket-1', ticketNumber: 'VS-000001' })
+      renderTicketsPage()
+      const user = userEvent.setup()
+
+      await user.click(
+        await screen.findByRole('button', { name: 'Yeni talep oluştur' }),
+      )
+      await user.type(screen.getByLabelText('Konu'), 'Retry key test')
+      await user.type(screen.getByLabelText('Müşteri adı'), 'Retry Customer')
+      await user.type(screen.getByLabelText('Müşteri e-posta'), 'retry@example.test')
+      await user.type(screen.getByLabelText('İçerik'), 'Retry content')
+
+      await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+      await screen.findByRole('alert')
+      await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+      expect(createTicket).toHaveBeenCalledTimes(2)
+      expect(createTicket.mock.calls[0]?.[1]).toEqual({
+        idempotencyKey: '11111111-1111-4111-8111-111111111111',
+      })
+      expect(createTicket.mock.calls[1]?.[1]).toEqual({
+        idempotencyKey: '11111111-1111-4111-8111-111111111111',
+      })
+      expect(crypto.randomUUID).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('clears the failed operation key when the request is edited', async () => {
+    fetchTickets.mockResolvedValue(page([]))
+    createTicket
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ticketId: 'ticket-1', ticketNumber: 'VS-000001' })
+    vi.stubGlobal('crypto', {
+      randomUUID: vi
+        .fn()
+        .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+        .mockReturnValueOnce('22222222-2222-4222-8222-222222222222'),
+    })
+    renderTicketsPage()
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Yeni talep oluştur' }),
+    )
+    await user.type(screen.getByLabelText('Konu'), 'Editable retry key test')
+    await user.type(screen.getByLabelText('Müşteri adı'), 'Retry Customer')
+    await user.type(screen.getByLabelText('Müşteri e-posta'), 'retry@example.test')
+    await user.type(screen.getByLabelText('İçerik'), 'Retry content')
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+    await screen.findByRole('alert')
+
+    await user.type(screen.getByLabelText('Konu'), ' updated')
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+    expect(createTicket.mock.calls[0]?.[1]).toEqual({
+      idempotencyKey: '11111111-1111-4111-8111-111111111111',
+    })
+    expect(createTicket.mock.calls[1]?.[1]).toEqual({
+      idempotencyKey: '22222222-2222-4222-8222-222222222222',
+    })
+  })
+
+  it('clears the failed operation key when creation is cancelled', async () => {
+    fetchTickets.mockResolvedValue(page([]))
+    createTicket
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ticketId: 'ticket-1', ticketNumber: 'VS-000001' })
+    vi.stubGlobal('crypto', {
+      randomUUID: vi
+        .fn()
+        .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+        .mockReturnValueOnce('22222222-2222-4222-8222-222222222222'),
+    })
+    renderTicketsPage()
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Yeni talep oluştur' }),
+    )
+    await user.type(screen.getByLabelText('Konu'), 'Cancelled retry key test')
+    await user.type(screen.getByLabelText('Müşteri adı'), 'Retry Customer')
+    await user.type(screen.getByLabelText('Müşteri e-posta'), 'retry@example.test')
+    await user.type(screen.getByLabelText('İçerik'), 'Retry content')
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+    await screen.findByRole('alert')
+
+    await user.click(screen.getByRole('button', { name: 'İptal' }))
+    await user.click(screen.getByRole('button', { name: 'Yeni talep oluştur' }))
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+    expect(createTicket.mock.calls[0]?.[1]).toEqual({
+      idempotencyKey: '11111111-1111-4111-8111-111111111111',
+    })
+    expect(createTicket.mock.calls[1]?.[1]).toEqual({
+      idempotencyKey: '22222222-2222-4222-8222-222222222222',
+    })
+  })
+
+  it('clears the operation key after a successful creation', async () => {
+    fetchTickets.mockResolvedValue(page([]))
+    createTicket.mockResolvedValue({ ticketId: 'ticket-1', ticketNumber: 'VS-000001' })
+    vi.stubGlobal('crypto', {
+      randomUUID: vi
+        .fn()
+        .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+        .mockReturnValueOnce('22222222-2222-4222-8222-222222222222'),
+    })
+    renderTicketsPage()
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Yeni talep oluştur' }),
+    )
+    await user.type(screen.getByLabelText('Konu'), 'First success')
+    await user.type(screen.getByLabelText('Müşteri adı'), 'Retry Customer')
+    await user.type(screen.getByLabelText('Müşteri e-posta'), 'retry@example.test')
+    await user.type(screen.getByLabelText('İçerik'), 'Retry content')
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('form', { name: 'Yeni talep formu' })).not.toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: 'Yeni talep oluştur' }))
+    await user.type(screen.getByLabelText('Konu'), 'Second success')
+    await user.type(screen.getByLabelText('Müşteri adı'), 'Retry Customer')
+    await user.type(screen.getByLabelText('Müşteri e-posta'), 'retry@example.test')
+    await user.type(screen.getByLabelText('İçerik'), 'Retry content')
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+    expect(createTicket.mock.calls[0]?.[1]).toEqual({
+      idempotencyKey: '11111111-1111-4111-8111-111111111111',
+    })
+    expect(createTicket.mock.calls[1]?.[1]).toEqual({
+      idempotencyKey: '22222222-2222-4222-8222-222222222222',
+    })
   })
 })

@@ -14,6 +14,9 @@ public interface IApplicationDbContext
 
     IQueryable<ProcessedEmailMessage> ProcessedEmailMessages { get; }
 
+    IQueryable<PortalTicketRequest> PortalTicketRequests =>
+        Enumerable.Empty<PortalTicketRequest>().AsQueryable();
+
     IQueryable<ApplicationParameter> ApplicationParameters { get; }
 
     IQueryable<ParameterChangeLog> ParameterChangeLogs { get; }
@@ -21,6 +24,12 @@ public interface IApplicationDbContext
     IQueryable<SystemLog> SystemLogs { get; }
 
     IQueryable<UserAuditEvent> UserAuditEvents => Enumerable.Empty<UserAuditEvent>().AsQueryable();
+
+    /// <summary>
+    /// Indicates whether PostgreSQL-specific raw SQL is supported by this context.
+    /// Callers must check this before requesting PostgreSQL-only statements.
+    /// </summary>
+    bool SupportsPostgresRawSql => false;
 
     void Add<TEntity>(TEntity entity) where TEntity : class;
 

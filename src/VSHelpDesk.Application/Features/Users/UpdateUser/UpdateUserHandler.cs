@@ -39,9 +39,12 @@ public sealed class UpdateUserHandler(
                 new TransactionOptions { IsolationLevel = IsolationLevel.Serializable },
                 TransactionScopeAsyncFlowOption.Enabled);
 
-            await dbContext.ExecuteSqlRawAsync(
-                "SELECT pg_advisory_xact_lock(6220394968519887181);",
-                cancellationToken);
+            if (dbContext.SupportsPostgresRawSql)
+            {
+                await dbContext.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock(6220394968519887181);",
+                    cancellationToken);
+            }
 
             var user = await userRepository.GetByIdAsync(command.Id, cancellationToken)
                 ?? throw new NotFoundException(nameof(User), command.Id);

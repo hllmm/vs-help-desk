@@ -8,6 +8,7 @@ import {
   normalizeApiBaseUrl,
   type RedirectLocation,
 } from './client'
+import { createTicket } from './ticketsApi'
 
 function clearCsrfCookie() {
   document.cookie = 'vshd.csrf=; Max-Age=0; path=/'
@@ -154,6 +155,33 @@ describe('apiRequest', () => {
       signal: controller.signal,
       credentials: 'include',
     })
+  })
+
+  it('preserves a caller-provided idempotency key alongside the CSRF header', async () => {
+    document.cookie = 'vshd.csrf=test-csrf'
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ticketId: 'ticket-1', ticketNumber: 'VS-000001' }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createTicket(
+      {
+        subject: 'Idempotency header',
+        customerName: 'Customer',
+        customerEmail: 'customer@example.test',
+        content: 'content',
+      },
+      { idempotencyKey: '11111111-1111-4111-8111-111111111111' },
+    )
+
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers
+    expect(headers.get('Idempotency-Key')).toBe(
+      '11111111-1111-4111-8111-111111111111',
+    )
+    expect(headers.get('X-CSRF-Token')).toBe('test-csrf')
   })
 
   it('on protected 401 removes session keys via expireSession', async () => {

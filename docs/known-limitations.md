@@ -8,10 +8,6 @@ This document records actual production constraints that affect the current depl
 - **Persistent account lockout provides account-level protection across replicas.** Failed-login counters and `LockoutEndUtc` are stored in the `Users` table, so lockout is enforced regardless of which replica handles the request. This complements the per-pod IP limiter.
 - **A truly global IP rate limit requires an external gateway or distributed limiter.** For strong global IP throttling, place a gateway (e.g., Ingress/NGINX, Cloudflare, or a Redis-backed rate limiter) in front of the API and configure `ForwardedHeaders:TrustedNetworks` accordingly.
 
-## Networking
-
-- **Mail NetworkPolicy egress rules are environment-specific.** `deploy/k8s/base/networkpolicy-api.yaml` allows `API → SMTP/IMAP` only to `10.20.30.0/24` and `192.168.100.10/32` (example relay CIDRs). Operators must replace these with the actual corporate relay CIDRs per environment. The policy explicitly does **not** allow `0.0.0.0/0` for mail egress.
-
 ## Data & Availability
 
 - **A single PostgreSQL pod inside the cluster does not provide high availability.** `postgres` is a `StatefulSet` with `replicas: 1` and a single `ReadWriteOnce` PVC. It is not replicated, not backed by an operator, and will be unavailable during node or volume failures. For HA, use an external managed PostgreSQL or a Postgres operator with replication and backups.

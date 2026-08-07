@@ -1,3 +1,5 @@
 ab4199edeb961accc7d6232bdb2dbd81df0b4252:.github/workflows/ci.yml:generic-api-key:232
 ab4199edeb961accc7d6232bdb2dbd81df0b4252:.github/workflows/ci.yml:generic-api-key:233
 dbb63c6fe81008b48749f30efbedb020cfebab22:docker-compose.yml:generic-api-key:7
+59345f23706c9d2d5e183720a858f5f7494c3e9f:scripts/test_render_prod_manifest.py:generic-api-key:195
+0d7575cc15ad6a8c90aeb995e10bbb83f1c5043f:scripts/test_render_prod_manifest.py:generic-api-key:207

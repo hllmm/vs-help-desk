@@ -2,17 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
-# Image tags for company registry. Replace newName with your registry path, e.g.:
-#   newName: registry.example.local/vshelpdesk-api
-#   newTag: "1.0.0"
-# Base manifests use vshelpdesk-api:local / vshelpdesk-web:local; this transformer
-# rewrites name+tag for prod pulls.
-images:
-  - name: vshelpdesk-api
-    newName: ghcr.io/vs-help-desk/api
-    newTag: "sha-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-  - name: vshelpdesk-web
-    newName: ghcr.io/vs-help-desk/web
-    newTag: "sha-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+# The base local image references are intentionally left unresolved here.
+# scripts/render-prod-manifest.sh must substitute operator-supplied verified
+# digest references before this manifest can be deployed.
 patches:
   - path: ingress-patch.yaml

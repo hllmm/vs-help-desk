@@ -4,8 +4,11 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
+using VSHelpDesk.Application.Common.Exceptions;
+using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Features.Authentication.Login;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Domain.Enums;
@@ -13,6 +16,7 @@ using VSHelpDesk.Infrastructure.Authentication;
 using VSHelpDesk.WebAPI.Authentication;
 using VSHelpDesk.WebAPI.Contracts.Authentication;
 using VSHelpDesk.WebAPI.Controllers;
+using VSHelpDesk.WebAPI.Middleware;
 
 namespace VSHelpDesk.WebAPI.IntegrationTests.Authentication;
 
@@ -84,6 +88,35 @@ public sealed class AuthControllerTests
     }
 
     [Fact]
+    public async Task Login_WhenAuthenticationStatePersistenceIsUnavailable_Returns503WithoutJwtOrAuthCookie()
+    {
+        var user = CreateUser();
+        var unitOfWork = new FakeUnitOfWork { ConcurrencyFailuresRemaining = 5 };
+        var tokenService = new FakeTokenService("access-token");
+        var controller = CreateController(
+            user,
+            validPassword: "correct-password",
+            unitOfWork,
+            tokenService);
+        controller.Response.Body = new MemoryStream();
+        var middleware = new ExceptionHandlingMiddleware(
+            async _ =>
+            {
+                await controller.Login(
+                    new LoginRequest(user.Username, "correct-password"),
+                    CancellationToken.None);
+            },
+            NullLogger<ExceptionHandlingMiddleware>.Instance);
+
+        await middleware.InvokeAsync(controller.HttpContext, FallbackMessageProvider.Instance);
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, controller.Response.StatusCode);
+        Assert.Equal(0, tokenService.CreateTokenCallCount);
+        Assert.DoesNotContain("access-token", controller.Response.Headers.SetCookie.ToString(), StringComparison.Ordinal);
+        Assert.Equal(0, controller.Response.Headers.SetCookie.Count);
+    }
+
+    [Fact]
     public void BR014_Me_AuthenticatedPrincipal_ReturnsUserSummaryFromClaims()
     {
         var userId = Guid.Parse("11111111-1111-1111-1111-111111111111");
@@ -127,10 +160,15 @@ public sealed class AuthControllerTests
         Assert.Contains(AuthCookieNames.Csrf, setCookie, StringComparison.Ordinal);
     }
 
-    private static AuthController CreateController(User user, string validPassword)
+    private static AuthController CreateController(
+        User user,
+        string validPassword,
+        FakeUnitOfWork? unitOfWork = null,
+        FakeTokenService? tokenService = null)
     {
         var userRepository = new FakeUserRepository(user);
-        var unitOfWork = new FakeUnitOfWork();
+        unitOfWork ??= new FakeUnitOfWork();
+        tokenService ??= new FakeTokenService("access-token");
         var loginSecurityOptions = Microsoft.Extensions.Options.Options.Create(new LoginSecurityOptions
         {
             MaxFailedAttempts = 5,
@@ -140,7 +178,7 @@ public sealed class AuthControllerTests
             userRepository,
             unitOfWork,
             new FakePasswordHasher(validPassword),
-            new FakeTokenService("access-token"),
+            tokenService,
             new FixedTimeProvider(LoginTime),
             loginSecurityOptions);
         var env = new FakeHostEnvironment { EnvironmentName = Environments.Development };
@@ -222,7 +260,19 @@ public sealed class AuthControllerTests
 
     private sealed class FakeUnitOfWork : VSHelpDesk.Application.Abstractions.Persistence.Repositories.IUnitOfWork
     {
-        public Task<int> SaveChangesAsync(CancellationToken cancellationToken) => Task.FromResult(1);
+        public int ConcurrencyFailuresRemaining { get; set; }
+
+        public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
+        {
+            if (ConcurrencyFailuresRemaining > 0)
+            {
+                ConcurrencyFailuresRemaining--;
+                throw new OptimisticConcurrencyException("concurrency");
+            }
+
+            return Task.FromResult(1);
+        }
+
         public void ClearTrackedChanges() { }
     }
 
@@ -236,7 +286,13 @@ public sealed class AuthControllerTests
 
     private sealed class FakeTokenService(string token) : ITokenService
     {
-        public string CreateToken(User user) => token;
+        public int CreateTokenCallCount { get; private set; }
+
+        public string CreateToken(User user)
+        {
+            CreateTokenCallCount++;
+            return token;
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

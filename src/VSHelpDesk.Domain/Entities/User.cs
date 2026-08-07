@@ -28,6 +28,8 @@ public sealed class User
 
     public DateTime? LockoutEndUtc { get; private set; }
 
+    public uint Version { get; private set; }
+
     private User()
     {
     }

@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -9,6 +11,7 @@ using VSHelpDesk.Application.Features.Tickets.ReadModel;
 using VSHelpDesk.Domain.Entities;
 using VSHelpDesk.Infrastructure;
 using VSHelpDesk.Infrastructure.Persistence;
+using VSHelpDesk.Infrastructure.Persistence.Migrations;
 using VSHelpDesk.Infrastructure.Persistence.ReadModel;
 
 namespace VSHelpDesk.Infrastructure.UnitTests.Persistence;
@@ -429,6 +432,63 @@ public sealed class ApplicationDbContextTests
         Assert.False(sqliteVersion.IsConcurrencyToken);
     }
 
+    [Fact]
+    public void Model_MapsUserVersionForPostgresAndSqlite()
+    {
+        using var postgresContext = CreateMetadataContext();
+        var postgresUser = postgresContext.Model.FindEntityType(typeof(User))!;
+        var postgresVersion = postgresUser.FindProperty("Version");
+
+        Assert.NotNull(postgresVersion);
+        Assert.Equal(
+            "xmin",
+            postgresVersion.GetColumnName(StoreObjectIdentifier.Table("Users", null)));
+        Assert.Equal("xid", postgresVersion.GetColumnType());
+        Assert.True(postgresVersion.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.OnAddOrUpdate, postgresVersion.ValueGenerated);
+
+        var sqliteOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+        using var sqliteContext = new ApplicationDbContext(sqliteOptions);
+        var sqliteUser = sqliteContext.Model.FindEntityType(typeof(User))!;
+        var sqliteVersion = sqliteUser.FindProperty("Version");
+
+        Assert.NotNull(sqliteVersion);
+        Assert.Equal("integer", sqliteVersion.GetColumnType());
+        Assert.False(sqliteVersion.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.Never, sqliteVersion.ValueGenerated);
+    }
+
+    [Fact]
+    public void AddUserVersionMigration_DoesNotContainPhysicalXminColumnOperations()
+    {
+        var migration = new AddUserVersionProbe();
+
+        Assert.DoesNotContain(
+            migration.CapturedUpOperations,
+            operation => operation is AddColumnOperation { Name: "xmin" });
+        Assert.DoesNotContain(
+            migration.CapturedDownOperations,
+            operation => operation is DropColumnOperation { Name: "xmin" });
+    }
+
+    [Fact]
+    public async Task ExecuteSqlRawAsync_OnSqlite_ThrowsInsteadOfSilentlySucceeding()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+        await using var context = new ApplicationDbContext(options);
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(
+            () => context.ExecuteSqlRawAsync("SELECT 1"));
+
+        Assert.Equal(
+            "Raw SQL execution through this abstraction requires PostgreSQL.",
+            exception.Message);
+    }
+
     private sealed class DummyWithUint
     {
         public Guid Id { get; set; }
@@ -439,6 +499,21 @@ public sealed class ApplicationDbContextTests
     {
         public Guid Id { get; set; }
         public uint Version { get; set; }
+    }
+
+    private sealed class AddUserVersionProbe : AddUserVersion
+    {
+        public IReadOnlyList<MigrationOperation> CapturedUpOperations => GetOperations(Up);
+
+        public IReadOnlyList<MigrationOperation> CapturedDownOperations => GetOperations(Down);
+
+        private static IReadOnlyList<MigrationOperation> GetOperations(
+            Action<MigrationBuilder> buildOperations)
+        {
+            var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+            buildOperations(migrationBuilder);
+            return migrationBuilder.Operations;
+        }
     }
 
     private sealed class DummyXminContext : DbContext

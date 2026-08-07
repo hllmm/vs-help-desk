@@ -6,12 +6,65 @@ Applies on top of `docs/deploy-production.md`. Images and manifests live under `
 
 ```bash
 kubectl kustomize deploy/k8s/base >/dev/null         # smoke
-kubectl kustomize deploy/k8s/overlays/prod >/dev/null
-kubectl apply -k deploy/k8s/overlays/prod
+kubectl kustomize deploy/k8s/overlays/prod >/dev/null # syntax only; not deployable
 ```
 
 - `deploy/k8s/base`: API + web Deployments, Services, Postgres StatefulSet, `web-nginx-configmap.yaml`, CronJobs (`process-incoming-emails`, `resolve-inactive-tickets` via `curlimages/curl:8.13.0` digest-pinned), Ingress, `secret.example.yaml`.
-- `deploy/k8s/overlays/prod`: `ingress-patch.yaml` + image `newName/newTag` rewrites.
+- `deploy/k8s/overlays/prod`: `ingress-patch.yaml`; local base image references
+  remain intentionally unresolved until the renderer supplies verified digests.
+
+## Production Manifest Mail Egress
+
+`scripts/render-prod-manifest.sh` requires `MAIL_EGRESS_MODE` to be exactly
+`disabled` or `enabled`.
+
+- `MAIL_EGRESS_MODE=disabled` renders the base and production resources without
+  an `api-mail-egress` NetworkPolicy. `SMTP_RELAY_CIDRS` and
+  `IMAP_RELAY_CIDRS` are not required in this mode.
+- `MAIL_EGRESS_MODE=enabled` requires both `SMTP_RELAY_CIDRS` and
+  `IMAP_RELAY_CIDRS`. Each variable must be a non-empty comma-separated list
+  of operator-supplied CIDRs. Every entry is validated; empty entries,
+  malformed CIDRs, and world CIDRs are rejected. The renderer appends a
+  separate `api-mail-egress` policy for the API pods.
+
+The generated policy carries the exact annotation
+`vshelpdesk.io/policy-provenance: task-7-mail-egress-generator`. This is a
+provenance marker consumed by the Task 5 policy-as-code check: it permits the
+renderer-owned policy's explicit relay `ipBlock` rules while ordinary and
+base mail policies remain rejected. World CIDRs remain rejected even when the
+marker is present.
+
+The image variables and an operator-managed repository allowlist remain
+required in both modes. Keep the allowlist outside this repository; it names
+the approved API and web repositories without committing a registry decision
+or a deployable image reference.
+
+```bash
+export PRODUCTION_IMAGE_ALLOWLIST_FILE=/secure/vshelpdesk-production-image-allowlist.yaml
+
+API_IMAGE='<immutable API image reference>' \
+WEB_IMAGE='<immutable web image reference>' \
+MAIL_EGRESS_MODE=disabled \
+bash scripts/render-prod-manifest.sh > production.yaml
+```
+
+The file must have this shape, with the real approved repositories supplied by
+the deployment operator:
+
+```yaml
+production_image_allowlist:
+  api: <approved-api-repository>
+  web: <approved-web-repository>
+```
+
+`API_IMAGE` and `WEB_IMAGE` must use those exact repositories with lowercase
+`@sha256:<64 hex>` digests. The checked-in overlay is rejected by
+`scripts/check-prod-manifest.sh`; only the renderer's validated output is
+deployable. Keep `PRODUCTION_IMAGE_ALLOWLIST_FILE` exported when validating the
+artifact with that checker.
+
+For enabled mode, set the two explicit relay-list variables to the real
+operator-supplied values before invoking the same renderer.
 
 ## Forwarded Headers & Rate Limiting
 

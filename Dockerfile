@@ -1,5 +1,5 @@
 # VS Help Desk API — multi-stage production image
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:72dd743782f2ae7e5476fd64f6a460045e3998dc862218b80e6944cba79a01b0 AS build
 WORKDIR /src
 COPY VSHelpDesk.slnx ./
 COPY Directory.Packages.props ./
@@ -16,7 +16,7 @@ RUN dotnet publish src/VSHelpDesk.WebAPI/VSHelpDesk.WebAPI.csproj \
     --no-restore \
     /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:f1126d438ccc359f51cc6d4701a8deae513856cf10f5fe645d29ea6403dcac6b AS final
 WORKDIR /app
 ENV ASPNETCORE_URLS=http://+:8080 \
     ASPNETCORE_ENVIRONMENT=Production \

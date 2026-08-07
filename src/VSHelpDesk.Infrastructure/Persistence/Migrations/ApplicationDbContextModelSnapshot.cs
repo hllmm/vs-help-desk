@@ -87,6 +87,41 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                     b.ToTable("ParameterChangeLogs", (string)null);
                 });
 
+            modelBuilder.Entity("VSHelpDesk.Domain.Entities.PortalTicketRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("TicketId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TicketId");
+
+                    b.HasIndex("UserId", "IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("UX_PortalTicketRequests_UserId_IdempotencyKey");
+
+                    b.ToTable("PortalTicketRequests", (string)null);
+                });
+
             modelBuilder.Entity("VSHelpDesk.Domain.Entities.ProcessedEmailMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -414,6 +449,12 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Username")
@@ -466,6 +507,21 @@ namespace VSHelpDesk.Infrastructure.Persistence.Migrations
                     b.HasIndex("TargetUserId", "CreatedAt");
 
                     b.ToTable("UserAuditEvents", (string)null);
+                });
+
+            modelBuilder.Entity("VSHelpDesk.Domain.Entities.PortalTicketRequest", b =>
+                {
+                    b.HasOne("VSHelpDesk.Domain.Entities.Ticket", null)
+                        .WithMany()
+                        .HasForeignKey("TicketId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VSHelpDesk.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("VSHelpDesk.Domain.Entities.ProcessedEmailMessage", b =>

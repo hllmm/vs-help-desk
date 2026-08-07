@@ -50,19 +50,85 @@ test('real api critical flow: login, session restore, create ticket, details, lo
   await page.getByLabel('Müşteri adı').fill('E2E Customer')
   await page.getByLabel('Müşteri e-posta').fill('e2e.customer@example.test')
   await page.getByLabel('İçerik').fill('This is a real E2E ticket content.')
+  const createdRequestPromise = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname === '/api/tickets',
+  )
+  const createdResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === '/api/tickets',
+  )
   await page.getByRole('button', { name: 'Oluştur' }).click()
+  const [createdRequest, createdResponse] = await Promise.all([
+    createdRequestPromise,
+    createdResponsePromise,
+  ])
+  expect(createdResponse.status()).toBe(201)
+  const created = await createdResponse.json() as {
+    ticketId: string
+    ticketNumber: string
+  }
+  const idempotencyKey = createdRequest.headers()['idempotency-key']
+  const createPayload = createdRequest.postDataJSON() as {
+    subject: string
+    customerName: string
+    customerEmail: string
+    content: string
+  }
+  expect(idempotencyKey).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  )
 
   // Wait for the ticket to appear in the list (after refresh)
   await expect(page.getByText(uniqueSubject).first()).toBeVisible({ timeout: 10000 })
 
-  // 5. Open the ticket details.
+  // 5. Replay the exact browser request through the real API. The stored
+  // portal record must return the original ticket instead of creating another.
+  const replay = await page.evaluate(
+    async ({ key, payload }) => {
+      const csrf = document.cookie.match(/(?:^|;\s*)vshd\.csrf=([^;]+)/)?.[1] ?? ''
+      const response = await fetch('/api/tickets', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'Idempotency-Key': key,
+          'X-CSRF-Token': csrf,
+        },
+        body: JSON.stringify(payload),
+      })
+      return { status: response.status, body: await response.json() }
+    },
+    { key: idempotencyKey, payload: createPayload },
+  )
+  expect(replay.status).toBe(200)
+  expect(replay.body.ticketId).toBe(created.ticketId)
+
+  const matchingTicketIds = await page.evaluate(async (subject) => {
+    const response = await fetch(
+      `/api/tickets?search=${encodeURIComponent(subject)}`,
+      { credentials: 'include' },
+    )
+    const body = await response.json() as {
+      items: Array<{ id: string; subject: string }>
+    }
+    return body.items
+      .filter((ticket) => ticket.subject === subject)
+      .map((ticket) => ticket.id)
+  }, uniqueSubject)
+  expect(matchingTicketIds).toEqual([created.ticketId])
+
+  // 6. Open the ticket details.
   await page.getByText(uniqueSubject).first().click()
   await expect(page).toHaveURL(/\/tickets\/.+/)
   await expect(page.getByText(uniqueSubject)).toBeVisible()
   // Verify details page shows customer info
   await expect(page.getByText('E2E Customer')).toBeVisible()
 
-  // 6. Log out.
+  // 7. Log out.
   // Find logout button (likely in header)
   const logoutButton = page.getByRole('button', { name: /Çıkış|Logout/i }).first()
   if (await logoutButton.isVisible().catch(() => false)) {
@@ -76,7 +142,7 @@ test('real api critical flow: login, session restore, create ticket, details, lo
   }
   await expect(page).toHaveURL(/\/login/)
 
-  // 7. Attempt to revisit a protected page and confirm redirection to /login.
+  // 8. Attempt to revisit a protected page and confirm redirection to /login.
   await page.goto('/tickets')
   await expect(page).toHaveURL(/\/login/)
   await expect(page.getByRole('heading', { name: 'Hesabınıza giriş yapın' })).toBeVisible()

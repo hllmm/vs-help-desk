@@ -27,6 +27,28 @@ public sealed class PostgresDatabaseErrorClassifier : IDatabaseErrorClassifier
         return IsIdempotencyUniqueViolation(exception);
     }
 
+    public bool IsPortalTicketRequestIdempotencyConflict(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is not PostgresException postgres ||
+                postgres.SqlState != PostgresErrorCodes.UniqueViolation)
+            {
+                continue;
+            }
+
+            if (string.Equals(
+                    postgres.ConstraintName,
+                    PortalTicketRequestConfiguration.UserKeyUniqueIndexName,
+                    StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public bool IsOptimisticConcurrencyConflict(Exception exception)
     {
         for (var current = exception; current is not null; current = current.InnerException)

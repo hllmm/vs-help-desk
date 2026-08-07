@@ -16,6 +16,7 @@ export class ApiError extends Error {
 export type RequestOptions = {
   method?: string
   body?: unknown
+  headers?: HeadersInit
   /** @deprecated Cookie auth; kept for call-site clarity. Ignored for headers. */
   auth?: boolean
   skipAuthRedirect?: boolean
@@ -53,7 +54,7 @@ export function expireSession(
 }
 
 function buildHeaders(options: RequestOptions): Headers {
-  const headers = new Headers()
+  const headers = new Headers(options.headers)
   headers.set('Accept', 'application/json')
 
   if (options.body !== undefined) {
@@ -179,7 +180,7 @@ export async function apiFormRequest<T>(
   options: Omit<RequestOptions, 'body'> = {},
 ): Promise<T> {
   const method = (options.method ?? 'POST').toUpperCase()
-  const headers = new Headers()
+  const headers = new Headers(options.headers)
   headers.set('Accept', 'application/json')
 
   if (UNSAFE_METHODS.has(method)) {

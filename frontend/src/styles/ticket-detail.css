@@ -437,6 +437,12 @@
   cursor: not-allowed;
 }
 
+.ticket-reply__file-input {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
 .ticket-reply__count {
   margin: 0;
   font-size: 0.85rem;

@@ -22,91 +22,81 @@ public sealed class LoginHandler(
     public async Task<Result<LoginResult>> HandleAsync(LoginCommand command, CancellationToken cancellationToken)
     {
         var normalizedUsername = command.Username?.Trim() ?? string.Empty;
-        var user = await userRepository.GetByUsernameAsync(normalizedUsername, cancellationToken);
+        const int maxPersistenceAttempts = 5;
 
-        // Timing-attack mitigation: run dummy verification when user does not exist.
-        if (user is null)
+        for (var attempt = 0; attempt < maxPersistenceAttempts; attempt++)
         {
-            passwordHasher.Verify(command.Password, null);
-            return Result.Failure<LoginResult>(_messages.Get(MessageKeys.Auth.InvalidCredentials));
-        }
+            var user = await userRepository.GetByUsernameAsync(normalizedUsername, cancellationToken);
 
-        // BR-015: inactive users receive same generic error, no lockout mutation.
-        if (!user.IsActive)
-        {
-            passwordHasher.Verify(command.Password, user.PasswordHash);
-            return Result.Failure<LoginResult>(_messages.Get(MessageKeys.Auth.InvalidCredentials));
-        }
-
-        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
-
-        // Account lockout check (replica-safe via DB persisted state).
-        if (user.IsLoginLocked(utcNow))
-        {
-            return Result.Failure<LoginResult>(_messages.Get(MessageKeys.Auth.InvalidCredentials));
-        }
-
-        var passwordIsValid = passwordHasher.Verify(command.Password, user.PasswordHash);
-        if (!passwordIsValid)
-        {
-            var maxAttempts = _options.MaxFailedAttempts;
-            var lockoutDuration = TimeSpan.FromMinutes(_options.LockoutMinutes);
-            user.RegisterFailedLogin(utcNow, maxAttempts, lockoutDuration);
-
-            const int maxRetries = 3;
-            for (var attempt = 0; attempt < maxRetries; attempt++)
+            // Timing-attack mitigation: run dummy verification when user does not exist.
+            if (user is null)
             {
-                try
-                {
-                    await unitOfWork.SaveChangesAsync(cancellationToken);
-                    break;
-                }
-                catch (Exception ex) when (IsConcurrency(ex) && attempt < maxRetries - 1)
-                {
-                    // Retry on concurrency: clearing tracker is not needed for InMemory fake,
-                    // but for EF we should clear to avoid stale tracking.
-                    // For simplicity, just retry; in real EF the next Save will re-attempt.
-                    // If we have a tracker, clearing would require reloading user, but we avoid extra complexity.
-                }
-                catch (Exception ex) when (IsConcurrency(ex))
-                {
-                    // Exhausted retries: do not bubble as 500, return generic failure.
-                    break;
-                }
+                passwordHasher.Verify(command.Password, null);
+                return InvalidCredentials();
             }
 
-            return Result.Failure<LoginResult>(_messages.Get(MessageKeys.Auth.InvalidCredentials));
-        }
+            // BR-015: inactive users receive same generic error, no lockout mutation.
+            if (!user.IsActive)
+            {
+                passwordHasher.Verify(command.Password, user.PasswordHash);
+                return InvalidCredentials();
+            }
 
-        // Success: clear failures and record login.
-        user.RegisterSuccessfulLogin();
-        user.RecordLogin(utcNow);
+            var utcNow = timeProvider.GetUtcNow().UtcDateTime;
 
-        const int successRetries = 3;
-        for (var attempt = 0; attempt < successRetries; attempt++)
-        {
+            // Preserve password-hash timing work without using its result for locked accounts.
+            if (user.IsLoginLocked(utcNow))
+            {
+                passwordHasher.Verify(command.Password, user.PasswordHash);
+                return InvalidCredentials();
+            }
+
+            var passwordIsValid = passwordHasher.Verify(command.Password, user.PasswordHash);
+            if (passwordIsValid)
+            {
+                user.RegisterSuccessfulLogin();
+                user.RecordLogin(utcNow);
+            }
+            else
+            {
+                user.RegisterFailedLogin(
+                    utcNow,
+                    _options.MaxFailedAttempts,
+                    TimeSpan.FromMinutes(_options.LockoutMinutes));
+            }
+
             try
             {
                 await unitOfWork.SaveChangesAsync(cancellationToken);
-                break;
-            }
-            catch (Exception ex) when (IsConcurrency(ex) && attempt < successRetries - 1)
-            {
+
+                if (!passwordIsValid)
+                {
+                    return InvalidCredentials();
+                }
+
+                var accessToken = tokenService.CreateToken(user);
+                return Result.Success(new LoginResult(
+                    accessToken,
+                    user.Id,
+                    user.FullName,
+                    user.Username,
+                    user.Role.ToString()));
             }
             catch (Exception ex) when (IsConcurrency(ex))
             {
-                break;
+                unitOfWork.ClearTrackedChanges();
+                if (attempt == maxPersistenceAttempts - 1)
+                {
+                    throw new AuthenticationStateUnavailableException(ex);
+                }
             }
         }
 
-        var accessToken = tokenService.CreateToken(user);
-        return Result.Success(new LoginResult(
-            accessToken,
-            user.Id,
-            user.FullName,
-            user.Username,
-            user.Role.ToString()));
+        throw new AuthenticationStateUnavailableException();
     }
+
+    private Result<LoginResult> InvalidCredentials() =>
+        Result.Failure<LoginResult>(_messages.Get(MessageKeys.Auth.InvalidCredentials));
 
     private static bool IsConcurrency(Exception ex)
     {
@@ -118,6 +108,6 @@ public sealed class LoginHandler(
             }
         }
 
-        return ex is OptimisticConcurrencyException;
+        return false;
     }
 }

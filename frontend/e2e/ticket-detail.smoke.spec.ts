@@ -936,6 +936,10 @@ test('keyboard traversal covers back refresh attachment composer and shell', asy
 
   await page.keyboard.press('Tab')
   await expect(
+    page.getByLabel('Dosya Eki (Maks 10MB)'),
+  ).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(
     page.getByRole('button', { name: 'Yanıtı gönder' }),
   ).toBeFocused()
   await assertFocusVisibleOutline(page)
