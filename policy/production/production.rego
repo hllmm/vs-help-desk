@@ -50,7 +50,13 @@ target_deployments := [deployment |
 deployment_containers(deployment) := containers if {
     template := object.get(object.get(deployment, "spec", {}), "template", {})
     pod_spec := object.get(template, "spec", {})
-    containers := object.get(pod_spec, "containers", [])
+    containers := object.get(pod_spec, "containers", null)
+}
+
+deployment_init_containers(deployment) := containers if {
+    template := object.get(object.get(deployment, "spec", {}), "template", {})
+    pod_spec := object.get(template, "spec", {})
+    containers := object.get(pod_spec, "initContainers", [])
 }
 
 is_allowed_immutable_image(workload, image) if {
@@ -91,29 +97,79 @@ deny contains "web workload Deployment must be named web" if {
 deny contains msg if {
     some deployment in target_deployments
     workload := workload_for_deployment(deployment)
-    count(deployment_containers(deployment)) != 1
-    msg := sprintf("%s Deployment must contain exactly one container", [workload])
+    containers := deployment_containers(deployment)
+    not is_array(containers)
+    msg := sprintf("%s Deployment spec.template.spec.containers must be an array", [workload])
 }
 
 deny contains msg if {
     some deployment in target_deployments
     workload := workload_for_deployment(deployment)
     containers := deployment_containers(deployment)
-    count(containers) == 1
-    container := containers[0]
-    image := object.get(container, "image", "")
-    not is_allowed_immutable_image(workload, image)
-    msg := sprintf("%s Deployment image must use the exact allow-listed repository and a non-placeholder sha256 digest", [workload])
+    is_array(containers)
+    count(containers) != 1
+    msg := sprintf("%s Deployment must contain exactly one regular container", [workload])
+}
+
+deny contains msg if {
+    some deployment in target_deployments
+    workload := workload_for_deployment(deployment)
+    init_containers := deployment_init_containers(deployment)
+    not is_array(init_containers)
+    msg := sprintf("%s Deployment spec.template.spec.initContainers must be an array when present", [workload])
+}
+
+deny contains msg if {
+    some deployment in target_deployments
+    workload := workload_for_deployment(deployment)
+    init_containers := deployment_init_containers(deployment)
+    is_array(init_containers)
+    some init_container in init_containers
+    not is_object(init_container)
+    msg := sprintf("%s Deployment initContainers entries must be objects with an image", [workload])
 }
 
 deny contains msg if {
     some deployment in target_deployments
     workload := workload_for_deployment(deployment)
     containers := deployment_containers(deployment)
-    count(containers) == 1
-    container := containers[0]
-    image := object.get(container, "image", "")
+    is_array(containers)
+    some container in containers
+    not is_object(container)
+    msg := sprintf("%s Deployment containers entries must be objects with an image", [workload])
+}
+
+container_image_records contains record if {
+    some deployment in target_deployments
+    workload := workload_for_deployment(deployment)
+    containers := deployment_containers(deployment)
+    is_array(containers)
+    some container in containers
+    is_object(container)
+    image := object.get(container, "image", null)
+    record := {"image": image, "role": "container", "workload": workload}
+}
+
+container_image_records contains record if {
+    some deployment in target_deployments
+    workload := workload_for_deployment(deployment)
+    init_containers := deployment_init_containers(deployment)
+    is_array(init_containers)
+    some init_container in init_containers
+    is_object(init_container)
+    image := object.get(init_container, "image", null)
+    record := {"image": image, "role": "initContainer", "workload": workload}
+}
+
+deny contains msg if {
+    some record in container_image_records
+    not is_allowed_immutable_image(record.workload, record.image)
+    msg := sprintf("%s Deployment %s image must use the exact allow-listed repository and a non-placeholder sha256 digest", [record.workload, record.role])
+}
+
+deny contains msg if {
+    some record in container_image_records
     some tag in mutable_tags
-    regex.match(sprintf(":%s$", [tag]), image)
-    msg := sprintf("%s Deployment uses mutable image tag :%s", [workload, tag])
+    regex.match(sprintf(":%s$", [tag]), record.image)
+    msg := sprintf("%s Deployment %s uses mutable image tag :%s", [record.workload, record.role, tag])
 }

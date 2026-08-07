@@ -60,6 +60,11 @@ class ProductionManifestPolicyTests(unittest.TestCase):
             "unsafe-stable-tag.yaml",
             "unsafe-fake-a-digest.yaml",
             "unsafe-fake-b-digest.yaml",
+            "unsafe-api-init-latest.yaml",
+            "unsafe-web-init-disallowed-repository.yaml",
+            "unsafe-api-containers-not-array.yaml",
+            "unsafe-api-init-containers-not-array.yaml",
+            "unsafe-api-container-entry-not-object.yaml",
         )
 
         for fixture in invalid_fixtures:
