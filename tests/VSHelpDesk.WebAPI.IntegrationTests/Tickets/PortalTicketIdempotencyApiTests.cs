@@ -46,6 +46,28 @@ public sealed class PortalTicketIdempotencyApiTests : IClassFixture<CustomWebApp
     }
 
     [Fact]
+    public async Task CreatePortalTicket_RejectsOversizedTicketFieldsBeforePersistence()
+    {
+        var request = CreateRequest($"oversized-{Guid.NewGuid():N}") with
+        {
+            Subject = new string('s', 501)
+        };
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+
+        try
+        {
+            using var response = await SendCreateAsync(client, csrf, Guid.NewGuid().ToString(), request);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(0, await CountTicketsAsync(request.Subject));
+        }
+        finally
+        {
+            client.Dispose();
+        }
+    }
+
+    [Fact]
     public async Task CreatePortalTicket_ReplaysForSameUserAndPayload()
     {
         var request = CreateRequest($"replay-{Guid.NewGuid():N}");
@@ -68,6 +90,39 @@ public sealed class PortalTicketIdempotencyApiTests : IClassFixture<CustomWebApp
 
             Assert.Equal(firstTicketId, replayTicketId);
             Assert.Equal(1, await CountTicketsAsync(request.Subject));
+        }
+        finally
+        {
+            await DeleteTicketsAsync(createdTicketIds);
+            client.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task CreatePortalTicket_ReplaysWhenEquivalentFieldsNormalizeToTheSamePayload()
+    {
+        var exactRequest = CreateRequest($"normalized-{Guid.NewGuid():N}");
+        var paddedRequest = exactRequest with
+        {
+            Subject = $"  {exactRequest.Subject}  ",
+            CustomerName = $"  {exactRequest.CustomerName}  ",
+            CustomerEmail = $"  {exactRequest.CustomerEmail}  ",
+            Content = $"  {exactRequest.Content}  "
+        };
+        var key = Guid.NewGuid().ToString();
+        var createdTicketIds = new List<Guid>();
+        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
+
+        try
+        {
+            using var first = await SendCreateAsync(client, csrf, key, paddedRequest);
+            using var replay = await SendCreateAsync(client, csrf, key, exactRequest);
+
+            Assert.Equal(HttpStatusCode.Created, first.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            createdTicketIds.Add(await ReadTicketIdAsync(first));
+            createdTicketIds.Add(await ReadTicketIdAsync(replay));
+            Assert.Single(createdTicketIds.Distinct());
         }
         finally
         {
@@ -142,42 +197,35 @@ public sealed class PortalTicketIdempotencyApiTests : IClassFixture<CustomWebApp
     }
 
     [Fact]
-    public async Task CreatePortalTicket_ParallelIdenticalRequestsCreateExactlyOneTicket()
+    public async Task CreatePortalTicket_UsesDedicatedPortalStateNotInboundEmailState()
     {
-        var request = CreateRequest($"parallel-{Guid.NewGuid():N}");
         var key = Guid.NewGuid().ToString();
-        var (client, csrf, _) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
-        var responses = Array.Empty<HttpResponseMessage>();
+        var request = CreateRequest($"dedicated-state-{Guid.NewGuid():N}");
         var createdTicketIds = new List<Guid>();
+        var (client, csrf, userId) = await CookieAuthTestHelper.LoginAsSupportAsync(factory);
 
         try
         {
-            responses = await Task.WhenAll(
-                Enumerable.Range(0, 8)
-                    .Select(_ => SendCreateAsync(client, csrf, key, request)));
+            using var response = await SendCreateAsync(client, csrf, key, request);
 
-            Assert.All(
-                responses,
-                response => Assert.True(
-                    response.IsSuccessStatusCode,
-                    $"Expected a successful replay response, got {(int)response.StatusCode}: "
-                    + response.Content.ReadAsStringAsync().GetAwaiter().GetResult()));
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var ticketId = await ReadTicketIdAsync(response);
+            createdTicketIds.Add(ticketId);
 
-            foreach (var response in responses)
-            {
-                createdTicketIds.Add(await ReadTicketIdAsync(response));
-            }
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var portalRequest = await db.PortalTicketRequests
+                .SingleAsync(candidate => candidate.UserId == userId && candidate.IdempotencyKey == key.ToLowerInvariant());
 
-            Assert.Single(createdTicketIds.Distinct());
-            Assert.Equal(1, await CountTicketsAsync(request.Subject));
+            Assert.Equal(ticketId, portalRequest.TicketId);
+            Assert.Equal(64, portalRequest.RequestHash.Length);
+            Assert.Empty(await db.ProcessedEmailMessages
+                .Where(candidate => candidate.IdempotencyKey == key.ToLowerInvariant())
+                .ToListAsync());
         }
         finally
         {
-            foreach (var response in responses)
-            {
-                response.Dispose();
-            }
-
+            await DeleteRequestArtifactsAsync(userId, key);
             await DeleteTicketsAsync(createdTicketIds);
             client.Dispose();
         }
@@ -240,6 +288,34 @@ public sealed class PortalTicketIdempotencyApiTests : IClassFixture<CustomWebApp
         {
             var tickets = await db.Tickets.Where(ticket => ids.Contains(ticket.Id)).ToListAsync();
             db.Tickets.RemoveRange(tickets);
+            await db.SaveChangesAsync();
+        }
+    }
+
+    private async Task DeleteRequestArtifactsAsync(Guid userId, string key)
+    {
+        var normalizedKey = key.ToLowerInvariant();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        try
+        {
+            await db.PortalTicketRequests
+                .Where(request => request.UserId == userId && request.IdempotencyKey == normalizedKey)
+                .ExecuteDeleteAsync();
+            await db.ProcessedEmailMessages
+                .Where(message => message.IdempotencyKey == normalizedKey)
+                .ExecuteDeleteAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            var portalRequests = await db.PortalTicketRequests
+                .Where(request => request.UserId == userId && request.IdempotencyKey == normalizedKey)
+                .ToListAsync();
+            var processedMessages = await db.ProcessedEmailMessages
+                .Where(message => message.IdempotencyKey == normalizedKey)
+                .ToListAsync();
+            db.PortalTicketRequests.RemoveRange(portalRequests);
+            db.ProcessedEmailMessages.RemoveRange(processedMessages);
             await db.SaveChangesAsync();
         }
     }

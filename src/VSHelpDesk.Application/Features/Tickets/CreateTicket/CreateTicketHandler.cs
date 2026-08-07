@@ -36,27 +36,20 @@ public sealed class CreateTicketHandler(
             return Result.Success(await BuildAlreadyProcessedResultAsync(existing, cancellationToken));
         }
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var ticketNumber = await ticketNumberGenerator.NextAsync(cancellationToken);
-        var ticket = Ticket.Create(
-            ticketNumber,
-            command.Subject.Trim(),
-            command.CustomerName.Trim(),
-            command.CustomerEmail.Trim(),
-            now);
-
         // Inbound mail: store sanitized plain text/HTML body.
         var sanitizedContent = htmlSanitizerService.SanitizeHtml(command.Content);
         var content = InboundMailLimits.NormalizeBody(sanitizedContent);
-        var firstMessage = new TicketMessage(
-            ticket.Id,
-            MessageSenderType.Customer,
+        var draft = await TicketDraftFactory.CreateAsync(
+            ticketNumberGenerator,
+            timeProvider,
+            command.Subject.Trim(),
+            command.CustomerName.Trim(),
+            command.CustomerEmail.Trim(),
             content,
-            isHtml: false,
-            userId: null,
-            createdAtUtc: now);
-
-        ticket.RecordMessageActivity(now);
+            cancellationToken);
+        var ticket = draft.Ticket;
+        var firstMessage = draft.FirstMessage;
+        var now = draft.CreatedAtUtc;
 
         var processed = ProcessedEmailMessage.ForCreatedTicket(
             idempotencyKey,

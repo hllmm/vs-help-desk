@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 using VSHelpDesk.Application.Features.Tickets.AssignTicket;
-using VSHelpDesk.Application.Features.Tickets.CreateTicket;
+using VSHelpDesk.Application.Features.Tickets.CreatePortalTicket;
 using VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
 using VSHelpDesk.Application.Features.Tickets.GetTicketList;
@@ -28,7 +28,7 @@ public sealed class TicketsController(
     GetTicketMessagesHandler getTicketMessagesHandler,
     SupportReplyToTicketHandler supportReplyToTicketHandler,
     ResolveTicketHandler resolveTicketHandler,
-    CreateTicketHandler createTicketHandler) : ControllerBase
+    CreatePortalTicketHandler createPortalTicketHandler) : ControllerBase
 {
     /// <summary>GET api/tickets/assignees — active users eligible for BR-011 assignment.</summary>
     [HttpGet("assignees")]
@@ -176,20 +176,29 @@ public sealed class TicketsController(
             return BadRequest(new { code = "idempotency-key-invalid" });
         }
 
-        var command = new CreateTicketCommand(
+        var command = new CreatePortalTicketCommand(
             IdempotencyKey: idempotencyKey.ToString("D"),
-            SourceMessageId: null,
             Subject: request.Subject,
             CustomerName: request.CustomerName,
             CustomerEmail: request.CustomerEmail,
             Content: request.Content);
 
-        var result = await createTicketHandler.HandleAsync(command, cancellationToken);
+        var result = await createPortalTicketHandler.HandleAsync(command, cancellationToken);
         if (result.IsFailure)
         {
+            if (result.Error == CreatePortalTicketErrorCodes.PayloadConflict)
+            {
+                return Conflict(new { code = result.Error });
+            }
+
             return BadRequest(new { message = result.Error });
         }
 
-        return CreatedAtAction(nameof(GetById), new { id = result.Value!.TicketId }, result.Value);
+        if (result.Value!.WasAlreadyProcessed)
+        {
+            return Ok(result.Value);
+        }
+
+        return CreatedAtAction(nameof(GetById), new { id = result.Value.TicketId }, result.Value);
     }
 }

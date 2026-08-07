@@ -42,6 +42,6 @@ public sealed class PortalTicketRequestConfiguration : IEntityTypeConfiguration<
         builder.HasOne<Ticket>()
             .WithMany()
             .HasForeignKey(request => request.TicketId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

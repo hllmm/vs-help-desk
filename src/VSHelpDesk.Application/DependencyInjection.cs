@@ -10,6 +10,7 @@ using VSHelpDesk.Application.Features.Parameters.GetParameterAudit;
 using VSHelpDesk.Application.Features.Parameters.GetParameters;
 using VSHelpDesk.Application.Features.Parameters.UpdateParameter;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
+using VSHelpDesk.Application.Features.Tickets.CreatePortalTicket;
 using VSHelpDesk.Application.Features.Tickets.AssignTicket;
 using VSHelpDesk.Application.Features.Tickets.GetAssignableUsers;
 using VSHelpDesk.Application.Features.Tickets.GetTicketDetails;
@@ -38,6 +39,7 @@ public static class DependencyInjection
         services.AddSingleton<TicketMessageCursorCodec>();
         services.AddScoped<LoginHandler>();
         services.AddScoped<CreateTicketHandler>();
+        services.AddScoped<CreatePortalTicketHandler>();
         services.AddScoped<AssignTicketHandler>();
         services.AddScoped<GetAssignableUsersHandler>();
         services.AddScoped<AppendCustomerReplyHandler>();

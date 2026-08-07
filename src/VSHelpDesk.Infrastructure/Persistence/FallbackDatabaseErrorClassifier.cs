@@ -38,6 +38,30 @@ public sealed class FallbackDatabaseErrorClassifier : IDatabaseErrorClassifier
         return false;
     }
 
+    public bool IsPortalTicketRequestIdempotencyConflict(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is not DbUpdateException dbUpdate)
+            {
+                continue;
+            }
+
+            var message = $"{dbUpdate.Message}\n{dbUpdate.InnerException?.Message}";
+            if (message.Contains(
+                    "UX_PortalTicketRequests_UserId_IdempotencyKey",
+                    StringComparison.OrdinalIgnoreCase) ||
+                message.Contains(
+                    "PortalTicketRequests.UserId, PortalTicketRequests.IdempotencyKey",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public bool IsOptimisticConcurrencyConflict(Exception exception)
     {
         for (var current = exception; current is not null; current = current.InnerException)

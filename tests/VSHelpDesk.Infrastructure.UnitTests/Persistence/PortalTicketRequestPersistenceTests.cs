@@ -39,6 +39,11 @@ public sealed class PortalTicketRequestPersistenceTests
         Assert.Equal(
             "timestamp with time zone",
             entityType.FindProperty("CreatedAtUtc")!.GetColumnType());
+        Assert.Equal(
+            DeleteBehavior.Restrict,
+            entityType.GetForeignKeys()
+                .Single(foreignKey => foreignKey.Properties.Single().Name == "TicketId")
+                .DeleteBehavior);
         Assert.DoesNotContain(
             entityType.GetProperties(),
             property => property.Name is "Subject" or "CustomerName" or "CustomerEmail" or "Content");
@@ -65,6 +70,26 @@ public sealed class PortalTicketRequestPersistenceTests
             operation => operation is DropColumnOperation { Name: "xmin" });
     }
 
+    [Fact]
+    public void RetentionMigration_RestrictsTicketDeletionWithoutPhysicalXminChanges()
+    {
+        var migration = new RetainPortalTicketRequestRecordsProbe();
+
+        Assert.Contains(
+            migration.CapturedUpOperations,
+            operation => operation is AddForeignKeyOperation
+            {
+                Name: "FK_PortalTicketRequests_Tickets_TicketId",
+                OnDelete: ReferentialAction.Restrict
+            });
+        Assert.DoesNotContain(
+            migration.CapturedUpOperations,
+            operation => operation is AddColumnOperation { Name: "xmin" });
+        Assert.DoesNotContain(
+            migration.CapturedDownOperations,
+            operation => operation is DropColumnOperation { Name: "xmin" });
+    }
+
     private static ApplicationDbContext CreateMetadataContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -74,6 +99,21 @@ public sealed class PortalTicketRequestPersistenceTests
     }
 
     private sealed class AddPortalTicketRequestsProbe : AddPortalTicketRequests
+    {
+        public IReadOnlyList<MigrationOperation> CapturedUpOperations => GetOperations(Up);
+
+        public IReadOnlyList<MigrationOperation> CapturedDownOperations => GetOperations(Down);
+
+        private static IReadOnlyList<MigrationOperation> GetOperations(
+            Action<MigrationBuilder> buildOperations)
+        {
+            var migrationBuilder = new MigrationBuilder("Npgsql.EntityFrameworkCore.PostgreSQL");
+            buildOperations(migrationBuilder);
+            return migrationBuilder.Operations;
+        }
+    }
+
+    private sealed class RetainPortalTicketRequestRecordsProbe : RetainPortalTicketRequestRecords
     {
         public IReadOnlyList<MigrationOperation> CapturedUpOperations => GetOperations(Up);
 

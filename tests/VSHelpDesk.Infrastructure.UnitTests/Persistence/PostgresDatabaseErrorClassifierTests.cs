@@ -49,6 +49,21 @@ public sealed class PostgresDatabaseErrorClassifierTests
     }
 
     [Fact]
+    public void IsPortalTicketRequestIdempotencyConflict_RequiresExactConstraint()
+    {
+        var matching = CreateDbUpdateWithPostgres(
+            PostgresErrorCodes.UniqueViolation,
+            PortalTicketRequestConfiguration.UserKeyUniqueIndexName);
+
+        Assert.True(classifier.IsPortalTicketRequestIdempotencyConflict(matching));
+        Assert.False(
+            classifier.IsPortalTicketRequestIdempotencyConflict(
+                CreateDbUpdateWithPostgres(
+                    PostgresErrorCodes.UniqueViolation,
+                    "IX_Tickets_TicketNumber")));
+    }
+
+    [Fact]
     public void IsOptimisticConcurrencyConflict_RecognizesTranslatedException()
     {
         var translated = new OptimisticConcurrencyException(
