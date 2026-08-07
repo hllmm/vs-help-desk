@@ -509,3 +509,5 @@ docs/*
 .dotnet/
 
 
+# Locally installed, checksum-verified CI tools
+.tools/
