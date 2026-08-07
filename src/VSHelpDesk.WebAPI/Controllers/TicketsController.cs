@@ -165,8 +165,19 @@ public sealed class TicketsController(
             return BadRequest(new { code = "request-required" });
         }
 
+        if (!Request.Headers.TryGetValue("Idempotency-Key", out var idempotencyKeyHeader)
+            || idempotencyKeyHeader.Count != 1)
+        {
+            return BadRequest(new { code = "idempotency-key-required" });
+        }
+
+        if (!Guid.TryParse(idempotencyKeyHeader[0], out var idempotencyKey))
+        {
+            return BadRequest(new { code = "idempotency-key-invalid" });
+        }
+
         var command = new CreateTicketCommand(
-            IdempotencyKey: Guid.NewGuid().ToString(),
+            IdempotencyKey: idempotencyKey.ToString("D"),
             SourceMessageId: null,
             Subject: request.Subject,
             CustomerName: request.CustomerName,
