@@ -66,6 +66,10 @@ builder.Services.AddSingleton<IValidateOptions<JobsOptions>, JobsOptionsValidato
 builder.Services.AddOptions<JobsOptions>()
     .Bind(builder.Configuration.GetSection(JobsOptions.SectionName))
     .ValidateOnStart();
+builder.Services.AddSingleton<IValidateOptions<LoginSecurityOptions>, LoginSecurityOptionsValidator>();
+builder.Services.AddOptions<LoginSecurityOptions>()
+    .Bind(builder.Configuration.GetSection(LoginSecurityOptions.SectionName))
+    .ValidateOnStart();
 builder.Services.AddScoped<JobsApiKeyAuthorizationFilter>();
 
 builder.Services.AddHealthChecks()
