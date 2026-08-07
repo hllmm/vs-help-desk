@@ -473,6 +473,22 @@ public sealed class ApplicationDbContextTests
             operation => operation is DropColumnOperation { Name: "xmin" });
     }
 
+    [Fact]
+    public async Task ExecuteSqlRawAsync_OnSqlite_ThrowsInsteadOfSilentlySucceeding()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+        await using var context = new ApplicationDbContext(options);
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(
+            () => context.ExecuteSqlRawAsync("SELECT 1"));
+
+        Assert.Equal(
+            "Raw SQL execution through this abstraction requires PostgreSQL.",
+            exception.Message);
+    }
+
     private sealed class DummyWithUint
     {
         public Guid Id { get; set; }

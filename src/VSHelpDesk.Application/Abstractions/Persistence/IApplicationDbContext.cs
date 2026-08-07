@@ -25,6 +25,12 @@ public interface IApplicationDbContext
 
     IQueryable<UserAuditEvent> UserAuditEvents => Enumerable.Empty<UserAuditEvent>().AsQueryable();
 
+    /// <summary>
+    /// Indicates whether PostgreSQL-specific raw SQL is supported by this context.
+    /// Callers must check this before requesting PostgreSQL-only statements.
+    /// </summary>
+    bool SupportsPostgresRawSql => false;
+
     void Add<TEntity>(TEntity entity) where TEntity : class;
 
     void Remove<TEntity>(TEntity entity) where TEntity : class { }

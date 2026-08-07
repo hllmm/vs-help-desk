@@ -54,6 +54,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     IQueryable<UserAuditEvent> IApplicationDbContext.UserAuditEvents => UserAuditEvents;
 
+    bool IApplicationDbContext.SupportsPostgresRawSql => Database.IsNpgsql();
+
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Add(entity);
 
     void IApplicationDbContext.Remove<TEntity>(TEntity entity) => Remove(entity);
@@ -62,10 +64,13 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
 
     public async Task ExecuteSqlRawAsync(string sql, CancellationToken cancellationToken = default)
     {
-        if (Database.IsNpgsql())
+        if (!Database.IsNpgsql())
         {
-            await Database.ExecuteSqlRawAsync(sql, cancellationToken);
+            throw new NotSupportedException(
+                "Raw SQL execution through this abstraction requires PostgreSQL.");
         }
+
+        await Database.ExecuteSqlRawAsync(sql, cancellationToken);
     }
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
