@@ -429,6 +429,34 @@ public sealed class ApplicationDbContextTests
         Assert.False(sqliteVersion.IsConcurrencyToken);
     }
 
+    [Fact]
+    public void Model_MapsUserVersionForPostgresAndSqlite()
+    {
+        using var postgresContext = CreateMetadataContext();
+        var postgresUser = postgresContext.Model.FindEntityType(typeof(User))!;
+        var postgresVersion = postgresUser.FindProperty("Version");
+
+        Assert.NotNull(postgresVersion);
+        Assert.Equal(
+            "xmin",
+            postgresVersion.GetColumnName(StoreObjectIdentifier.Table("Users", null)));
+        Assert.Equal("xid", postgresVersion.GetColumnType());
+        Assert.True(postgresVersion.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.OnAddOrUpdate, postgresVersion.ValueGenerated);
+
+        var sqliteOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+        using var sqliteContext = new ApplicationDbContext(sqliteOptions);
+        var sqliteUser = sqliteContext.Model.FindEntityType(typeof(User))!;
+        var sqliteVersion = sqliteUser.FindProperty("Version");
+
+        Assert.NotNull(sqliteVersion);
+        Assert.Equal("integer", sqliteVersion.GetColumnType());
+        Assert.False(sqliteVersion.IsConcurrencyToken);
+        Assert.Equal(ValueGenerated.Never, sqliteVersion.ValueGenerated);
+    }
+
     private sealed class DummyWithUint
     {
         public Guid Id { get; set; }
