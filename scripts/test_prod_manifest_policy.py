@@ -62,6 +62,34 @@ class ProductionManifestPolicyTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_rejects_rendered_overlay_with_mutated_cronjob_image(self):
+        rendered = subprocess.run(
+            ["kubectl", "kustomize", str(PROD_OVERLAY)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(rendered.returncode, 0, rendered.stdout + rendered.stderr)
+
+        mutated = rendered.stdout.replace(
+            "curlimages/curl:8.13.0@sha256:d43bdb28bae0be0998f3be83199bfb2b81e0a30b034b6d7586ce7e05de34c3fd",
+            "curlimages/curl:latest",
+        )
+        mutated = mutated.replace(
+            "vshelpdesk-api:local",
+            "registry.test.invalid/fixtures/api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        mutated = mutated.replace(
+            "vshelpdesk-web:local",
+            "registry.test.invalid/fixtures/web@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        )
+
+        result = self.run_checker(manifest=mutated)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        combined = result.stdout + result.stderr
+        self.assertIn("jobs", combined.lower(), combined)
+
     def test_rejects_structurally_invalid_or_non_immutable_production_manifests(self):
         invalid_fixtures = (
             "unsafe-missing-api.yaml",
@@ -82,6 +110,8 @@ class ProductionManifestPolicyTests(unittest.TestCase):
             "unsafe-api-containers-not-array.yaml",
             "unsafe-api-init-containers-not-array.yaml",
             "unsafe-api-container-entry-not-object.yaml",
+            "unsafe-cronjob-latest.yaml",
+            "unsafe-statefulset-tag.yaml",
         )
 
         for fixture in invalid_fixtures:

@@ -1,8 +1,8 @@
+using System.Net.Mail;
 using VSHelpDesk.Application.Abstractions.Authentication;
 using VSHelpDesk.Application.Abstractions.Persistence;
 using VSHelpDesk.Application.Abstractions.Persistence.Repositories;
 using VSHelpDesk.Application.Abstractions.Security;
-using VSHelpDesk.Application.Common.Localization;
 using VSHelpDesk.Application.Common.Models;
 using VSHelpDesk.Application.Features.MailProcessing;
 using VSHelpDesk.Application.Features.Tickets.CreateTicket;
@@ -17,15 +17,13 @@ public sealed class CreatePortalTicketHandler(
     ITicketNumberGenerator ticketNumberGenerator,
     TimeProvider timeProvider,
     ICurrentUserService currentUserService,
-    IDatabaseErrorClassifier databaseErrorClassifier,
-    IHtmlSanitizerService htmlSanitizerService,
-    IMessageProvider messages)
+    IDatabaseErrorClassifier databaseErrorClassifier)
 {
     public async Task<Result<CreatePortalTicketResult>> HandleAsync(
         CreatePortalTicketCommand command,
         CancellationToken cancellationToken)
     {
-        var validationError = Validate(command, messages);
+        var validationError = Validate(command);
         if (validationError is not null)
         {
             return Result.Failure<CreatePortalTicketResult>(validationError);
@@ -38,15 +36,14 @@ public sealed class CreatePortalTicketHandler(
 
         if (!Guid.TryParse(command.IdempotencyKey, out var keyGuid))
         {
-            return Result.Failure<CreatePortalTicketResult>(messages.Get(MessageKeys.Tickets.IdempotencyKeyRequired));
+            return Result.Failure<CreatePortalTicketResult>(CreatePortalTicketErrorCodes.IdempotencyKeyInvalid);
         }
 
         var normalizedKey = keyGuid.ToString("D");
         var normalizedSubject = command.Subject.Trim();
         var normalizedCustomerName = command.CustomerName.Trim();
         var normalizedCustomerEmail = command.CustomerEmail.Trim();
-        var sanitizedContent = htmlSanitizerService.SanitizeHtml(command.Content);
-        var normalizedContent = InboundMailLimits.NormalizeBody(sanitizedContent);
+        var normalizedContent = command.Content.Trim();
         var requestHash = PortalTicketRequestHash.Compute(
             normalizedSubject,
             normalizedCustomerName,
@@ -140,32 +137,36 @@ public sealed class CreatePortalTicketHandler(
     }
 
     private static string? Validate(
-        CreatePortalTicketCommand command,
-        IMessageProvider messages)
+        CreatePortalTicketCommand command)
     {
         if (string.IsNullOrWhiteSpace(command.IdempotencyKey))
         {
-            return messages.Get(MessageKeys.Tickets.IdempotencyKeyRequired);
+            return CreatePortalTicketErrorCodes.IdempotencyKeyRequired;
+        }
+
+        if (!Guid.TryParse(command.IdempotencyKey, out _))
+        {
+            return CreatePortalTicketErrorCodes.IdempotencyKeyInvalid;
         }
 
         if (string.IsNullOrWhiteSpace(command.Subject))
         {
-            return messages.Get(MessageKeys.Tickets.SubjectRequired);
+            return CreatePortalTicketErrorCodes.SubjectRequired;
         }
 
         if (string.IsNullOrWhiteSpace(command.CustomerName))
         {
-            return messages.Get(MessageKeys.Tickets.CustomerNameRequired);
+            return CreatePortalTicketErrorCodes.CustomerNameRequired;
         }
 
         if (string.IsNullOrWhiteSpace(command.CustomerEmail))
         {
-            return messages.Get(MessageKeys.Tickets.CustomerEmailRequired);
+            return CreatePortalTicketErrorCodes.CustomerEmailRequired;
         }
 
         if (string.IsNullOrWhiteSpace(command.Content))
         {
-            return messages.Get(MessageKeys.Tickets.ContentRequired);
+            return CreatePortalTicketErrorCodes.ContentRequired;
         }
 
         if (command.Subject.Trim().Length > InboundMailLimits.MaxSubjectLength ||
@@ -173,6 +174,21 @@ public sealed class CreatePortalTicketHandler(
             command.CustomerEmail.Trim().Length > InboundMailLimits.MaxAddressLength)
         {
             return CreatePortalTicketErrorCodes.InvalidPayload;
+        }
+
+        var normalizedEmail = command.CustomerEmail.Trim();
+        if (!MailAddress.TryCreate(normalizedEmail, out var parsedEmail) ||
+            !string.Equals(
+                parsedEmail.Address,
+                normalizedEmail,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return CreatePortalTicketErrorCodes.CustomerEmailInvalid;
+        }
+
+        if (command.Content.Trim().Length > PortalTicketLimits.MaxContentLength)
+        {
+            return CreatePortalTicketErrorCodes.ContentTooLong;
         }
 
         return null;

@@ -581,4 +581,36 @@ describe('TicketListPage', () => {
       idempotencyKey: '22222222-2222-4222-8222-222222222222',
     })
   })
+
+  it('shows Turkish conflict copy without raw English and enforces browser limits', async () => {
+    fetchTickets.mockResolvedValue(page([]))
+    createTicket.mockRejectedValueOnce(
+      new ApiError(409, 'Request failed (409)', {
+        code: 'portal-idempotency-payload-conflict',
+      }),
+    )
+    renderTicketsPage()
+    const user = userEvent.setup()
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Yeni talep oluştur' }),
+    )
+    expect(screen.getByLabelText('Konu')).toHaveAttribute('maxLength', '500')
+    expect(screen.getByLabelText('Müşteri adı')).toHaveAttribute('maxLength', '200')
+    expect(screen.getByLabelText('Müşteri e-posta')).toHaveAttribute('maxLength', '255')
+    expect(screen.getByLabelText('İçerik')).toHaveAttribute('maxLength', '262144')
+
+    await user.type(screen.getByLabelText('Konu'), 'Conflict subject')
+    await user.type(screen.getByLabelText('Müşteri adı'), 'Conflict Customer')
+    await user.type(screen.getByLabelText('Müşteri e-posta'), 'conflict@example.test')
+    await user.type(screen.getByLabelText('İçerik'), 'Conflict content')
+    await user.click(screen.getByRole('button', { name: 'Oluştur' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      'Bu oluşturma anahtarı farklı içerikle kullanılmış. Formu değiştirip yeniden deneyin.',
+    )
+    expect(alert).not.toHaveTextContent('Request failed')
+    expect(alert).not.toHaveTextContent('portal-idempotency-payload-conflict')
+  })
 })

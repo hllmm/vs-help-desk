@@ -12,6 +12,7 @@ This document records actual production constraints that affect the current depl
 
 - **A single PostgreSQL pod inside the cluster does not provide high availability.** `postgres` is a `StatefulSet` with `replicas: 1` and a single `ReadWriteOnce` PVC. It is not replicated, not backed by an operator, and will be unavailable during node or volume failures. For HA, use an external managed PostgreSQL or a Postgres operator with replication and backups.
 - **Attachment durability depends on the configured storage class.** `api-attachments` is a `PersistentVolumeClaim` with `ReadWriteOnce` and `storage: 5Gi`. Durability, backup, and multi-AZ replication depend on the cluster's `StorageClass` (e.g., `gp3`, `ceph`), which is not defined in this repo. Verify that the class provides the required retention and backup for your environment.
+- **Portal idempotency records are retained with their tickets.** `PortalTicketRequests` preserves replay semantics and has restrictive ticket/user foreign keys, so rows grow with portal-created tickets and block physical deletion until the idempotency row is handled. Monitor table growth and define a business-approved idempotency retention window before adding hard-delete workflows.
 
 ## Quality Gate
 
