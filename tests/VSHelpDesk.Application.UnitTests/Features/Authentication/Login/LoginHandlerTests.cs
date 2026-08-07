@@ -136,30 +136,27 @@ public sealed class LoginHandlerTests
     }
 
     [Fact]
-    public async Task LockedAccount_ReturnsSameGenericFailure_AsWrongPassword()
+    public async Task LockedAccount_PerformsExactlyOneIgnoredPasswordVerification()
     {
         var user = CreateUser();
-        var context = new FakeApplicationDbContext(user);
-        var hasher = new FakePasswordHasher("correct-password");
-        var handler = CreateHandler(context, hasher, new FakeTokenService("token"), LoginTime);
-
-        // Lock the user via 5 failures
         for (var i = 0; i < 5; i++)
         {
-            await handler.HandleAsync(new LoginCommand(user.Username, "wrong-password"), CancellationToken.None);
+            user.RegisterFailedLogin(LoginTime.UtcDateTime, 5, TimeSpan.FromMinutes(15));
         }
 
+        var context = new FakeApplicationDbContext(user);
+        var hasher = new FakePasswordHasher("correct-password");
+        var tokenService = new FakeTokenService("token");
+        var handler = CreateHandler(context, hasher, tokenService, LoginTime);
+
         Assert.True(user.IsLoginLocked(LoginTime.UtcDateTime));
-        var countBefore = hasher.VerifyCallCount;
-
         var lockedResult = await handler.HandleAsync(new LoginCommand(user.Username, "correct-password"), CancellationToken.None);
-        var wrongResult = await handler.HandleAsync(new LoginCommand(user.Username, "wrong-password"), CancellationToken.None);
 
-        // Both should be same generic error, not revealing locked
+        Assert.True(lockedResult.IsFailure);
         Assert.Equal(GenericFailure, lockedResult.Error);
-        Assert.Equal(lockedResult.Error, wrongResult.Error);
-        // Locked path should not verify password (early return)
-        Assert.Equal(countBefore, hasher.VerifyCallCount);
+        Assert.Equal(1, hasher.VerifyCallCount);
+        Assert.Equal(0, context.SaveChangesAttemptCount);
+        Assert.Equal(0, tokenService.CreateTokenCallCount);
     }
 
     [Fact]
@@ -225,7 +222,8 @@ public sealed class LoginHandlerTests
     public async Task ConcurrencyConflict_OnFailedLogin_DoesNotReturn500()
     {
         var user = CreateUser();
-        var context = new FakeApplicationDbContext(user);
+        var freshUser = CreateUser();
+        var context = new FakeApplicationDbContext(user) { FreshUserAfterClear = freshUser };
         context.FailNextSaveWithConcurrency = true;
         var handler = CreateHandler(context, new FakePasswordHasher("correct-password"), new FakeTokenService("token"));
 
@@ -235,7 +233,101 @@ public sealed class LoginHandlerTests
         Assert.Equal(GenericFailure, result.Error);
         // Should have retried and eventually saved (second attempt succeeds)
         Assert.Equal(2, context.SaveChangesAttemptCount);
-        Assert.Equal(1, user.FailedLoginAttempts);
+        Assert.Equal(1, freshUser.FailedLoginAttempts);
+    }
+
+    [Fact]
+    public async Task ConcurrencyConflict_ReloadsFreshUser_ReverifiesAndReappliesFailedLogin()
+    {
+        var staleUser = CreateUser();
+        var freshUser = CreateUser();
+        freshUser.RegisterFailedLogin(LoginTime.UtcDateTime, 5, TimeSpan.FromMinutes(15));
+        var context = new FakeApplicationDbContext(staleUser)
+        {
+            FreshUserAfterClear = freshUser,
+            ConcurrencyFailuresRemaining = 1
+        };
+        var passwordHasher = new FakePasswordHasher("correct-password");
+        var tokenService = new FakeTokenService("token");
+        var handler = CreateHandler(context, passwordHasher, tokenService);
+
+        var result = await handler.HandleAsync(
+            new LoginCommand(staleUser.Username, "wrong-password"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(GenericFailure, result.Error);
+        Assert.Equal(2, context.GetByUsernameCallCount);
+        Assert.Equal(1, context.ClearTrackedChangesCallCount);
+        Assert.Equal(2, context.SaveChangesAttemptCount);
+        Assert.Equal(2, passwordHasher.VerifyCallCount);
+        Assert.Equal(2, freshUser.FailedLoginAttempts);
+        Assert.Equal(0, tokenService.CreateTokenCallCount);
+    }
+
+    [Fact]
+    public async Task ConcurrencyConflict_ReloadsFreshLockedUser_AndStopsWithoutSavingAgain()
+    {
+        var staleUser = CreateUser();
+        var freshLockedUser = CreateUser();
+        for (var i = 0; i < 5; i++)
+        {
+            freshLockedUser.RegisterFailedLogin(LoginTime.UtcDateTime, 5, TimeSpan.FromMinutes(15));
+        }
+
+        var context = new FakeApplicationDbContext(staleUser)
+        {
+            FreshUserAfterClear = freshLockedUser,
+            ConcurrencyFailuresRemaining = 1
+        };
+        var passwordHasher = new FakePasswordHasher("correct-password");
+        var tokenService = new FakeTokenService("token");
+        var handler = CreateHandler(context, passwordHasher, tokenService);
+
+        var result = await handler.HandleAsync(
+            new LoginCommand(staleUser.Username, "correct-password"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(GenericFailure, result.Error);
+        Assert.Equal(2, context.GetByUsernameCallCount);
+        Assert.Equal(1, context.ClearTrackedChangesCallCount);
+        Assert.Equal(1, context.SaveChangesAttemptCount);
+        Assert.Equal(2, passwordHasher.VerifyCallCount);
+        Assert.Equal(0, tokenService.CreateTokenCallCount);
+    }
+
+    [Fact]
+    public async Task FinalConcurrencyConflict_ThrowsAuthenticationStateUnavailableException()
+    {
+        var user = CreateUser();
+        var context = new FakeApplicationDbContext(user) { ConcurrencyFailuresRemaining = 3 };
+        var handler = CreateHandler(
+            context,
+            new FakePasswordHasher("correct-password"),
+            new FakeTokenService("token"));
+
+        var exception = await Record.ExceptionAsync(() => handler.HandleAsync(
+            new LoginCommand(user.Username, "correct-password"),
+            CancellationToken.None));
+
+        Assert.IsType<AuthenticationStateUnavailableException>(exception);
+        Assert.Equal(3, context.SaveChangesAttemptCount);
+    }
+
+    [Fact]
+    public async Task FinalConcurrencyConflict_DoesNotCreateToken()
+    {
+        var user = CreateUser();
+        var context = new FakeApplicationDbContext(user) { ConcurrencyFailuresRemaining = 3 };
+        var tokenService = new FakeTokenService("token");
+        var handler = CreateHandler(context, new FakePasswordHasher("correct-password"), tokenService);
+
+        await Record.ExceptionAsync(() => handler.HandleAsync(
+            new LoginCommand(user.Username, "correct-password"),
+            CancellationToken.None));
+
+        Assert.Equal(0, tokenService.CreateTokenCallCount);
     }
 
     [Fact]
@@ -281,7 +373,13 @@ public sealed class LoginHandlerTests
     {
         public int SaveChangesCallCount { get; private set; }
         public int SaveChangesAttemptCount { get; private set; }
+        public int GetByUsernameCallCount { get; private set; }
+        public int ClearTrackedChangesCallCount { get; private set; }
         public bool FailNextSaveWithConcurrency { get; set; }
+        public int ConcurrencyFailuresRemaining { get; set; }
+        public User? FreshUserAfterClear { get; init; }
+
+        private bool TrackingWasCleared { get; set; }
 
         public IQueryable<User> Users { get; } = users.AsQueryable();
 
@@ -291,8 +389,14 @@ public sealed class LoginHandlerTests
         public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken) =>
             Task.FromResult(Users.FirstOrDefault(u => u.Email == email));
 
-        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken) =>
-            Task.FromResult(Users.FirstOrDefault(u => u.Username == username));
+        public Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken)
+        {
+            GetByUsernameCallCount++;
+            var candidates = TrackingWasCleared && FreshUserAfterClear is not null
+                ? new[] { FreshUserAfterClear }.AsQueryable()
+                : Users;
+            return Task.FromResult(candidates.FirstOrDefault(u => u.Username == username));
+        }
 
         public IQueryable<User> GetListQueryable() => Users;
 
@@ -339,12 +443,20 @@ public sealed class LoginHandlerTests
                 throw new OptimisticConcurrencyException("concurrency", null);
             }
 
+            if (ConcurrencyFailuresRemaining > 0)
+            {
+                ConcurrencyFailuresRemaining--;
+                throw new OptimisticConcurrencyException("concurrency", null);
+            }
+
             SaveChangesCallCount++;
             return Task.FromResult(1);
         }
 
         public void ClearTrackedChanges()
         {
+            ClearTrackedChangesCallCount++;
+            TrackingWasCleared = true;
         }
 
         public Task ExecuteSqlRawAsync(string sql, CancellationToken cancellationToken = default) => Task.CompletedTask;

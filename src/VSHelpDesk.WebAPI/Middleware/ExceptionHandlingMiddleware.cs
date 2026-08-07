@@ -52,6 +52,7 @@ public sealed class ExceptionHandlingMiddleware
             RequestValidationException => (HttpStatusCode.BadRequest, MessageKeys.Http.BadRequest),
             NotFoundException => (HttpStatusCode.NotFound, MessageKeys.Http.NotFound),
             UnauthorizedApplicationException => (HttpStatusCode.Unauthorized, MessageKeys.Http.Unauthorized),
+            AuthenticationStateUnavailableException => (HttpStatusCode.ServiceUnavailable, MessageKeys.Http.UnexpectedError),
             ConflictApplicationException => (HttpStatusCode.Conflict, MessageKeys.Http.Conflict),
             DomainException => (HttpStatusCode.BadRequest, MessageKeys.Http.DomainRuleViolation),
             _ => (HttpStatusCode.InternalServerError, MessageKeys.Http.UnexpectedError)
