@@ -153,12 +153,7 @@ export function TicketListPage(): ReactElement {
       role="region"
     >
       <header className="ticket-workspace__header">
-        <div>
-          <h1 id="ticket-list-title">Destek talepleri</h1>
-          <p className="ticket-workspace__lede">
-            Son hareketi en yeni olan talepler önce gösterilir.
-          </p>
-        </div>
+        <h1 id="ticket-list-title">Destek talepleri</h1>
       </header>
 
       {isInitialLoading ? (
