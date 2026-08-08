@@ -158,8 +158,9 @@ export function useTickets(options: UseTicketsOptions): UseTicketsResult {
   )
 
   useEffect(() => {
-    void replace(false)
+    const id = setTimeout(() => void replace(true), 0)
     return () => {
+      clearTimeout(id)
       activeController.current?.abort()
       requestSequence.current += 1
       appendOwner.current = null
