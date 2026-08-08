@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { createTicket } from '../api/ticketsApi'
 import { createTicketErrorMessage } from '../features/tickets/createTicketError'
 import { TicketFilters } from '../features/tickets/TicketFilters'
@@ -96,6 +96,23 @@ export function TicketListPage(): ReactElement {
   const hasRows = tickets.length > 0
   const isInitialLoading = isLoading && !hasInitialized
   const isBusy = isLoading || isLoadingMore
+  const [justRefreshed, setJustRefreshed] = useState(false)
+  const prevBusyRef = useRef(false)
+  const prevInitializedRef = useRef(false)
+  useEffect(() => {
+    const wasBusy = prevBusyRef.current
+    const wasInitialized = prevInitializedRef.current
+    if (wasBusy && !isBusy && error === null && hasInitialized && wasInitialized) {
+      setJustRefreshed(true)
+      const t = window.setTimeout(() => setJustRefreshed(false), 1800)
+      return () => window.clearTimeout(t)
+    }
+    prevBusyRef.current = isBusy
+    prevInitializedRef.current = hasInitialized
+    if (!wasBusy && isBusy) {
+      setJustRefreshed(false)
+    }
+  }, [isBusy, error, hasInitialized])
   const showInitialError = error?.source === 'list' && !hasInitialized
   const showRefreshError = error?.source === 'list' && hasInitialized
   const showLoadMoreError = error?.source === 'loadMore'
@@ -253,6 +270,7 @@ export function TicketListPage(): ReactElement {
             resultCount={countForStatus(lifecycleCounts, selectedStatus)}
             isBusy={isBusy}
             hasActiveFilters={query.trim() !== '' || selectedStatus !== 'all'}
+            justRefreshed={justRefreshed}
             onQueryChange={setQuery}
             onStatusChange={setSelectedStatus}
             onClear={() => {

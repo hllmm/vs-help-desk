@@ -89,6 +89,7 @@ export function useTickets(options: UseTicketsOptions): UseTicketsResult {
       activeCursor.current = null
       const controller = new AbortController()
       activeController.current = controller
+      const startedAt = Date.now()
       setState((current) => ({
         tickets: preserveTickets ? current.tickets : [],
         counts: preserveTickets ? current.counts : EMPTY_COUNTS,
@@ -110,6 +111,18 @@ export function useTickets(options: UseTicketsOptions): UseTicketsResult {
           return
         }
         activeCursor.current = page.nextCursor
+        const elapsed = Date.now() - startedAt
+        const minVisible = preserveTickets ? 420 : 0
+        const delay = Math.max(0, minVisible - elapsed)
+        if (delay > 0) {
+          await new Promise<void>((resolve) => {
+            const t = setTimeout(resolve, delay)
+            controller.signal.addEventListener('abort', () => clearTimeout(t), { once: true })
+          })
+          if (sequence !== requestSequence.current || controller.signal.aborted) {
+            return
+          }
+        }
         setState({
           tickets: page.items,
           counts: page.counts,
