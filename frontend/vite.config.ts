@@ -3,13 +3,22 @@ import react from '@vitejs/plugin-react'
 
 // SPA only — no Next/Nuxt. Talks to ASP.NET Core over REST.
 // Dev: relative /api and /health → Vite proxy (empty VITE_API_BASE_URL).
+const cspProduction =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+const cspDev =
+  "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' ws:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+
 const securityHeaders = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
-  'Content-Security-Policy':
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+  'Content-Security-Policy': cspProduction,
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+}
+
+const devSecurityHeaders = {
+  ...securityHeaders,
+  'Content-Security-Policy': cspDev,
 }
 
 export default defineConfig({
@@ -17,7 +26,7 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
-    headers: securityHeaders,
+    headers: devSecurityHeaders,
     proxy: {
       '/api': { target: 'http://127.0.0.1:5154', changeOrigin: true },
       '/health': { target: 'http://127.0.0.1:5154', changeOrigin: true },
