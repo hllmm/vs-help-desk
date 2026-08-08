@@ -4,7 +4,16 @@
   margin-inline: auto;
   display: grid;
   gap: 1rem;
+}
+
+.ticket-workspace--enter {
   animation: portal-enter 360ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket-workspace--enter {
+    animation: none;
+  }
 }
 
 .ticket-workspace__header h1 {

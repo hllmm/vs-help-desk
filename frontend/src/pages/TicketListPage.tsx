@@ -13,6 +13,8 @@ import {
   type TicketLoadErrorKind,
 } from '../features/tickets/useTickets'
 
+let hasAnimatedTickets = false
+
 function listErrorMessage(
   kind: TicketLoadErrorKind,
   phase: 'initial' | 'replacement',
@@ -138,9 +140,14 @@ export function TicketListPage(): ReactElement {
     }
   }
 
+  const shouldAnimate = !hasAnimatedTickets
+  useEffect(() => {
+    hasAnimatedTickets = true
+  }, [])
+
   return (
     <section
-      className="ticket-workspace"
+      className={shouldAnimate ? 'ticket-workspace ticket-workspace--enter' : 'ticket-workspace'}
       aria-labelledby="ticket-list-title"
       aria-busy={isBusy}
       role="region"
