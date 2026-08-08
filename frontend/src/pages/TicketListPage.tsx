@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { createTicket } from '../api/ticketsApi'
 import { createTicketErrorMessage } from '../features/tickets/createTicketError'
 import { TicketFilters } from '../features/tickets/TicketFilters'
@@ -12,6 +12,8 @@ import {
   useTickets,
   type TicketLoadErrorKind,
 } from '../features/tickets/useTickets'
+
+let hasAnimatedTickets = false
 
 function listErrorMessage(
   kind: TicketLoadErrorKind,
@@ -96,6 +98,23 @@ export function TicketListPage(): ReactElement {
   const hasRows = tickets.length > 0
   const isInitialLoading = isLoading && !hasInitialized
   const isBusy = isLoading || isLoadingMore
+  const [justRefreshed, setJustRefreshed] = useState(false)
+  const prevBusyRef = useRef(false)
+  const prevInitializedRef = useRef(false)
+  useEffect(() => {
+    const wasBusy = prevBusyRef.current
+    const wasInitialized = prevInitializedRef.current
+    if (wasBusy && !isBusy && error === null && hasInitialized && wasInitialized) {
+      setJustRefreshed(true)
+      const t = window.setTimeout(() => setJustRefreshed(false), 1800)
+      return () => window.clearTimeout(t)
+    }
+    prevBusyRef.current = isBusy
+    prevInitializedRef.current = hasInitialized
+    if (!wasBusy && isBusy) {
+      setJustRefreshed(false)
+    }
+  }, [isBusy, error, hasInitialized])
   const showInitialError = error?.source === 'list' && !hasInitialized
   const showRefreshError = error?.source === 'list' && hasInitialized
   const showLoadMoreError = error?.source === 'loadMore'
@@ -121,20 +140,20 @@ export function TicketListPage(): ReactElement {
     }
   }
 
+  const shouldAnimate = !hasAnimatedTickets
+  useEffect(() => {
+    hasAnimatedTickets = true
+  }, [])
+
   return (
     <section
-      className="ticket-workspace"
+      className={shouldAnimate ? 'ticket-workspace ticket-workspace--enter' : 'ticket-workspace'}
       aria-labelledby="ticket-list-title"
       aria-busy={isBusy}
       role="region"
     >
       <header className="ticket-workspace__header">
-        <div>
-          <h1 id="ticket-list-title">Destek talepleri</h1>
-          <p className="ticket-workspace__lede">
-            Son hareketi en yeni olan talepler önce gösterilir.
-          </p>
-        </div>
+        <h1 id="ticket-list-title">Destek talepleri</h1>
       </header>
 
       {isInitialLoading ? (
@@ -253,6 +272,7 @@ export function TicketListPage(): ReactElement {
             resultCount={countForStatus(lifecycleCounts, selectedStatus)}
             isBusy={isBusy}
             hasActiveFilters={query.trim() !== '' || selectedStatus !== 'all'}
+            justRefreshed={justRefreshed}
             onQueryChange={setQuery}
             onStatusChange={setSelectedStatus}
             onClear={() => {
@@ -316,7 +336,7 @@ export function TicketListPage(): ReactElement {
 
       {hasRows ? (
         <div className="ticket-results">
-          <TicketTable tickets={tickets} />
+          <TicketTable tickets={tickets} isBusy={isBusy} />
 
           {showLoadMoreError ? (
             <div
