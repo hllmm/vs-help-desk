@@ -302,6 +302,15 @@
   background: var(--color-paper);
   border: 1px solid var(--color-line);
   border-radius: calc(var(--radius-control) + 0.15rem);
+  transition:
+    opacity var(--transition-fast),
+    filter var(--transition-fast);
+}
+
+.ticket-table-view--busy {
+  opacity: 0.58;
+  filter: saturate(0.92);
+  pointer-events: none;
 }
 
 .ticket-table {

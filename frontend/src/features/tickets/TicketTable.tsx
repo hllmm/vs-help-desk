@@ -6,6 +6,7 @@ import { TicketStatusBadge } from './TicketStatusBadge'
 
 export type TicketTableProps = {
   tickets: readonly TicketListItem[]
+  isBusy?: boolean
 }
 
 function detailPath(ticketId: string): string {
@@ -13,10 +14,10 @@ function detailPath(ticketId: string): string {
 }
 
 export function TicketTable(props: TicketTableProps): ReactElement {
-  const { tickets } = props
+  const { tickets, isBusy } = props
 
   return (
-    <div className="ticket-table-view">
+    <div className={`ticket-table-view${isBusy ? ' ticket-table-view--busy' : ''}`} aria-busy={isBusy || undefined}>
       <table className="ticket-table">
         <caption className="visually-hidden">Destek talepleri</caption>
         <thead>

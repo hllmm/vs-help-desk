@@ -341,7 +341,7 @@ export function TicketListPage(): ReactElement {
 
       {hasRows ? (
         <div className="ticket-results">
-          <TicketTable tickets={tickets} />
+          <TicketTable tickets={tickets} isBusy={isBusy} />
 
           {showLoadMoreError ? (
             <div

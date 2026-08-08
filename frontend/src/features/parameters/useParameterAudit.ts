@@ -62,9 +62,8 @@ export function useParameterAudit(
   }, [take])
 
   useEffect(() => {
-    const id = setTimeout(() => void load(), 0)
+    void load()
     return () => {
-      clearTimeout(id)
       activeController.current?.abort()
       requestSequence.current += 1
     }

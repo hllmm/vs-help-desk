@@ -138,9 +138,8 @@ export function useUsers(): UseUsersResult {
   }, [])
 
   useEffect(() => {
-    const id = setTimeout(() => void load(), 0)
+    void load()
     return () => {
-      clearTimeout(id)
       activeController.current?.abort()
       mutationController.current?.abort()
       requestSequence.current += 1

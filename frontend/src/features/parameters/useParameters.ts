@@ -106,9 +106,8 @@ export function useParameters(): UseParametersResult {
   }, [])
 
   useEffect(() => {
-    const id = setTimeout(() => void load(), 0)
+    void load()
     return () => {
-      clearTimeout(id)
       activeController.current?.abort()
       saveController.current?.abort()
       requestSequence.current += 1
